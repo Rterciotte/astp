@@ -1,0 +1,17 @@
+algorithm: hmac-sha256
+payload:
+  schema_version: '1'
+  permit_id: eb1db5a2-f2e2-4880-853c-9914a31ccaaf
+  issuer: astp-policy-engine
+  engagement_id: granular-example
+  test_id: authorization.object_access
+  risk_class: safe_active
+  target: https://api.example.com/v1/users/123
+  http_method: GET
+  identity: researcher
+  max_requests_per_second: 2.0
+  approval_ids: []
+  policy_digest: 7fb738febd9e169a01fbc4bd7a0c8f65fb174bc40763af052e3190a73921823e
+  issued_at: '2026-08-28T22:06:20.371848Z'
+  expires_at: '2026-08-28T22:11:20.371848Z'
+signature: c021851a902284c84f3fea676e68f49a43e8dfd5db7d7092b6d883b1b74517f0

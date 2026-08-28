@@ -1,0 +1,36 @@
+id: granular-example
+name: Granular Authorization Example
+scope:
+  allowed:
+    - kind: domain
+      value: api.example.com
+  denied: []
+  approval_required:
+    - kind: domain
+      value: staging.example.com
+methods:
+  passive: allow
+  safe_active: allow
+  state_changing: approval_required
+  intrusive: deny
+constraints:
+  max_requests_per_second: 5
+  no_dos: true
+  no_social_engineering: true
+  no_data_destruction: true
+  assets:
+    - selector:
+        kind: domain
+        value: api.example.com
+      allowed_paths:
+        - /v1
+      denied_paths:
+        - /v1/admin
+      allowed_ports:
+        - 443
+      allowed_http_methods:
+        - GET
+        - HEAD
+      allowed_identities:
+        - researcher
+      max_requests_per_second: 2

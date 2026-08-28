@@ -1,0 +1,3 @@
+api.example.com may be tested with prior approval.
+DoS and social engineering are prohibited.
+Testing should not exceed 3 requests per second.

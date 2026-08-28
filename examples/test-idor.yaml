@@ -1,0 +1,15 @@
+id: authorization.object_access
+title: Broken object-level authorization differential check
+category: authorization
+risk_class: safe_active
+required_context:
+  - authenticated_identity
+  - foreign_object_identifier
+evidence_required:
+  - baseline_request
+  - modified_request
+  - baseline_response
+  - modified_response
+description: >-
+  Milestone-0 definition only. The system evaluates whether the test would be eligible;
+  it does not issue requests or attempt exploitation.

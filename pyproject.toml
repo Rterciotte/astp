@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "astp"
+version = "0.5.0"
+description = "Policy-first foundation for an autonomous security testing platform"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{name = "ASTP Project"}]
+dependencies = [
+  "pydantic>=2.8,<3",
+  "PyYAML>=6.0.2,<7",
+  "typer>=0.12,<1",
+  "rich>=13.7,<15",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9",
+  "ruff>=0.6,<1",
+  "black>=24.8,<26",
+]
+
+[project.scripts]
+astp = "astp.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/astp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"

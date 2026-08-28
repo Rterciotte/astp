@@ -1,0 +1,19 @@
+id: example-bounty
+name: Example Bug Bounty
+scope:
+  allowed:
+  - kind: wildcard_domain
+    value: '*.example.com'
+  denied:
+  - kind: domain
+    value: payments.example.com
+methods:
+  passive: allow
+  safe_active: allow
+  state_changing: approval_required
+  intrusive: deny
+constraints:
+  max_requests_per_second: 5.0
+  no_dos: true
+  no_social_engineering: true
+  no_data_destruction: true

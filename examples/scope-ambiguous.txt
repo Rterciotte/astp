@@ -1,0 +1,2 @@
+*.example.com is generally in scope unless a service owner asks you to stop.
+api.example.com may be tested with prior approval.

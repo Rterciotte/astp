@@ -1,0 +1,18 @@
+id: compiled-engagement
+name: Compiled Engagement
+scope:
+  allowed: []
+  denied: []
+  approval_required:
+  - kind: domain
+    value: api.example.com
+methods:
+  passive: allow
+  safe_active: allow
+  state_changing: approval_required
+  intrusive: deny
+constraints:
+  max_requests_per_second: 3.0
+  no_dos: true
+  no_social_engineering: true
+  no_data_destruction: true

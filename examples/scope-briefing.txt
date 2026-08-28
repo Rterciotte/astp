@@ -1,0 +1,4 @@
+*.example.com is in scope except payments.example.com.
+DoS and social engineering are prohibited.
+Actions affecting production data are prohibited.
+Testing should not exceed 5 requests per second.
