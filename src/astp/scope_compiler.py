@@ -244,7 +244,9 @@ def compile_scope_text(
 
     for sentence in _sentences(text):
         lowered = sentence.lower()
-        _compile_scope_sentence(sentence, allowed, denied, approval_required, extracted, issues)
+        _compile_scope_sentence(
+            sentence, allowed, denied, approval_required, extracted, issues
+        )
 
         rate_match = _RATE_RE.search(sentence)
         if rate_match:
@@ -281,7 +283,9 @@ def compile_scope_text(
                 )
             )
 
-        if "social engineering" in lowered and any(word in lowered for word in prohibition_words):
+        if "social engineering" in lowered and any(
+            word in lowered for word in prohibition_words
+        ):
             constraints.no_social_engineering = True
             extracted.append(
                 ExtractedRule(
@@ -319,9 +323,9 @@ def compile_scope_text(
             IssueSeverity.ERROR,
         )
 
-    conflicts = {(rule.kind, rule.value.lower()) for rule in allowed} & {
-        (rule.kind, rule.value.lower()) for rule in denied
-    }
+    conflicts = {
+        (rule.kind, rule.value.lower()) for rule in allowed
+    } & {(rule.kind, rule.value.lower()) for rule in denied}
     for kind, value in sorted(conflicts, key=lambda item: (item[0].value, item[1])):
         _add_issue(
             issues,

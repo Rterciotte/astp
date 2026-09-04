@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
 from ipaddress import ip_address, ip_network
 from urllib.parse import urlparse
@@ -142,7 +142,7 @@ class ApprovalArtifact(BaseModel):
         return self
 
     def is_active(self, now: datetime | None = None) -> bool:
-        current = now or datetime.now(UTC)
+        current = now or datetime.now(timezone.utc)
         return self.issued_at <= current < self.expires_at
 
 

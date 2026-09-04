@@ -1,8 +1,8 @@
 # ASTP — Autonomous Security Testing Platform
 
-ASTP is a policy-first foundation for authorized security testing automation. Milestone 1.3 adds
-short-lived signed execution permits between authorization and future workers. No scanner, HTTP
-request engine, or offensive execution is implemented yet.
+ASTP is a policy-first foundation for authorized security testing automation. Milestone 1.4 adds
+single-use permit consumption, revocation, key rotation IDs, and a tamper-evident local audit chain.
+No scanner, HTTP request engine, or offensive execution is implemented yet.
 
 ## Windows quick start
 
@@ -16,28 +16,26 @@ black .
 pytest
 ```
 
-## Granular authorization
+## Permit secret — existing setup still works
 
 ```powershell
-astp authorize-test `
-    .\examples\engagement-granular.yaml `
-    .\examples\test-idor.yaml `
-    --target https://api.example.com/v1/users/123 `
-    --context authenticated_identity `
-    --context foreign_object_identifier `
-    --http-method GET `
-    --identity researcher `
-    --rps 1
+$env:ASTP_PERMIT_KEY = [Environment]::GetEnvironmentVariable(
+    "ASTP_PERMIT_KEY",
+    "User"
+)
 ```
 
-## Issue a signed execution permit
-
-Use a development key with at least 32 bytes. Do not pass the key as a CLI argument because shell
-history would retain it.
+Optionally identify this key explicitly:
 
 ```powershell
-$env:ASTP_PERMIT_KEY = "replace-with-a-local-secret-at-least-32-bytes"
+$env:ASTP_PERMIT_ACTIVE_KEY_ID = "local-v1"
+```
 
+See `docs/PERMIT_LIFECYCLE.md` before rotating keys.
+
+## Issue a permit
+
+```powershell
 astp issue-permit `
     .\examples\engagement-granular.yaml `
     .\examples\test-idor.yaml `
@@ -50,10 +48,9 @@ astp issue-permit `
     --output .\examples\execution-permit.yaml
 ```
 
-Permit issuance reruns the policy engine internally. A caller cannot mint a permit by merely
-supplying a fabricated `ALLOW` result.
+Issuance reruns authorization internally and records `permit.issued` in `.astp/audit.jsonl`.
 
-## Verify the permit
+## Verify without consuming
 
 ```powershell
 astp verify-permit `
@@ -66,7 +63,30 @@ astp verify-permit `
     --rps 1
 ```
 
-The permit fails verification if its signature, validity window, engagement/test policy digest,
-target, method, identity, or request rate does not match.
+## Consume exactly once
 
-See `docs/EXECUTION_PERMITS.md` for the trust model and `docs/NEXT_STEPS.md` for the roadmap.
+```powershell
+astp consume-permit `
+    .\examples\execution-permit.yaml `
+    .\examples\engagement-granular.yaml `
+    .\examples\test-idor.yaml `
+    --target https://api.example.com/v1/users/123 `
+    --http-method GET `
+    --identity researcher `
+    --rps 1
+```
+
+The first call should succeed. Repeating it should be rejected as replay. This command still makes
+no network request.
+
+## Revoke and audit
+
+```powershell
+astp revoke-permit PERMIT_ID --reason "scope changed"
+astp permit-status PERMIT_ID
+astp verify-audit .\.astp\audit.jsonl
+```
+
+Local lifecycle data under `.astp/` is intentionally excluded from Git.
+
+See `docs/PERMIT_LIFECYCLE.md`, `docs/EXECUTION_PERMITS.md`, and `docs/NEXT_STEPS.md`.

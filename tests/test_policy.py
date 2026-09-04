@@ -6,11 +6,9 @@ from astp.models import (
     ScopeKind,
     ScopePolicy,
     ScopeRule,
+    TestDefinition as SecurityTestDefinition,
     evaluate_test,
     target_in_scope,
-)
-from astp.models import (
-    TestDefinition as SecurityTestDefinition,
 )
 
 

@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from astp.authorization import AuthorizationRequest, CheckStatus, authorize_test
 from astp.models import (
@@ -11,8 +11,6 @@ from astp.models import (
     ScopeKind,
     ScopePolicy,
     ScopeRule,
-)
-from astp.models import (
     TestDefinition as SecurityTestDefinition,
 )
 
@@ -37,7 +35,7 @@ def approval(
     expired: bool = False,
     rps: float | None = None,
 ) -> ApprovalArtifact:
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     issued = now - timedelta(days=2 if expired else 1)
     expires = now - timedelta(days=1) if expired else now + timedelta(days=1)
     return ApprovalArtifact(
@@ -160,7 +158,9 @@ def test_denied_path_wins_inside_allowed_asset() -> None:
     engagement = Engagement(
         id="e1",
         name="test",
-        scope=ScopePolicy(allowed=[ScopeRule(kind=ScopeKind.DOMAIN, value="api.example.com")]),
+        scope=ScopePolicy(
+            allowed=[ScopeRule(kind=ScopeKind.DOMAIN, value="api.example.com")]
+        ),
         constraints=Constraints(
             assets=[
                 AssetConstraint(
@@ -187,7 +187,9 @@ def test_http_method_identity_port_and_rate_are_enforced() -> None:
     engagement = Engagement(
         id="e1",
         name="test",
-        scope=ScopePolicy(allowed=[ScopeRule(kind=ScopeKind.DOMAIN, value="api.example.com")]),
+        scope=ScopePolicy(
+            allowed=[ScopeRule(kind=ScopeKind.DOMAIN, value="api.example.com")]
+        ),
         constraints=Constraints(
             max_requests_per_second=5,
             assets=[
@@ -221,7 +223,9 @@ def test_missing_http_method_is_insufficient_context_when_policy_requires_it() -
     engagement = Engagement(
         id="e1",
         name="test",
-        scope=ScopePolicy(allowed=[ScopeRule(kind=ScopeKind.DOMAIN, value="api.example.com")]),
+        scope=ScopePolicy(
+            allowed=[ScopeRule(kind=ScopeKind.DOMAIN, value="api.example.com")]
+        ),
         constraints=Constraints(
             assets=[
                 AssetConstraint(
@@ -246,7 +250,9 @@ def test_requested_rate_above_asset_limit_is_denied() -> None:
     engagement = Engagement(
         id="e1",
         name="test",
-        scope=ScopePolicy(allowed=[ScopeRule(kind=ScopeKind.DOMAIN, value="api.example.com")]),
+        scope=ScopePolicy(
+            allowed=[ScopeRule(kind=ScopeKind.DOMAIN, value="api.example.com")]
+        ),
         constraints=Constraints(
             max_requests_per_second=5,
             assets=[
@@ -274,7 +280,9 @@ def test_risk_level_approval_is_independent_and_bounded() -> None:
     engagement = Engagement(
         id="e1",
         name="test",
-        scope=ScopePolicy(allowed=[ScopeRule(kind=ScopeKind.DOMAIN, value="api.example.com")]),
+        scope=ScopePolicy(
+            allowed=[ScopeRule(kind=ScopeKind.DOMAIN, value="api.example.com")]
+        ),
     )
     result = authorize_test(
         engagement,

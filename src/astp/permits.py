@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
+from typing import Mapping
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -12,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from astp.authorization import AuthorizationRequest, authorize_test
 from astp.models import Decision, Engagement, RiskClass, TestDefinition
 
-PERMIT_SCHEMA_VERSION = "1"
+PERMIT_SCHEMA_VERSION = "2"
 DEFAULT_PERMIT_TTL_SECONDS = 300
 MAX_PERMIT_TTL_SECONDS = 900
 MIN_SIGNING_KEY_BYTES = 32
@@ -34,6 +35,7 @@ class ExecutionPermitPayload(BaseModel):
 
     schema_version: str = PERMIT_SCHEMA_VERSION
     permit_id: str
+    key_id: str | None = None
     issuer: str
     engagement_id: str
     test_id: str
@@ -106,13 +108,18 @@ def policy_digest(engagement: Engagement, test: TestDefinition) -> str:
 def _signing_key(key: str | bytes) -> bytes:
     encoded = key.encode("utf-8") if isinstance(key, str) else key
     if len(encoded) < MIN_SIGNING_KEY_BYTES:
-        raise ValueError(f"permit signing key must contain at least {MIN_SIGNING_KEY_BYTES} bytes")
+        raise ValueError(
+            f"permit signing key must contain at least {MIN_SIGNING_KEY_BYTES} bytes"
+        )
     return encoded
 
 
 def _signature(payload: ExecutionPermitPayload, key: str | bytes) -> str:
     encoded_key = _signing_key(key)
-    message = _canonical_json(_model_payload(payload))
+    data = _model_payload(payload)
+    if payload.schema_version == "1":
+        data.pop("key_id", None)
+    message = _canonical_json(data)
     return hmac.new(encoded_key, message, hashlib.sha256).hexdigest()
 
 
@@ -124,6 +131,7 @@ def issue_execution_permit(
     *,
     ttl_seconds: int = DEFAULT_PERMIT_TTL_SECONDS,
     issuer: str = "astp-policy-engine",
+    key_id: str = "local-v1",
     now: datetime | None = None,
 ) -> SignedExecutionPermit:
     authorization = authorize_test(engagement, test, request)
@@ -134,11 +142,14 @@ def issue_execution_permit(
     if authorization.effective_max_requests_per_second is None:
         raise ValueError("authorization result is missing an effective rate limit")
     if ttl_seconds < 1 or ttl_seconds > MAX_PERMIT_TTL_SECONDS:
-        raise ValueError(f"permit TTL must be between 1 and {MAX_PERMIT_TTL_SECONDS} seconds")
+        raise ValueError(
+            f"permit TTL must be between 1 and {MAX_PERMIT_TTL_SECONDS} seconds"
+        )
 
-    current = now or datetime.now(UTC)
+    current = now or datetime.now(timezone.utc)
     payload = ExecutionPermitPayload(
         permit_id=str(uuid4()),
+        key_id=key_id,
         issuer=issuer,
         engagement_id=engagement.id,
         test_id=test.id,
@@ -163,11 +174,41 @@ def verify_execution_permit(
     engagement: Engagement,
     test: TestDefinition,
     request: PermitVerificationRequest,
-    key: str | bytes,
+    key: str | bytes | Mapping[str, str | bytes],
 ) -> PermitVerificationResult:
     checks: list[PermitCheck] = []
 
-    expected_signature = _signature(permit.payload, key)
+    if isinstance(key, Mapping):
+        if permit.payload.key_id is None:
+            if len(key) == 1:
+                selected_key = next(iter(key.values()))
+            else:
+                checks.append(
+                    PermitCheck(
+                        name="key_id",
+                        status=PermitCheckStatus.FAIL,
+                        message="Legacy permit has no key_id and keyring is ambiguous.",
+                    )
+                )
+                return PermitVerificationResult(valid=False, checks=checks)
+        else:
+            selected_key = key.get(permit.payload.key_id)
+            if selected_key is None:
+                checks.append(
+                    PermitCheck(
+                        name="key_id",
+                        status=PermitCheckStatus.FAIL,
+                        message=(
+                            "No verification key is available for key_id "
+                            f"{permit.payload.key_id!r}."
+                        ),
+                    )
+                )
+                return PermitVerificationResult(valid=False, checks=checks)
+    else:
+        selected_key = key
+
+    expected_signature = _signature(permit.payload, selected_key)
     if not hmac.compare_digest(expected_signature, permit.signature):
         checks.append(
             PermitCheck(
@@ -185,7 +226,7 @@ def verify_execution_permit(
         )
     )
 
-    now = request.now or datetime.now(UTC)
+    now = request.now or datetime.now(timezone.utc)
     if now < permit.payload.issued_at or now >= permit.payload.expires_at:
         checks.append(
             PermitCheck(

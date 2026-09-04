@@ -1,4 +1,4 @@
-# Architecture — Milestone 0
+# Architecture — policy-first foundation
 
 ## Principle
 
@@ -52,6 +52,6 @@ Adapters must normalize tool input/output; tools must never become the system of
 
 ## Safety boundary
 
-Milestone 0 has no network execution component. This is intentional. Before network workers
+Milestones 0 through 1.4 have no network execution component. This is intentional. Before network workers
 exist, the project needs tests proving scope precedence, risk classification and context
 requirements.
