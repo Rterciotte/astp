@@ -1,12 +1,14 @@
 {
   "manifest_version": 3,
   "name": "ASTP Browser Intake",
-  "version": "0.1.0",
-  "description": "Capture the current authenticated page for local ASTP program intake.",
-  "permissions": ["activeTab", "scripting"],
+  "version": "0.2.1",
+  "description": "Discover and capture authenticated bug bounty programs for local ASTP intake.",
+  "permissions": ["activeTab", "scripting", "tabs", "storage"],
   "host_permissions": ["http://127.0.0.1:8765/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": {"service_worker": "background.js"},
   "action": {
-    "default_title": "Import current page into ASTP",
+    "default_title": "ASTP authenticated program intake",
     "default_popup": "popup.html"
   }
 }

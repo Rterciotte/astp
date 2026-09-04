@@ -1,0 +1,80 @@
+id: bughunt-bughunt
+name: Bughunt
+platform: bughunt
+visibility: public
+operational_status: unknown
+scope:
+- effect: allow
+  selector:
+    kind: wildcard_domain
+    value: '*.bughunt.com.br'
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?5e4c672c5c121a8907662e40
+    section: Escopo
+    source_text: '*.bughunt.com.br'
+    captured_at: null
+  label: null
+constraints:
+- code: own_accounts_only
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?5e4c672c5c121a8907662e40
+    section: Política do Programa
+    source_text: Faça um esforço de boa fé para evitar violações da privacidade, destruição
+      de dados e interrupção ou degradação do nosso serviço. Interaja apenas com contas
+      que você possui ou com permissão explícita do titular da conta.
+    captured_at: null
+- code: no_auth_bruteforce
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?5e4c672c5c121a8907662e40
+    section: Política do Programa
+    source_text: Ataques de brute-force em formulários de autenticação;
+    captured_at: null
+- code: no_dos
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?5e4c672c5c121a8907662e40
+    section: Política do Programa
+    source_text: Qualquer atividade que possa levar à interrupção do nosso serviço
+      (ex. DoS);
+    captured_at: null
+- code: no_social_engineering
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?5e4c672c5c121a8907662e40
+    section: Política do Programa
+    source_text: Engenharia social (incluindo phishing) na nossa equipe ou terceiros;
+    captured_at: null
+- code: no_dos
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?5e4c672c5c121a8907662e40
+    section: Política do Programa
+    source_text: Negação de serviço;
+    captured_at: null
+excluded_finding_types: []
+recommended_user_agent: null
+source:
+  source_type: authenticated_browser
+  source_url: https://admin.bughunt.com.br/program/detail?5e4c672c5c121a8907662e40
+  title: Bughunt
+  captured_at: '2026-09-04T15:43:55.758000Z'
+  content_sha256: d4ef612b560e407eebb3751ad56903de67b9f26589f481da59bb60d41f32223d
+issues:
+- code: qualitative_rate_limit
+  message: Program restricts high-traffic automation but does not provide a numeric
+    requests-per-second limit. A numeric execution limit must be reviewed.
+  source_text: Uso de ferramentas automatizadas que podem gerar tráfego significativo
+    e possivelmente prejudicar o funcionamento de nossa aplicação.

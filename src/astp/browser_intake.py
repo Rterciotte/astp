@@ -58,6 +58,13 @@ def capture_to_text(capture: BrowserCapture) -> str:
     parts = [capture.title, capture.text]
     for table in capture.tables:
         parts.extend(" | ".join(row) for row in table)
+    if capture.links:
+        parts.append("## ASTP Captured Links")
+        for link in capture.links:
+            text = link.get("text", "").strip()
+            href = link.get("href", "").strip()
+            if href:
+                parts.append(f"{text} -> {href}" if text else href)
     return "\n".join(part for part in parts if part)
 
 

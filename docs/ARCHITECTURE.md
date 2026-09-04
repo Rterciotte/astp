@@ -105,3 +105,23 @@ Browser Companion -> BrowserCapture -> BugBountyProgram -> Engagement
                                                      ↓
                                   authorization -> permit -> worker -> evidence
 ```
+
+
+## Authenticated program discovery boundary (M2.5.1)
+
+`Browser Companion -> authenticated platform pages -> Program Catalog` is a control-plane path.
+It is intentionally separate from target Browser Workers. Program synchronization may reuse the
+browser's existing login session but never exports session secrets to ASTP. Catalog selection may
+contain multiple active programs, but future execution must keep a separate engagement, policy
+digest, execution permit, rate budget, and evidence chain for every program.
+
+## Browser intake protocol boundary (M2.5.2)
+
+The Browser Companion and ASTP local intake service negotiate protocol version 2 over loopback.
+The extension first validates the short-lived intake token through `/v1/health`, then uses explicit
+`/v1/discover-programs` and `/v1/program-detail` contracts. Platform host access is granted by a
+separate user gesture so a browser permission prompt cannot silently cancel discovery.
+
+The companion may use the browser's existing authenticated session for navigation, but session
+material is never exported to ASTP. Browser intake remains a control-plane operation and is kept
+separate from target execution permits and workers.

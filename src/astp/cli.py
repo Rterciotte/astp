@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from astp.authorization import AuthorizationRequest, authorize_test
-from astp.browser_intake import capture_to_text, load_capture, serve_capture
+from astp.browser_intake import capture_to_text, load_capture
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
 from astp.io import dump_yaml, load_model
@@ -43,8 +43,15 @@ from astp.permits import (
     issue_execution_permit,
     verify_execution_permit,
 )
+from astp.program_catalog import (
+    BugBountyWorkspace,
+    ProgramSyncStatus,
+    save_workspace,
+    set_active_programs,
+)
 from astp.program_intake import compile_program, import_program_file, import_program_text
 from astp.program_models import BugBountyProgram
+from astp.program_server import serve_program_intake
 from astp.runtime_state import revoke_runtime_permit, runtime_permit_status
 from astp.scope_compiler import CompilationStatus, compile_scope_file
 
@@ -742,20 +749,129 @@ def browser_intake_server_command(
         typer.Option("--output", "-o", help="Write the latest browser capture JSON here"),
     ] = Path(".astp")
     / "browser-capture.json",
+    platform: Annotated[
+        str,
+        typer.Option("--platform", help="Authenticated bug bounty platform identifier"),
+    ] = "bughunt",
+    catalog: Annotated[
+        Path,
+        typer.Option("--catalog", help="Persistent program catalog YAML"),
+    ] = Path(".astp")
+    / "program-catalog.yaml",
+    captures_dir: Annotated[
+        Path,
+        typer.Option("--captures-dir", help="Raw authenticated program captures"),
+    ] = Path(".astp")
+    / "program-captures",
+    programs_dir: Annotated[
+        Path,
+        typer.Option("--programs-dir", help="Normalized program YAML directory"),
+    ] = Path("programs"),
     port: Annotated[
         int,
         typer.Option("--port", help="Loopback port used by the browser companion"),
     ] = 8765,
 ) -> None:
-    """Receive an explicit capture from the ASTP browser companion on loopback only."""
+    """Serve authenticated program discovery and intake on loopback only."""
     if port < 1024 or port > 65535:
         raise typer.BadParameter("port must be between 1024 and 65535")
     intake_token = secrets.token_urlsafe(24)
     console.print(f"ASTP browser intake listening on http://127.0.0.1:{port}")
-    console.print(f"Captures will be written to: {output}")
-    console.print("One-time intake token (paste into the browser companion):")
+    console.print(f"Platform: {platform}")
+    console.print(f"Latest capture: {output}")
+    console.print(f"Program catalog: {catalog}")
+    console.print("Intake token (paste into the browser companion):")
     console.print(intake_token, markup=False)
-    serve_capture(output, port=port, intake_token=intake_token)
+    serve_program_intake(
+        intake_token=intake_token,
+        platform=platform,
+        latest_capture_path=output,
+        catalog_path=catalog,
+        captures_dir=captures_dir,
+        programs_dir=programs_dir,
+        port=port,
+    )
+
+
+@app.command("programs")
+def programs_command(
+    catalog: Annotated[
+        Path,
+        typer.Option("--catalog", help="Program catalog YAML"),
+    ] = Path(".astp")
+    / "program-catalog.yaml",
+) -> None:
+    """Display discovered bug bounty programs and their synchronization state."""
+    if not catalog.exists():
+        console.print(
+            "[yellow]No program catalog found. Run authenticated discovery first.[/yellow]"
+        )
+        raise typer.Exit(code=2)
+    workspace = load_model(catalog, BugBountyWorkspace)
+    table = Table(title=f"ASTP Programs — {workspace.platform}")
+    table.add_column("#", justify="right")
+    table.add_column("Active")
+    table.add_column("Program")
+    table.add_column("Status")
+    table.add_column("ID")
+    for index, item in enumerate(workspace.programs, start=1):
+        table.add_row(
+            str(index),
+            "YES" if item.active else "",
+            item.candidate.name,
+            item.sync_status.value.upper(),
+            item.candidate.id,
+        )
+    console.print(table)
+    console.print(f"Active programs: {len(workspace.active_programs())}")
+
+
+@app.command("select-programs")
+def select_programs_command(
+    program_id: Annotated[
+        list[str] | None,
+        typer.Option("--id", help="Program ID to activate; repeatable"),
+    ] = None,
+    catalog: Annotated[
+        Path,
+        typer.Option("--catalog", help="Program catalog YAML"),
+    ] = Path(".astp")
+    / "program-catalog.yaml",
+) -> None:
+    """Select one or more synchronized programs as active workspace programs."""
+    workspace = load_model(catalog, BugBountyWorkspace)
+    selected = set(program_id or [])
+    if not selected:
+        table = Table(title="Select active bug bounty programs")
+        table.add_column("#", justify="right")
+        table.add_column("Program")
+        table.add_column("Status")
+        selectable: list[str] = []
+        for index, item in enumerate(workspace.programs, start=1):
+            table.add_row(str(index), item.candidate.name, item.sync_status.value.upper())
+            selectable.append(item.candidate.id)
+        console.print(table)
+        raw = typer.prompt("Program numbers, comma-separated (for example 1,3)")
+        try:
+            indexes = {int(value.strip()) for value in raw.split(",") if value.strip()}
+        except ValueError as exc:
+            raise typer.BadParameter("selection must contain program numbers") from exc
+        if any(index < 1 or index > len(selectable) for index in indexes):
+            raise typer.BadParameter("selection contains an unknown program number")
+        selected = {selectable[index - 1] for index in indexes}
+
+    unavailable = {
+        item.candidate.id
+        for item in workspace.programs
+        if item.candidate.id in selected and item.sync_status == ProgramSyncStatus.FAILED
+    }
+    if unavailable:
+        raise typer.BadParameter("cannot activate failed programs: " + ", ".join(unavailable))
+    set_active_programs(workspace, selected)
+    save_workspace(workspace, catalog)
+    console.print("Active programs updated:")
+    for item in workspace.active_programs():
+        console.print(f"  + {item.candidate.name} ({item.candidate.id})")
 
 
 @app.command("import-program")

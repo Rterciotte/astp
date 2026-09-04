@@ -82,6 +82,26 @@ def _is_denial_context(line: str) -> bool:
     return any(marker in lowered for marker in markers)
 
 
+def _plain_section(line: str) -> str | None:
+    normalized = re.sub(r"[^a-z0-9áàâãéêíóôõúç ]+", " ", line.lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    if normalized in {"escopo", "scope"} or normalized.startswith("lista de escopo"):
+        return "scope"
+    if "exclusão de endpoints" in normalized or "exclusao de endpoints" in normalized:
+        return "deny"
+    if normalized in {"recompensas", "rewards", "política do programa", "politica do programa"}:
+        return "other"
+    other_sections = (
+        "política geral",
+        "politica geral",
+        "política de comportamento",
+        "politica de comportamento",
+    )
+    if normalized.startswith(other_sections):
+        return "other"
+    return None
+
+
 def import_program_text(
     text: str,
     *,
@@ -104,15 +124,23 @@ def import_program_text(
         lowered = line.lower()
         if line.startswith("#"):
             current_section = line.lstrip("#").strip(" *_") or None
-        if lowered.startswith("#") and "escopo" not in lowered:
+        plain_section = _plain_section(line.lstrip("#").strip(" *_"))
+        if plain_section == "scope":
+            current_section = line.lstrip("#").strip(" *_") or "Escopo"
+            scope_mode = True
+            denial_mode = False
+        elif plain_section == "deny":
+            current_section = line.lstrip("#").strip(" *_") or "Exclusões"
+            scope_mode = False
+            denial_mode = True
+        elif plain_section == "other":
+            current_section = line.lstrip("#").strip(" *_") or current_section
+            scope_mode = False
+            denial_mode = False
+        elif lowered.startswith("#") and "escopo" not in lowered:
             scope_mode = False
             if "exclusão" not in lowered and "exclusao" not in lowered:
                 denial_mode = False
-        if "exclusão de endpoints" in lowered or "exclusao de endpoints" in lowered:
-            denial_mode = True
-        if lowered.startswith("##") and "escopo" in lowered and "fora" not in lowered:
-            scope_mode = True
-            denial_mode = False
 
         candidates = _extract_scope_candidates(line)
         for candidate in candidates:
@@ -224,10 +252,8 @@ def import_program_text(
                     ),
                 )
             )
-        if (
-            lowered.startswith("-")
-            and "qualquer sistema" in lowered
-            and ("universidade smart fit" in lowered or "empresa asap" in lowered)
+        if "qualquer sistema" in lowered and (
+            "universidade smart fit" in lowered or "empresa asap" in lowered
         ):
             issues.append(
                 ProgramIssue(
@@ -239,7 +265,9 @@ def import_program_text(
                     source_text=line,
                 )
             )
-        if lowered.startswith("-") and "totens" in lowered:
+        if "totens" in lowered and (
+            "sistemas" in lowered or "serviços" in lowered or "servicos" in lowered
+        ):
             issues.append(
                 ProgramIssue(
                     code="physical_or_totem_asset_exclusion",

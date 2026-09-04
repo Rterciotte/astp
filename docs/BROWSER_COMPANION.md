@@ -1,24 +1,36 @@
 # ASTP Browser Companion
 
-The Browser Companion is a small Chromium Manifest V3 extension used only for program
-intake. It reads the currently active page after an explicit click and sends a constrained
-snapshot to ASTP over loopback.
+The Browser Companion is the preferred bug bounty program-intake path when the program platform
+requires authentication.
 
-## Security properties
+## Security model
 
-- `activeTab` instead of persistent access to all pages.
-- No `cookies` permission.
-- No collection of `localStorage` or `sessionStorage`.
-- No password-field extraction.
-- Loopback destination only: `http://127.0.0.1:8765/`.
-- A one-time token printed by `astp browser-intake-server` is required on POST requests.
-- Maximum accepted capture body is 5 MB.
-- The extension performs no security testing and has no execution permit capability.
+The user authenticates normally in Chrome/Edge/Chromium. ASTP does not receive the account
+password or browser session secrets. The extension has no cookie permission and does not export
+cookies, authorization headers, localStorage, sessionStorage, or password fields.
 
-## Local development installation
+For program discovery, the user explicitly grants access to the current platform origin. This lets
+the companion open program-detail pages using the browser's existing authenticated session. Access
+is not silently granted to unrelated origins.
 
-In Chromium/Chrome/Edge, open the extensions management page, enable developer mode and
-load `browser-companion/` as an unpacked extension.
+The local Python intake service binds to `127.0.0.1` and requires the intake token printed by
+`astp browser-intake-server`.
 
-The port is fixed at 8765 in M2.5. A configurable/native-messaging transport can replace
-this during later browser-worker work.
+## Actions
+
+**Discover & sync all programs on this platform page**
+
+- captures the current listing page;
+- asks ASTP which same-origin links are program details;
+- opens each detail page sequentially in an inactive temporary tab;
+- captures the detail DOM;
+- sends the capture to ASTP;
+- closes the temporary tab;
+- updates the local program catalog.
+
+**Import current page only** retains the M2.5.0 single-page diagnostic/import workflow.
+
+## Installing locally
+
+In Chrome or Edge, enable Developer mode and load the `browser-companion/` directory as an
+unpacked extension. After code updates, press **Reload** on the extension before testing again.

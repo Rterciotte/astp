@@ -74,3 +74,24 @@ lifecycle/rate/audit state to transactional and independently protected storage.
 
 CTF documentation is intentionally not globally rewritten yet. The previously agreed full
 CTF documentation update occurs when CTF implementation begins, not during intake work.
+
+
+## M2.5.1 completed — Authenticated Program Discovery & Catalog
+
+- Program-listing classification and same-origin candidate discovery.
+- Sequential authenticated detail-page synchronization through the user's browser session.
+- Persistent `BugBountyWorkspace` catalog with raw capture and normalized-program references.
+- CLI catalog view and multi-program active selection.
+- Plain-text DOM section parsing and automatic output-directory creation.
+
+Next architectural block: target Browser/Discovery Worker. Multi-program target execution remains
+deferred until worker scheduling can preserve independent engagement/policy/permit boundaries.
+
+## M2.5.2 completed — Browser/Server Protocol Hardening
+
+The first real authenticated BugHunt field trial exposed a browser-extension integration failure.
+M2.5.2 adds protocol health negotiation, visible server logs, JSON errors, a two-step host
+permission/discovery flow, persisted session progress, and end-to-end loopback HTTP tests.
+
+Before M2.6, repeat the real BugHunt catalog synchronization and inspect any platform-specific
+candidate-link or SPA-rendering failures that remain.

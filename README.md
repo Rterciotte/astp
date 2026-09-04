@@ -200,3 +200,14 @@ Runtime lifecycle commands:
 astp runtime-permit-status PERMIT_ID
 astp revoke-runtime-permit PERMIT_ID --reason "scope changed"
 ```
+
+
+## Authenticated bug bounty workspace
+
+See `docs/M2_5_1_PROGRAM_DISCOVERY.md`.
+
+### M2.5.2 integration hardening
+
+The authenticated browser intake now exposes a versioned loopback protocol with a health check,
+visible operational logs, JSON errors, a separate Chrome host-permission step, and real HTTP
+integration tests. See `docs/M2_5_2_PROGRAM_PROTOCOL_FIX.md`.

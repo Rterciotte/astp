@@ -26,5 +26,6 @@ def dump_yaml(data: BaseModel | dict[str, Any], path: Path | None = None) -> str
     payload = data.model_dump(mode="json") if isinstance(data, BaseModel) else data
     rendered = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
     if path is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(rendered, encoding="utf-8")
     return rendered

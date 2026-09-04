@@ -1,0 +1,205 @@
+id: bughunt-grupo-smart-fit-bug-bounty-p-blico
+name: Grupo Smart Fit - Bug Bounty Público
+platform: bughunt
+visibility: public
+operational_status: unknown
+scope:
+- effect: deny
+  selector:
+    kind: domain
+    value: universidade.smartfit.com.br
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: 1.1. EXCLUSÃO DE ENDPOINTS / ATIVOS
+    source_text: https://universidade.smartfit.com.br/
+    captured_at: null
+  label: null
+- effect: deny
+  selector:
+    kind: domain
+    value: universidad.smartfit.com
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: 1.1. EXCLUSÃO DE ENDPOINTS / ATIVOS
+    source_text: https://universidad.smartfit.com/
+    captured_at: null
+  label: null
+- effect: allow
+  selector:
+    kind: wildcard_domain
+    value: '*.smartfit.com.br'
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: Escopo
+    source_text: '*.smartfit.com.br'
+    captured_at: null
+  label: null
+- effect: allow
+  selector:
+    kind: domain
+    value: smartfit.com
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: Escopo
+    source_text: https://smartfit.com
+    captured_at: null
+  label: null
+- effect: allow
+  selector:
+    kind: url_prefix
+    value: https://apps.apple.com/br/app/smart-fit-app/id1308265270/
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: Escopo
+    source_text: https://apps.apple.com/br/app/smart-fit-app/id1308265270/
+    captured_at: null
+  label: null
+- effect: allow
+  selector:
+    kind: wildcard_domain
+    value: '*.smartfit.com'
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: Escopo
+    source_text: '*.smartfit.com'
+    captured_at: null
+  label: null
+- effect: allow
+  selector:
+    kind: url_prefix
+    value: https://play.google.com/store/apps/details?id=com.smartfitcoach.app/
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: Escopo
+    source_text: https://play.google.com/store/apps/details?id=com.smartfitcoach.app/
+    captured_at: null
+  label: null
+constraints:
+- code: no_dos
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: 1.1. EXCLUSÃO DE ENDPOINTS / ATIVOS
+    source_text: Caso algum dos ativos acima seja identificado durante os testes realizados
+      em sistemas dentro do escopo, não prossiga com qualquer tentativa de exploração,
+      validação adicional ou aprofundamento do teste nesse ativo.
+    captured_at: null
+- code: own_accounts_only
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: 1.1. EXCLUSÃO DE ENDPOINTS / ATIVOS
+    source_text: 2.4. Interaja apenas com as contas que você possui ou com permissão
+      explícita do titular da conta.
+    captured_at: null
+- code: recommended_user_agent
+  effect: info
+  value: Bughunt - Security Research
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: 1.1. EXCLUSÃO DE ENDPOINTS / ATIVOS
+    source_text: '2,5. Recomendamos que os analistas usem o User Agent: Bughunt -
+      Security Research. Isso facilitará o nosso controle interno caso algum incidente
+      aconteça.'
+    captured_at: null
+- code: program_must_be_online
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: 1.1. EXCLUSÃO DE ENDPOINTS / ATIVOS
+    source_text: 2.6. É explicitamente proibido realizar ataques no escopo quando
+      o programa estiver offline. Caso nossos analistas detectem que a falha foi encontrada
+      durante o programa offline, poderá impactar diretamente na recompensa da vulnerabilidade
+      reportada.
+    captured_at: null
+- code: no_dos
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: 1.1. EXCLUSÃO DE ENDPOINTS / ATIVOS
+    source_text: 3.1. Relatórios fora do escopo não serão pagos. Embora aceitos para
+      análise, recomendamos evitar testes fora do escopo, pois não serão recompensados,
+      pontuados ou reconhecidos publicamente. Agradecemos a compreensão dos bughunters.
+    captured_at: null
+- code: no_auth_bruteforce
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: 1.1. EXCLUSÃO DE ENDPOINTS / ATIVOS
+    source_text: 5.14. Ataques de brute-force em formulários de autenticação;
+    captured_at: null
+- code: no_dos
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: 1.1. EXCLUSÃO DE ENDPOINTS / ATIVOS
+    source_text: 5.17. Qualquer atividade que possa levar à interrupção do nosso serviço
+      (ex. DoS);
+    captured_at: null
+- code: no_social_engineering
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: 1.1. EXCLUSÃO DE ENDPOINTS / ATIVOS
+    source_text: 5.20. Engenharia social (incluindo phishing) na nossa equipe ou terceiros;
+    captured_at: null
+- code: no_dos
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+    section: 1.1. EXCLUSÃO DE ENDPOINTS / ATIVOS
+    source_text: 5.32. Negação de serviço;
+    captured_at: null
+excluded_finding_types: []
+recommended_user_agent: Bughunt - Security Research
+source:
+  source_type: authenticated_browser
+  source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+  title: Grupo Smart Fit - Bug Bounty Público
+  captured_at: '2026-09-04T15:43:35.815000Z'
+  content_sha256: 654899cef6d69bcedbfcac86d06a256515af39ce1c01270bdcc1d4a76ffff77f
+issues:
+- code: broad_asset_exclusion
+  message: A broad excluded asset family cannot be converted to a complete host list
+    deterministically and requires review.
+  source_text: Qualquer sistema, domínio, subdomínio, API ou serviço relacionado às
+    plataformas de Universidade Smart Fit, independentemente do país
+- code: broad_asset_exclusion
+  message: A broad excluded asset family cannot be converted to a complete host list
+    deterministically and requires review.
+  source_text: Qualquer sistema, domínio, subdomínio, API ou serviço pertencente ou
+    operado pela empresa ASAP
+- code: physical_or_totem_asset_exclusion
+  message: Totem-related systems are broadly excluded and require a reviewed asset
+    mapping before executable scope can be compiled.
+  source_text: Sistemas, aplicações, APIs, equipamentos e serviços relacionados aos
+    totens utilizados nas academias Smart Fit
+- code: qualitative_rate_limit
+  message: Program restricts high-traffic automation but does not provide a numeric
+    requests-per-second limit. A numeric execution limit must be reviewed.
+  source_text: 5.37. Uso de ferramentas automatizadas que podem gerar tráfego significativo
+    e possivelmente prejudicar o funcionamento de nossa aplicação.

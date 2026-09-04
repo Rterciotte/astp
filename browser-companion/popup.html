@@ -1,9 +1,24 @@
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>ASTP Intake</title></head>
+<head>
+  <meta charset="utf-8">
+  <title>ASTP Intake</title>
+  <style>
+    body { font-family: system-ui, sans-serif; min-width: 350px; padding: 12px; }
+    input { width: 100%; box-sizing: border-box; margin: 6px 0 10px; }
+    button { width: 100%; margin: 5px 0; padding: 8px; }
+    #status { white-space: pre-wrap; font-size: 12px; min-height: 32px; }
+    .secondary { font-size: 12px; }
+  </style>
+</head>
 <body>
+  <strong>ASTP Authenticated Program Intake</strong>
   <label>Intake token <input id="token" type="password" autocomplete="off"></label>
-  <button id="capture">Import current page into ASTP</button>
+  <button id="health">Check ASTP connection</button>
+  <button id="grant">Grant access to current platform</button>
+  <button id="discover">Discover & sync all programs on this platform page</button>
+  <button id="capture">Import current page only</button>
+  <p class="secondary">Platform access and discovery are separate so Chrome permission prompts cannot silently cancel discovery.</p>
   <p id="status"></p>
   <script src="popup.js"></script>
 </body>

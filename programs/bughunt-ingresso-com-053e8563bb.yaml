@@ -1,0 +1,147 @@
+id: bughunt-ingresso-com
+name: Ingresso.com
+platform: bughunt
+visibility: public
+operational_status: unknown
+scope:
+- effect: deny
+  selector:
+    kind: wildcard_domain
+    value: '*.ddns.ingresso.com'
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?667333f88093e9318d466a4a
+    section: Política do Programa
+    source_text: '*.ddns.ingresso.com - Esta fora do escopo'
+    captured_at: null
+  label: null
+- effect: allow
+  selector:
+    kind: domain
+    value: www.ingresso.com
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?667333f88093e9318d466a4a
+    section: Escopo
+    source_text: https://www.ingresso.com
+    captured_at: null
+  label: null
+- effect: allow
+  selector:
+    kind: domain
+    value: carrinho.ingresso.com
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?667333f88093e9318d466a4a
+    section: Escopo
+    source_text: https://carrinho.ingresso.com
+    captured_at: null
+  label: null
+- effect: allow
+  selector:
+    kind: domain
+    value: checkout.ingresso.com
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?667333f88093e9318d466a4a
+    section: Escopo
+    source_text: https://checkout.ingresso.com
+    captured_at: null
+  label: null
+- effect: allow
+  selector:
+    kind: domain
+    value: b2b.ingresso.com
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?667333f88093e9318d466a4a
+    section: Escopo
+    source_text: https://b2b.ingresso.com
+    captured_at: null
+  label: null
+constraints:
+- code: no_dos
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?667333f88093e9318d466a4a
+    section: Recompensas
+    source_text: A Ingresso.com, com mais de 20 anos de mercado, atua no setor de
+      venda de ingressos online, oferecendo serviços que facilitam a vida dos consumidores.
+    captured_at: null
+- code: own_accounts_only
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?667333f88093e9318d466a4a
+    section: Política do Programa
+    source_text: Faça um esforço de boa fé para evitar violações da privacidade, destruição
+      de dados e interrupção ou degradação do nosso serviço. Interaja apenas com contas
+      que você possui ou com permissão explícita do titular da conta.
+    captured_at: null
+- code: no_auth_bruteforce
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?667333f88093e9318d466a4a
+    section: Política do Programa
+    source_text: Ataques de brute-force em formulários de autenticação;
+    captured_at: null
+- code: no_dos
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?667333f88093e9318d466a4a
+    section: Política do Programa
+    source_text: Qualquer atividade que possa levar à interrupção do nosso serviço
+      (ex. DoS);
+    captured_at: null
+- code: no_social_engineering
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?667333f88093e9318d466a4a
+    section: Política do Programa
+    source_text: Engenharia social (incluindo phishing) na nossa equipe ou terceiros;
+    captured_at: null
+- code: no_dos
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?667333f88093e9318d466a4a
+    section: Política do Programa
+    source_text: Negação de serviço;
+    captured_at: null
+- code: no_dos
+  effect: restrict
+  value: true
+  provenance:
+    source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?667333f88093e9318d466a4a
+    section: Política do Programa
+    source_text: Após a realização dos testes, remover qualquer comentário ou qualquer
+      ação que possa ser visualizada por usuários legítimos da aplicação não envolvidos
+      * com o teste. O não cumprimento das obrigações acima pode acarretar no bloqueio
+      da conta de forma permanente, em caso de múltipla recorrência o pesquisador
+      pode ser desligado do programa.
+    captured_at: null
+excluded_finding_types: []
+recommended_user_agent: null
+source:
+  source_type: authenticated_browser
+  source_url: https://admin.bughunt.com.br/program/detail?667333f88093e9318d466a4a
+  title: Ingresso.com
+  captured_at: '2026-09-04T15:43:41.712000Z'
+  content_sha256: ca61b957e130dcd8f404836ceba49b6d9dfc3111641a82d4ba159bdc89637fea
+issues:
+- code: qualitative_rate_limit
+  message: Program restricts high-traffic automation but does not provide a numeric
+    requests-per-second limit. A numeric execution limit must be reviewed.
+  source_text: Uso de ferramentas automatizadas que podem gerar tráfego significativo
+    e possivelmente prejudicar o funcionamento de nossa aplicação.
