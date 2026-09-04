@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from urllib.parse import urlparse
 
@@ -83,7 +83,7 @@ def _approval_matches(
     test: TestDefinition,
     request: AuthorizationRequest,
 ) -> bool:
-    now = request.now or datetime.now(timezone.utc)
+    now = request.now or datetime.now(UTC)
     if approval.engagement_id != engagement.id or not approval.is_active(now):
         return False
     if not any(_match_rule(request.target, rule) for rule in approval.targets):
@@ -217,9 +217,7 @@ def _effective_rate_limit(
     limits = [engagement.constraints.max_requests_per_second]
     limits.extend(
         constraint.max_requests_per_second
-        for constraint in _matching_asset_constraints(
-            request.target, engagement.constraints.assets
-        )
+        for constraint in _matching_asset_constraints(request.target, engagement.constraints.assets)
         if constraint.max_requests_per_second is not None
     )
     limits.extend(

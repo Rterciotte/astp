@@ -1,0 +1,18 @@
+algorithm: hmac-sha256
+payload:
+  schema_version: '2'
+  permit_id: 52e447d1-2d8e-47bd-a3a9-0d052964ab7d
+  key_id: local-v1
+  issuer: astp-policy-engine
+  engagement_id: local-observation-example
+  test_id: observation.http
+  risk_class: safe_active
+  target: http://127.0.0.1:8765/
+  http_method: GET
+  identity: null
+  max_requests_per_second: 2.0
+  approval_ids: []
+  policy_digest: 1615896c041d19a64d1b125b7fb49d2f68237ca7cfe648a89b7f1fa14bec6c76
+  issued_at: '2026-09-04T12:46:40.767961Z'
+  expires_at: '2026-09-04T12:51:40.767961Z'
+signature: 3263073398a6533f29aa62d47c500b8fb2f35632d90c429ab008f882a4f17647

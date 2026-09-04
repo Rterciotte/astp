@@ -1,0 +1,375 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from astp.lifecycle import append_audit_event, consume_execution_permit
+from astp.models import Engagement, TestDefinition, target_in_scope
+from astp.permits import PermitVerificationRequest, SignedExecutionPermit
+
+DEFAULT_TIMEOUT_SECONDS = 10.0
+MAX_TIMEOUT_SECONDS = 30.0
+DEFAULT_MAX_BODY_BYTES = 262_144
+MAX_BODY_BYTES = 1_048_576
+MAX_PREVIEW_CHARS = 4096
+
+_SENSITIVE_HEADER_NAMES = {
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
+    "x-api-key",
+    "api-key",
+    "x-auth-token",
+}
+_SENSITIVE_QUERY_NAMES = {
+    "access_token",
+    "api_key",
+    "apikey",
+    "auth",
+    "authorization",
+    "key",
+    "password",
+    "passwd",
+    "secret",
+    "session",
+    "sig",
+    "signature",
+    "token",
+}
+_INLINE_SECRET_PATTERNS = (
+    re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+\-/]+=*"),
+    re.compile(
+        r'(?i)(["\']?(?:access_token|api_key|apikey|password|secret|token)["\']?\s*[:=]\s*["\']?)'
+        r"[^\s,;\"\']+"
+    ),
+)
+
+
+class ObservationError(RuntimeError):
+    """Raised when a bounded observation cannot be completed safely."""
+
+
+class RedirectObservation(BaseModel):
+    target: str
+    in_scope: bool
+    followed: bool = False
+
+
+class HttpObservationEvidence(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    schema_version: str = "1"
+    permit_id: str
+    engagement_id: str
+    test_id: str
+    observed_at: datetime
+    method: str
+    target: str
+    status_code: int
+    reason: str | None = None
+    response_headers: dict[str, str] = Field(default_factory=dict)
+    content_type: str | None = None
+    body_bytes_captured: int = 0
+    body_truncated: bool = False
+    body_sha256: str
+    body_preview: str | None = None
+    redirect: RedirectObservation | None = None
+    evidence_hash: str
+
+    @field_validator("observed_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("observed_at must include a timezone")
+        return value
+
+
+class ObservationResult(BaseModel):
+    evidence: HttpObservationEvidence
+    evidence_path: Path
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _canonical_json(data: object) -> bytes:
+    return json.dumps(
+        data,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+
+def _redact_inline_secrets(value: str) -> str:
+    redacted = value
+    for pattern in _INLINE_SECRET_PATTERNS:
+        redacted = pattern.sub(r"\1[REDACTED]", redacted)
+    return redacted
+
+
+def redact_url(value: str) -> str:
+    parsed = urlsplit(value)
+    query = []
+    for name, item_value in parse_qsl(parsed.query, keep_blank_values=True):
+        replacement = "[REDACTED]" if name.lower() in _SENSITIVE_QUERY_NAMES else item_value
+        query.append((name, replacement))
+    return urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            urlencode(query, doseq=True),
+            parsed.fragment,
+        )
+    )
+
+
+def _redact_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    rendered: dict[str, str] = {}
+    for name, value in headers.items():
+        rendered[name] = (
+            "[REDACTED]"
+            if name.lower() in _SENSITIVE_HEADER_NAMES
+            else _redact_inline_secrets(value)
+        )
+    return rendered
+
+
+def _is_textual(content_type: str | None) -> bool:
+    if not content_type:
+        return False
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    return (
+        media_type.startswith("text/")
+        or media_type.endswith("+json")
+        or media_type.endswith("+xml")
+        or media_type in {"application/json", "application/xml", "application/javascript"}
+    )
+
+
+def _decode_preview(body: bytes, content_type: str | None) -> str | None:
+    if not body or not _is_textual(content_type):
+        return None
+    charset = "utf-8"
+    if content_type:
+        for part in content_type.split(";")[1:]:
+            name, separator, value = part.strip().partition("=")
+            if separator and name.lower() == "charset" and value:
+                charset = value.strip().strip('"')
+                break
+    try:
+        text = body.decode(charset, errors="replace")
+    except LookupError:
+        text = body.decode("utf-8", errors="replace")
+    return _redact_inline_secrets(text[:MAX_PREVIEW_CHARS])
+
+
+def _validate_observation_request(
+    permit: SignedExecutionPermit,
+    target: str,
+    method: str,
+    timeout_seconds: float,
+    max_body_bytes: int,
+) -> None:
+    parsed = urlsplit(target)
+    if parsed.scheme.lower() not in {"http", "https"}:
+        raise ObservationError("Observation target must use http or https.")
+    if not parsed.hostname:
+        raise ObservationError("Observation target must contain a hostname.")
+    if parsed.username is not None or parsed.password is not None:
+        raise ObservationError("Credentials embedded in observation URLs are not allowed.")
+    if method not in {"GET", "HEAD"}:
+        raise ObservationError("M2 observation worker only permits GET and HEAD.")
+    if permit.payload.http_method not in {"GET", "HEAD"}:
+        raise ObservationError("Execution permit is not bound to an observation-only HTTP method.")
+    if timeout_seconds <= 0 or timeout_seconds > MAX_TIMEOUT_SECONDS:
+        raise ObservationError(
+            f"Timeout must be greater than 0 and at most {MAX_TIMEOUT_SECONDS:g} seconds."
+        )
+    if max_body_bytes < 0 or max_body_bytes > MAX_BODY_BYTES:
+        raise ObservationError(f"Maximum body size must be between 0 and {MAX_BODY_BYTES} bytes.")
+
+
+def _read_bounded(response, method: str, max_body_bytes: int) -> tuple[bytes, bool]:
+    if method == "HEAD" or max_body_bytes == 0:
+        return b"", False
+    body = response.read(max_body_bytes + 1)
+    if len(body) > max_body_bytes:
+        return body[:max_body_bytes], True
+    return body, False
+
+
+def verify_observation_evidence(evidence: HttpObservationEvidence) -> bool:
+    payload = evidence.model_dump(mode="json", exclude={"evidence_hash"})
+    return hashlib.sha256(_canonical_json(payload)).hexdigest() == evidence.evidence_hash
+
+
+def _write_evidence(path: Path, evidence: HttpObservationEvidence) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(evidence.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
+
+
+def _evidence_hash(payload: dict[str, object]) -> str:
+    return hashlib.sha256(_canonical_json(payload)).hexdigest()
+
+
+def observe_http(
+    permit: SignedExecutionPermit,
+    engagement: Engagement,
+    test: TestDefinition,
+    keys: str | bytes | Mapping[str, str | bytes],
+    *,
+    target: str,
+    method: str,
+    identity: str | None,
+    requested_rps: float | None,
+    state_path: Path,
+    audit_path: Path,
+    evidence_path: Path,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
+    now: datetime | None = None,
+) -> ObservationResult:
+    normalized_method = method.upper()
+    _validate_observation_request(
+        permit,
+        target,
+        normalized_method,
+        timeout_seconds,
+        max_body_bytes,
+    )
+
+    consume_result = consume_execution_permit(
+        permit,
+        engagement,
+        test,
+        PermitVerificationRequest(
+            target=target,
+            http_method=normalized_method,
+            identity=identity,
+            requested_requests_per_second=requested_rps,
+            now=now,
+        ),
+        keys,
+        state_path,
+    )
+    if not consume_result.accepted:
+        append_audit_event(
+            audit_path,
+            "observation.rejected",
+            permit_id=permit.payload.permit_id,
+            details={
+                "status": consume_result.lifecycle_status.value,
+                "message": consume_result.message,
+                "target": redact_url(target),
+            },
+            now=now,
+        )
+        raise ObservationError(consume_result.message)
+
+    append_audit_event(
+        audit_path,
+        "observation.started",
+        permit_id=permit.payload.permit_id,
+        details={"method": normalized_method, "target": redact_url(target)},
+        now=now,
+    )
+
+    opener = build_opener(_NoRedirectHandler())
+    request = Request(
+        target,
+        method=normalized_method,
+        headers={
+            "User-Agent": "ASTP/0.7 observation-worker",
+            "Accept": "*/*",
+        },
+    )
+
+    try:
+        try:
+            response = opener.open(request, timeout=timeout_seconds)
+        except HTTPError as exc:
+            response = exc
+        status_code = int(response.getcode())
+        reason = getattr(response, "reason", None)
+        headers = {name: value for name, value in response.headers.items()}
+        content_type = response.headers.get("Content-Type")
+        body, truncated = _read_bounded(response, normalized_method, max_body_bytes)
+    except (URLError, TimeoutError, OSError) as exc:
+        append_audit_event(
+            audit_path,
+            "observation.failed",
+            permit_id=permit.payload.permit_id,
+            details={"error": type(exc).__name__, "target": redact_url(target)},
+            now=now,
+        )
+        raise ObservationError(f"Observation request failed: {type(exc).__name__}.") from exc
+    finally:
+        if "response" in locals():
+            response.close()
+
+    location = headers.get("Location")
+    redirect = None
+    if location and 300 <= status_code < 400:
+        redirect_target = urljoin(target, location)
+        redirect = RedirectObservation(
+            target=redact_url(redirect_target),
+            in_scope=target_in_scope(redirect_target, engagement.scope),
+            followed=False,
+        )
+
+    observed_at = now or datetime.now(UTC)
+    preliminary = HttpObservationEvidence(
+        schema_version="1",
+        permit_id=permit.payload.permit_id,
+        engagement_id=engagement.id,
+        test_id=test.id,
+        observed_at=observed_at,
+        method=normalized_method,
+        target=redact_url(target),
+        status_code=status_code,
+        reason=str(reason) if reason is not None else None,
+        response_headers=_redact_headers(headers),
+        content_type=content_type,
+        body_bytes_captured=len(body),
+        body_truncated=truncated,
+        body_sha256=hashlib.sha256(body).hexdigest(),
+        body_preview=_decode_preview(body, content_type),
+        redirect=redirect,
+        evidence_hash="pending",
+    )
+    canonical_payload = preliminary.model_dump(mode="json", exclude={"evidence_hash"})
+    evidence = preliminary.model_copy(update={"evidence_hash": _evidence_hash(canonical_payload)})
+    _write_evidence(evidence_path, evidence)
+    append_audit_event(
+        audit_path,
+        "observation.completed",
+        permit_id=permit.payload.permit_id,
+        details={
+            "status_code": status_code,
+            "evidence_hash": evidence.evidence_hash,
+            "evidence_path": str(evidence_path),
+            "redirect_followed": False,
+        },
+        now=now,
+    )
+    return ObservationResult(evidence=evidence, evidence_path=evidence_path)

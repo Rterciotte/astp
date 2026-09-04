@@ -24,6 +24,14 @@ from astp.models import (
     TestDefinition,
     evaluate_test,
 )
+from astp.observation import (
+    DEFAULT_MAX_BODY_BYTES,
+    DEFAULT_TIMEOUT_SECONDS,
+    HttpObservationEvidence,
+    ObservationError,
+    observe_http,
+    verify_observation_evidence,
+)
 from astp.permits import (
     DEFAULT_PERMIT_TTL_SECONDS,
     PermitVerificationRequest,
@@ -35,11 +43,14 @@ from astp.scope_compiler import CompilationStatus, compile_scope_file
 
 app = typer.Typer(
     help=(
-        "ASTP policy-first security testing foundation. "
-        "Offensive execution is not implemented yet."
+        "ASTP policy-first security testing platform. "
+        "M2 enables bounded observation-only HTTP execution."
     )
 )
 console = Console()
+
+DEFAULT_STATE_PATH = Path(".astp") / "permit-state.json"
+DEFAULT_AUDIT_PATH = Path(".astp") / "audit.jsonl"
 
 
 @app.command("show-engagement")
@@ -165,9 +176,7 @@ def authorize_test_command(
     """Produce an auditable authorization decision without executing a test."""
     engagement = load_model(engagement_path, Engagement)
     test = load_model(test_path, TestDefinition)
-    approvals = [
-        load_model(path, ApprovalArtifact) for path in (approval_path or [])
-    ]
+    approvals = [load_model(path, ApprovalArtifact) for path in (approval_path or [])]
     result = authorize_test(
         engagement,
         test,
@@ -208,8 +217,7 @@ def _permit_keyring() -> tuple[str, dict[str, str]]:
         except json.JSONDecodeError as exc:
             raise typer.BadParameter("ASTP_PERMIT_KEYS must be a JSON object.") from exc
         if not isinstance(raw, dict) or not all(
-            isinstance(key_id, str) and isinstance(value, str)
-            for key_id, value in raw.items()
+            isinstance(key_id, str) and isinstance(value, str) for key_id, value in raw.items()
         ):
             raise typer.BadParameter("ASTP_PERMIT_KEYS must map key IDs to string secrets.")
         keys = dict(raw)
@@ -273,14 +281,12 @@ def issue_permit_command(
     audit_path: Annotated[
         Path,
         typer.Option("--audit", help="Append-only audit log"),
-    ] = Path(".astp") / "audit.jsonl",
+    ] = DEFAULT_AUDIT_PATH,
 ) -> None:
     """Authorize an exact action and issue a short-lived signed execution permit."""
     engagement = load_model(engagement_path, Engagement)
     test = load_model(test_path, TestDefinition)
-    approvals = [
-        load_model(path, ApprovalArtifact) for path in (approval_path or [])
-    ]
+    approvals = [load_model(path, ApprovalArtifact) for path in (approval_path or [])]
     request = AuthorizationRequest(
         target=target,
         available_context=set(context or []),
@@ -326,11 +332,9 @@ def issue_permit_command(
     console.print("[bold green]Execution permit issued.[/bold green]")
     console.print(f"Permit ID: {permit.payload.permit_id}")
     console.print(f"Expires at: {permit.payload.expires_at.isoformat()}")
-    console.print(
-        f"Maximum rate: {permit.payload.max_requests_per_second:g} req/s"
-    )
+    console.print(f"Maximum rate: {permit.payload.max_requests_per_second:g} req/s")
     console.print(f"Written to: {output}")
-    console.print("Execution remains DISABLED (Milestone 1.4).")
+    console.print("Permit issuance does not execute a network action.")
 
 
 @app.command("verify-permit")
@@ -392,17 +396,9 @@ def verify_permit_command(
         table.add_row(check.name, check.status.value.upper(), check.message)
     console.print(table)
     console.print(f"\nPermit valid: [bold]{'YES' if result.valid else 'NO'}[/bold]")
-    console.print("Execution remains DISABLED (Milestone 1.4).")
+    console.print("Verification only; no network action was performed.")
     if not result.valid:
         raise typer.Exit(code=3)
-
-
-def _default_state_path() -> Path:
-    return Path(".astp") / "permit-state.json"
-
-
-def _default_audit_path() -> Path:
-    return Path(".astp") / "audit.jsonl"
 
 
 @app.command("consume-permit")
@@ -422,10 +418,10 @@ def consume_permit_command(
     ] = None,
     state_path: Annotated[
         Path, typer.Option("--state", help="Permit lifecycle state file")
-    ] = _default_state_path(),
+    ] = DEFAULT_STATE_PATH,
     audit_path: Annotated[
         Path, typer.Option("--audit", help="Append-only audit log")
-    ] = _default_audit_path(),
+    ] = DEFAULT_AUDIT_PATH,
 ) -> None:
     """Verify and consume a permit exactly once; no network action is executed."""
     permit = load_model(permit_path, SignedExecutionPermit)
@@ -458,7 +454,7 @@ def consume_permit_command(
     console.print(f"Permit consumed: [bold]{'YES' if result.accepted else 'NO'}[/bold]")
     console.print(f"Lifecycle status: {result.lifecycle_status.value.upper()}")
     console.print(result.message)
-    console.print("Execution remains DISABLED (Milestone 1.4).")
+    console.print("Permit consumed; this command performs no network action.")
     if not result.accepted:
         raise typer.Exit(code=4)
 
@@ -469,10 +465,10 @@ def revoke_permit_command(
     reason: Annotated[str, typer.Option("--reason", help="Human-readable revocation reason")],
     state_path: Annotated[
         Path, typer.Option("--state", help="Permit lifecycle state file")
-    ] = _default_state_path(),
+    ] = DEFAULT_STATE_PATH,
     audit_path: Annotated[
         Path, typer.Option("--audit", help="Append-only audit log")
-    ] = _default_audit_path(),
+    ] = DEFAULT_AUDIT_PATH,
 ) -> None:
     """Revoke a permit before it is consumed."""
     try:
@@ -493,7 +489,7 @@ def permit_status_command(
     permit_id: Annotated[str, typer.Argument(help="Permit ID")],
     state_path: Annotated[
         Path, typer.Option("--state", help="Permit lifecycle state file")
-    ] = _default_state_path(),
+    ] = DEFAULT_STATE_PATH,
 ) -> None:
     """Show local lifecycle state for a permit."""
     console.print(permit_status(state_path, permit_id).value.upper())
@@ -513,6 +509,107 @@ def verify_audit_command(
     console.print(message)
     if not valid:
         raise typer.Exit(code=5)
+
+
+@app.command("observe-http")
+def observe_http_command(
+    permit_path: Annotated[Path, typer.Argument(help="Signed execution permit YAML")],
+    engagement_path: Annotated[Path, typer.Argument(help="Current engagement YAML")],
+    test_path: Annotated[Path, typer.Argument(help="Current test definition YAML")],
+    target: Annotated[str, typer.Option("--target", help="Exact HTTP(S) target URL")],
+    http_method: Annotated[
+        str, typer.Option("--http-method", help="Observation method: GET or HEAD")
+    ] = "GET",
+    identity: Annotated[
+        str | None, typer.Option("--identity", help="Logical identity/role")
+    ] = None,
+    requested_rps: Annotated[
+        float | None, typer.Option("--rps", help="Requested maximum request rate")
+    ] = None,
+    state_path: Annotated[
+        Path, typer.Option("--state", help="Permit lifecycle state file")
+    ] = DEFAULT_STATE_PATH,
+    audit_path: Annotated[
+        Path, typer.Option("--audit", help="Append-only audit log")
+    ] = DEFAULT_AUDIT_PATH,
+    evidence_path: Annotated[
+        Path | None,
+        typer.Option("--evidence", help="Write observation evidence JSON here"),
+    ] = None,
+    timeout_seconds: Annotated[
+        float, typer.Option("--timeout", help="Network timeout in seconds; maximum 30")
+    ] = DEFAULT_TIMEOUT_SECONDS,
+    max_body_bytes: Annotated[
+        int,
+        typer.Option(
+            "--max-body-bytes",
+            help="Maximum response body bytes captured; maximum 1048576",
+        ),
+    ] = DEFAULT_MAX_BODY_BYTES,
+) -> None:
+    """Perform one permit-gated GET/HEAD observation and write redacted evidence."""
+    permit = load_model(permit_path, SignedExecutionPermit)
+    engagement = load_model(engagement_path, Engagement)
+    test = load_model(test_path, TestDefinition)
+    _, keys = _permit_keyring()
+    output = evidence_path or (Path(".astp") / "evidence" / f"{permit.payload.permit_id}.json")
+    try:
+        result = observe_http(
+            permit,
+            engagement,
+            test,
+            keys,
+            target=target,
+            method=http_method,
+            identity=identity,
+            requested_rps=requested_rps,
+            state_path=state_path,
+            audit_path=audit_path,
+            evidence_path=output,
+            timeout_seconds=timeout_seconds,
+            max_body_bytes=max_body_bytes,
+        )
+    except ObservationError as exc:
+        console.print(f"Observation completed: [bold]NO[/bold]\n{exc}")
+        raise typer.Exit(code=6) from exc
+
+    evidence = result.evidence
+    table = Table(title="ASTP HTTP Observation")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Method", evidence.method)
+    table.add_row("Target", evidence.target)
+    table.add_row("Status", str(evidence.status_code))
+    table.add_row("Captured body", f"{evidence.body_bytes_captured} bytes")
+    table.add_row("Body truncated", "YES" if evidence.body_truncated else "NO")
+    table.add_row("Evidence hash", evidence.evidence_hash)
+    table.add_row("Evidence", str(result.evidence_path))
+    if evidence.redirect is not None:
+        table.add_row("Redirect", evidence.redirect.target)
+        table.add_row("Redirect followed", "NO")
+        table.add_row("Redirect in scope", "YES" if evidence.redirect.in_scope else "NO")
+    console.print(table)
+    console.print("Permit consumed: [bold]YES[/bold]")
+    console.print("Network execution: observation-only GET/HEAD (Milestone 2)")
+
+
+@app.command("verify-evidence")
+def verify_evidence_command(
+    evidence_path: Annotated[Path, typer.Argument(help="HTTP observation evidence JSON")],
+) -> None:
+    """Verify the canonical SHA-256 hash of stored observation evidence."""
+    try:
+        evidence = HttpObservationEvidence.model_validate_json(
+            evidence_path.read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError) as exc:
+        console.print(f"Evidence valid: [bold]NO[/bold]\n{exc}")
+        raise typer.Exit(code=7) from exc
+    valid = verify_observation_evidence(evidence)
+    console.print(f"Evidence valid: [bold]{'YES' if valid else 'NO'}[/bold]")
+    console.print(f"Evidence hash: {evidence.evidence_hash}")
+    if not valid:
+        raise typer.Exit(code=7)
 
 
 @app.command("evaluate-test")

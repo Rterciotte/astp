@@ -10,3 +10,4 @@ build/
 .env
 .vscode/settings.local.json
 .astp/
+.pytest-tmp/

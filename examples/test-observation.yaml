@@ -1,0 +1,12 @@
+id: observation.http
+title: Bounded HTTP observation
+category: observation
+risk_class: safe_active
+required_context: []
+evidence_required:
+  - response_metadata
+  - response_body_hash
+  - audit_record
+description: >-
+  Performs exactly one permit-gated observation-only HTTP GET or HEAD request and stores
+  redacted, bounded evidence. Redirects are recorded but never followed in Milestone 2.

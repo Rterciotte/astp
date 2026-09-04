@@ -3,9 +3,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from datetime import datetime, timedelta, timezone
+from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import Mapping
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -108,9 +108,7 @@ def policy_digest(engagement: Engagement, test: TestDefinition) -> str:
 def _signing_key(key: str | bytes) -> bytes:
     encoded = key.encode("utf-8") if isinstance(key, str) else key
     if len(encoded) < MIN_SIGNING_KEY_BYTES:
-        raise ValueError(
-            f"permit signing key must contain at least {MIN_SIGNING_KEY_BYTES} bytes"
-        )
+        raise ValueError(f"permit signing key must contain at least {MIN_SIGNING_KEY_BYTES} bytes")
     return encoded
 
 
@@ -142,11 +140,9 @@ def issue_execution_permit(
     if authorization.effective_max_requests_per_second is None:
         raise ValueError("authorization result is missing an effective rate limit")
     if ttl_seconds < 1 or ttl_seconds > MAX_PERMIT_TTL_SECONDS:
-        raise ValueError(
-            f"permit TTL must be between 1 and {MAX_PERMIT_TTL_SECONDS} seconds"
-        )
+        raise ValueError(f"permit TTL must be between 1 and {MAX_PERMIT_TTL_SECONDS} seconds")
 
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     payload = ExecutionPermitPayload(
         permit_id=str(uuid4()),
         key_id=key_id,
@@ -226,7 +222,7 @@ def verify_execution_permit(
         )
     )
 
-    now = request.now or datetime.now(timezone.utc)
+    now = request.now or datetime.now(UTC)
     if now < permit.payload.issued_at or now >= permit.payload.expires_at:
         checks.append(
             PermitCheck(

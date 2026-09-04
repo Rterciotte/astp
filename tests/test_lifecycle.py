@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from astp.authorization import AuthorizationRequest
@@ -16,13 +16,15 @@ from astp.models import (
     ScopeKind,
     ScopePolicy,
     ScopeRule,
+)
+from astp.models import (
     TestDefinition as SecurityTestDefinition,
 )
 from astp.permits import PermitVerificationRequest, issue_execution_permit, verify_execution_permit
 
 KEY_V1 = "a" * 32
 KEY_V2 = "b" * 32
-NOW = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 4, 12, 0, tzinfo=UTC)
 
 
 def engagement() -> Engagement:

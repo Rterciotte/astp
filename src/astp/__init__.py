@@ -1,3 +1,3 @@
-"""ASTP milestone 0: policy-first planning foundation."""
+"""ASTP — Autonomous Security Testing Platform."""
 
-__version__ = "0.1.0"
+__version__ = "0.7.0"

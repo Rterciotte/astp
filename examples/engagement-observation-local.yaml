@@ -1,0 +1,19 @@
+id: local-observation-example
+name: Local Observation Example
+scope:
+  allowed:
+    - kind: domain
+      value: 127.0.0.1
+  denied: []
+  approval_required: []
+methods:
+  passive: allow
+  safe_active: allow
+  state_changing: approval_required
+  intrusive: deny
+constraints:
+  max_requests_per_second: 2
+  no_dos: true
+  no_social_engineering: true
+  no_data_destruction: true
+  assets: []

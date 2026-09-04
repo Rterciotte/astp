@@ -6,44 +6,32 @@ Milestones 0 through 1.4 establish conservative scope compilation, granular auth
 approvals, signed execution permits, replay protection, revocation, key IDs for rotation, and a
 hash-linked local audit trail.
 
-## Milestone 2 — First non-offensive HTTP observation worker
+Milestone 2 adds the first permit-gated network component: a one-request HTTP observation worker for
+`GET` and `HEAD`. It consumes a valid permit before connecting, never follows redirects, bounds
+network timeout and captured body size, redacts common secrets, writes hashed evidence, and records
+execution outcomes in the audit chain.
 
-The next milestone can introduce the first network-capable component, but only for observation. The
-worker contract is:
+## Milestone 2.1 — Observation hardening and Evidence Store v0.1
 
-```text
-receive exact action + permit
-    -> verify permit signature/key ID/freshness/current policy
-    -> check revocation and atomically consume permit
-    -> enforce exact target + HTTP method + identity + rate
-    -> perform one observation-only HTTP request
-    -> normalize response metadata
-    -> store evidence
-    -> append execution outcome to audit trail
-```
+Before adding scanners or a browser worker, strengthen the observation contract:
 
-The first worker must not perform exploitation, state-changing mutations, credential attacks,
-fuzzing, crawling, scanner orchestration, or arbitrary shell execution.
-
-### Milestone 2 hard requirements
-
-1. explicit `ObservationRequest` and `ObservationResult` schemas;
-2. strict URL canonicalization and redirect policy;
-3. deny redirects that escape the authorized target boundary;
-4. request timeout and response-size caps;
-5. rate limiter enforced by the worker, not trusted from the caller;
-6. sensitive-header/body redaction before evidence persistence;
-7. evidence IDs and content hashes;
-8. deterministic mock-server integration tests;
-9. no direct Planner/LLM-to-network path;
-10. permit is consumed before the network side effect.
+1. canonical action identifiers without unsafe path/query normalization;
+2. durable per-target rate limiting across multiple permits;
+3. explicit evidence IDs and an indexed evidence manifest;
+4. evidence integrity verification over manifests and artifacts;
+5. configurable redaction policy and sensitivity labels;
+6. optional encrypted raw artifact storage for engagements that explicitly require it;
+7. deterministic DNS/connection metadata capture without expanding scope;
+8. explicit redirect authorization model if same-origin redirects become necessary;
+9. failure evidence for timeout/TLS/DNS cases without leaking secrets;
+10. interface boundary separating policy service, verifier, worker, and evidence store.
 
 ## Later milestones
 
-After the worker contract is stable: browser observation, context graph, evidence store, external
-scanner adapters, finding correlation, risk prioritization, proof validation, reporting, retest,
-white-box analysis, mobile analysis, and planner/LLM orchestration behind the same policy and permit
-boundary.
+After the worker/evidence contract is stable: browser observation, context graph, external scanner
+adapters, unified finding schema, finding correlation, proof validation, CVSS 4 + EPSS + KEV risk
+prioritization, reporting, retest, white-box analysis, mobile analysis, and planner/LLM orchestration
+behind the same policy and permit boundary.
 
-Before distributed workers, replace HMAC with asymmetric signatures and move lifecycle state/audit
-to transactional and independently protected storage.
+Before distributed workers, replace shared-secret HMAC permits with asymmetric signatures and move
+lifecycle state/audit to transactional and independently protected storage.

@@ -3,10 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+from collections.abc import Mapping
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -82,6 +84,35 @@ def _write_state(path: Path, state: PermitState) -> None:
     os.replace(temporary, path)
 
 
+@contextmanager
+def _file_lock(resource_path: Path):
+    lock_path = resource_path.with_name(f"{resource_path.name}.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as handle:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"0")
+            handle.flush()
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def permit_status(path: Path, permit_id: str) -> PermitLifecycleStatus:
     entry = _load_state(path).permits.get(permit_id)
     return entry.status if entry else PermitLifecycleStatus.AVAILABLE
@@ -94,19 +125,20 @@ def revoke_permit(
     reason: str,
     now: datetime | None = None,
 ) -> PermitStateEntry:
-    current = now or datetime.now(timezone.utc)
-    state = _load_state(state_path)
-    existing = state.permits.get(permit_id)
-    if existing and existing.status == PermitLifecycleStatus.CONSUMED:
-        raise ValueError("a consumed permit cannot be retroactively revoked")
-    entry = PermitStateEntry(
-        status=PermitLifecycleStatus.REVOKED,
-        updated_at=current,
-        reason=reason,
-    )
-    state.permits[permit_id] = entry
-    _write_state(state_path, state)
-    return entry
+    current = now or datetime.now(UTC)
+    with _file_lock(state_path):
+        state = _load_state(state_path)
+        existing = state.permits.get(permit_id)
+        if existing and existing.status == PermitLifecycleStatus.CONSUMED:
+            raise ValueError("a consumed permit cannot be retroactively revoked")
+        entry = PermitStateEntry(
+            status=PermitLifecycleStatus.REVOKED,
+            updated_at=current,
+            reason=reason,
+        )
+        state.permits[permit_id] = entry
+        _write_state(state_path, state)
+        return entry
 
 
 def _consume_state(
@@ -115,20 +147,21 @@ def _consume_state(
     *,
     now: datetime,
 ) -> PermitStateEntry:
-    state = _load_state(state_path)
-    existing = state.permits.get(permit_id)
-    if existing is not None:
-        if existing.status == PermitLifecycleStatus.REVOKED:
-            raise ValueError("permit has been revoked")
-        if existing.status == PermitLifecycleStatus.CONSUMED:
-            raise ValueError("permit has already been consumed")
-    entry = PermitStateEntry(
-        status=PermitLifecycleStatus.CONSUMED,
-        updated_at=now,
-    )
-    state.permits[permit_id] = entry
-    _write_state(state_path, state)
-    return entry
+    with _file_lock(state_path):
+        state = _load_state(state_path)
+        existing = state.permits.get(permit_id)
+        if existing is not None:
+            if existing.status == PermitLifecycleStatus.REVOKED:
+                raise ValueError("permit has been revoked")
+            if existing.status == PermitLifecycleStatus.CONSUMED:
+                raise ValueError("permit has already been consumed")
+        entry = PermitStateEntry(
+            status=PermitLifecycleStatus.CONSUMED,
+            updated_at=now,
+        )
+        state.permits[permit_id] = entry
+        _write_state(state_path, state)
+        return entry
 
 
 def consume_execution_permit(
@@ -170,7 +203,7 @@ def consume_execution_permit(
             message="Permit verification failed; permit was not consumed.",
         )
 
-    now = request.now or datetime.now(timezone.utc)
+    now = request.now or datetime.now(UTC)
     try:
         entry = _consume_state(state_path, permit.payload.permit_id, now=now)
     except ValueError as exc:
@@ -215,28 +248,29 @@ def append_audit_event(
     details: dict[str, Any] | None = None,
     now: datetime | None = None,
 ) -> AuditRecord:
-    records = _read_audit_records(path)
-    previous_hash = records[-1].record_hash if records else GENESIS_HASH
-    sequence = records[-1].sequence + 1 if records else 1
-    timestamp = now or datetime.now(timezone.utc)
-    unsigned_record = AuditRecord(
-        schema_version=AUDIT_SCHEMA_VERSION,
-        sequence=sequence,
-        timestamp=timestamp,
-        event=event,
-        permit_id=permit_id,
-        details=details or {},
-        previous_hash=previous_hash,
-        record_hash="pending",
-    )
-    unsigned = unsigned_record.model_dump(mode="json", exclude={"record_hash"})
-    record = unsigned_record.model_copy(update={"record_hash": _audit_hash(unsigned)})
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8", newline="\n") as handle:
-        handle.write(json.dumps(record.model_dump(mode="json"), sort_keys=True) + "\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-    return record
+    with _file_lock(path):
+        records = _read_audit_records(path)
+        previous_hash = records[-1].record_hash if records else GENESIS_HASH
+        sequence = records[-1].sequence + 1 if records else 1
+        timestamp = now or datetime.now(UTC)
+        unsigned_record = AuditRecord(
+            schema_version=AUDIT_SCHEMA_VERSION,
+            sequence=sequence,
+            timestamp=timestamp,
+            event=event,
+            permit_id=permit_id,
+            details=details or {},
+            previous_hash=previous_hash,
+            record_hash="pending",
+        )
+        unsigned = unsigned_record.model_dump(mode="json", exclude={"record_hash"})
+        record = unsigned_record.model_copy(update={"record_hash": _audit_hash(unsigned)})
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(record.model_dump(mode="json"), sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        return record
 
 
 def verify_audit_chain(path: Path) -> tuple[bool, str]:

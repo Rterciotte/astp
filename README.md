@@ -1,8 +1,15 @@
 # ASTP — Autonomous Security Testing Platform
 
-ASTP is a policy-first foundation for authorized security testing automation. Milestone 1.4 adds
-single-use permit consumption, revocation, key rotation IDs, and a tamper-evident local audit chain.
-No scanner, HTTP request engine, or offensive execution is implemented yet.
+ASTP is a policy-first platform for authorized security testing automation. Milestones 0 through 1.4
+established conservative scope compilation, granular authorization, bounded approvals, signed
+single-use execution permits, revocation, key rotation IDs, and a tamper-evident local audit chain.
+
+**Milestone 2 adds the first real network-capable component:** a tightly bounded HTTP observation
+worker that can perform exactly one permit-gated `GET` or `HEAD` request and persist redacted,
+hash-verifiable evidence.
+
+It is not a scanner and does not perform exploitation, fuzzing, crawling, credential attacks, state
+changes, arbitrary shell execution, or unrestricted autonomous networking.
 
 ## Windows quick start
 
@@ -16,7 +23,12 @@ black .
 pytest
 ```
 
-## Permit secret — existing setup still works
+The project config uses `.pytest-tmp` as pytest's base temp directory to avoid Windows `%TEMP%`
+permission problems observed during M1.4 validation.
+
+## Permit key
+
+Your existing local configuration continues to work:
 
 ```powershell
 $env:ASTP_PERMIT_KEY = [Environment]::GetEnvironmentVariable(
@@ -25,7 +37,7 @@ $env:ASTP_PERMIT_KEY = [Environment]::GetEnvironmentVariable(
 )
 ```
 
-Optionally identify this key explicitly:
+Optionally identify the key explicitly:
 
 ```powershell
 $env:ASTP_PERMIT_ACTIVE_KEY_ID = "local-v1"
@@ -33,60 +45,93 @@ $env:ASTP_PERMIT_ACTIVE_KEY_ID = "local-v1"
 
 See `docs/PERMIT_LIFECYCLE.md` before rotating keys.
 
-## Issue a permit
+## Safe local M2 demonstration
+
+Use the included loopback-only HTTP server so the first network test does not touch an external
+system.
+
+Terminal 1:
+
+```powershell
+python .\examples\observation_server.py
+```
+
+It listens on:
+
+```text
+http://127.0.0.1:8765
+```
+
+Terminal 2 — issue a permit bound to one exact GET:
 
 ```powershell
 astp issue-permit `
-    .\examples\engagement-granular.yaml `
-    .\examples\test-idor.yaml `
-    --target https://api.example.com/v1/users/123 `
-    --context authenticated_identity `
-    --context foreign_object_identifier `
+    .\examples\engagement-observation-local.yaml `
+    .\examples\test-observation.yaml `
+    --target http://127.0.0.1:8765/ `
     --http-method GET `
-    --identity researcher `
     --rps 1 `
-    --output .\examples\execution-permit.yaml
+    --output .\examples\observation-permit.yaml
 ```
 
-Issuance reruns authorization internally and records `permit.issued` in `.astp/audit.jsonl`.
-
-## Verify without consuming
+Then execute the observation:
 
 ```powershell
-astp verify-permit `
-    .\examples\execution-permit.yaml `
-    .\examples\engagement-granular.yaml `
-    .\examples\test-idor.yaml `
-    --target https://api.example.com/v1/users/123 `
+astp observe-http `
+    .\examples\observation-permit.yaml `
+    .\examples\engagement-observation-local.yaml `
+    .\examples\test-observation.yaml `
+    --target http://127.0.0.1:8765/ `
     --http-method GET `
-    --identity researcher `
     --rps 1
 ```
 
-## Consume exactly once
+Expected high-level result:
 
-```powershell
-astp consume-permit `
-    .\examples\execution-permit.yaml `
-    .\examples\engagement-granular.yaml `
-    .\examples\test-idor.yaml `
-    --target https://api.example.com/v1/users/123 `
-    --http-method GET `
-    --identity researcher `
-    --rps 1
+```text
+status: 200
+permit consumed: YES
+evidence: .astp/evidence/<permit-id>.json
+network execution: observation-only GET/HEAD
 ```
 
-The first call should succeed. Repeating it should be rejected as replay. This command still makes
-no network request.
+Run the exact same `observe-http` command again and replay protection should reject it before a
+second network request is made.
 
-## Revoke and audit
+## Verify evidence and audit
 
 ```powershell
+astp verify-evidence .\.astp\evidence\PERMIT_ID.json
+astp verify-audit .\.astp\audit.jsonl
+```
+
+Both should report `YES` for untampered data.
+
+## Redirect behavior
+
+Milestone 2 follows **zero redirects**. A `3xx` `Location` is recorded, resolved, redacted, and
+classified as in-scope or out-of-scope, but no second request is sent. This deliberately prevents
+redirect-driven scope escape.
+
+To test this safely, issue a separate permit for:
+
+```text
+http://127.0.0.1:8765/redirect
+```
+
+The local server returns an external redirect, which ASTP records but never follows.
+
+## Existing permit lifecycle commands
+
+```powershell
+astp verify-permit ...
+astp consume-permit ...
 astp revoke-permit PERMIT_ID --reason "scope changed"
 astp permit-status PERMIT_ID
 astp verify-audit .\.astp\audit.jsonl
 ```
 
-Local lifecycle data under `.astp/` is intentionally excluded from Git.
+Local lifecycle/evidence data under `.astp/` is intentionally excluded from Git.
 
-See `docs/PERMIT_LIFECYCLE.md`, `docs/EXECUTION_PERMITS.md`, and `docs/NEXT_STEPS.md`.
+See `docs/HTTP_OBSERVATION_WORKER.md`, `docs/PERMIT_LIFECYCLE.md`,
+`docs/EXECUTION_PERMITS.md`, and `docs/NEXT_STEPS.md`.

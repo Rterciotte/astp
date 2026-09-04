@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -11,6 +11,8 @@ from astp.models import (
     ScopeKind,
     ScopePolicy,
     ScopeRule,
+)
+from astp.models import (
     TestDefinition as SecurityTestDefinition,
 )
 from astp.permits import (
@@ -22,16 +24,14 @@ from astp.permits import (
 )
 
 KEY = "k" * 32
-NOW = datetime(2026, 8, 28, 21, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 28, 21, 0, tzinfo=UTC)
 
 
 def engagement() -> Engagement:
     return Engagement(
         id="e1",
         name="Permit test",
-        scope=ScopePolicy(
-            allowed=[ScopeRule(kind=ScopeKind.DOMAIN, value="api.example.com")]
-        ),
+        scope=ScopePolicy(allowed=[ScopeRule(kind=ScopeKind.DOMAIN, value="api.example.com")]),
         constraints=Constraints(max_requests_per_second=2),
     )
 
@@ -99,9 +99,7 @@ def test_valid_permit_verifies() -> None:
 def test_permit_cannot_be_issued_after_denial() -> None:
     current_engagement = engagement()
     current_test = make_test()
-    request = authorized_request().model_copy(
-        update={"target": "https://outside.example.net"}
-    )
+    request = authorized_request().model_copy(update={"target": "https://outside.example.net"})
     result = authorize_test(current_engagement, current_test, request)
     assert result.decision == Decision.DENY
     with pytest.raises(ValueError, match="ALLOW"):

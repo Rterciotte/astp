@@ -3,9 +3,7 @@ from astp.scope_compiler import CompilationStatus, compile_scope_text
 
 
 def test_compiles_explicit_allow_and_exception() -> None:
-    result = compile_scope_text(
-        "*.example.com is in scope except payments.example.com."
-    )
+    result = compile_scope_text("*.example.com is in scope except payments.example.com.")
 
     assert result.status == CompilationStatus.CLEAN
     assert [(rule.kind, rule.value) for rule in result.engagement.scope.allowed] == [
@@ -58,9 +56,7 @@ def test_target_without_scope_cue_requires_review() -> None:
 
 
 def test_explicit_out_of_scope_is_denied() -> None:
-    result = compile_scope_text(
-        "example.com is in scope. legacy.example.com is out of scope."
-    )
+    result = compile_scope_text("example.com is in scope. legacy.example.com is out of scope.")
 
     assert result.engagement.scope.denied[0].value == "legacy.example.com"
 
