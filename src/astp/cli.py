@@ -8,7 +8,9 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from astp.adapter_registry import builtin_adapter_registry, ensure_adapter_compatible
 from astp.authorization import AuthorizationRequest, authorize_test
+from astp.autonomy_session import prepare_autonomy_session
 from astp.browser_intake import capture_to_text, load_capture
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
@@ -43,6 +45,7 @@ from astp.observation import (
     observe_http,
     verify_observation_evidence,
 )
+from astp.permit_broker import broker_queue_item_permit
 from astp.permits import (
     DEFAULT_PERMIT_TTL_SECONDS,
     PermitVerificationRequest,
@@ -51,6 +54,8 @@ from astp.permits import (
     verify_execution_permit,
 )
 from astp.planner import ObservationPlan, build_observation_plan
+from astp.planner_state import get_planner_state, initialize_planner_state
+from astp.prioritization import prioritize_registry
 from astp.program_catalog import (
     BugBountyWorkspace,
     ProgramSyncStatus,
@@ -69,9 +74,12 @@ from astp.program_models import BugBountyProgram
 from astp.program_runtime import create_operational_attestation
 from astp.program_server import serve_program_intake
 from astp.reporting import render_markdown_report
+from astp.result_interpreter import interpret_observation
 from astp.runtime_state import revoke_runtime_permit, runtime_permit_status
 from astp.scope_compiler import CompilationStatus, compile_scope_file
 from astp.security_graph import build_security_graph
+from astp.session_budget import SessionBudget
+from astp.surface_mapper import build_surface_map
 from astp.target_discovery import discover_targets_from_evidence
 from astp.target_registry import (
     TargetRegistry,
@@ -80,12 +88,14 @@ from astp.target_registry import (
     save_registry,
 )
 from astp.test_dsl import SecurityTestDefinition
+from astp.web_posture import analyze_http_posture
 from astp.work_queue import build_fair_work_queue
 
 app = typer.Typer(
     help=(
         "ASTP policy-first security testing platform. "
-        "M3 adds policy-gated discovery, planning, evidence correlation, and reporting."
+        "M4 adds permit brokering, durable planning, bounded surface analysis, "
+        "and proof guardrails."
     )
 )
 console = Console()
@@ -1482,6 +1492,240 @@ def render_report_command(
     console.print(f"Findings: {len(findings.findings)}")
     console.print(f"Report written to: {output}")
     console.print("Retest entries are plans only; each execution still requires a fresh permit.")
+
+
+@app.command("broker-permit")
+def broker_permit_command(
+    queue_path: Annotated[Path, typer.Argument(help="Work queue YAML")],
+    queue_id: Annotated[str, typer.Option("--queue-id", help="Queue item ID")],
+    engagement_path: Annotated[Path, typer.Argument(help="Current engagement YAML")],
+    test_path: Annotated[Path, typer.Argument(help="Current test definition YAML")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write signed permit YAML")],
+    program_status_attestation: Annotated[
+        Path | None,
+        typer.Option("--program-status-attestation", help="Fresh program-status attestation YAML"),
+    ] = None,
+    semantic_clear: Annotated[
+        list[str] | None,
+        typer.Option("--semantic-clear", help="Semantic exclusion reviewed clear; repeatable"),
+    ] = None,
+    requested_rps: Annotated[float | None, typer.Option("--rps", help="Requested rate")] = None,
+    ttl_seconds: Annotated[int, typer.Option("--ttl-seconds", help="Permit lifetime")] = 120,
+) -> None:
+    """Re-authorize one queued action and issue one permit; never execute it."""
+    from astp.work_queue import WorkQueue
+
+    queue = load_model(queue_path, WorkQueue)
+    item = next((row for row in queue.items if row.queue_id == queue_id), None)
+    if item is None:
+        raise typer.BadParameter(f"unknown queue item: {queue_id}")
+    engagement = load_model(engagement_path, Engagement)
+    test = load_model(test_path, TestDefinition)
+    attestation = (
+        load_model(program_status_attestation, ProgramOperationalAttestation)
+        if program_status_attestation is not None
+        else None
+    )
+    active_key_id, keys = _permit_keyring()
+    try:
+        receipt = broker_queue_item_permit(
+            item,
+            engagement,
+            test,
+            keys[active_key_id],
+            key_id=active_key_id,
+            ttl_seconds=ttl_seconds,
+            operational_attestation=attestation,
+            semantic_exclusion_clears=set(semantic_clear or []),
+            requested_rps=requested_rps,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    dump_yaml(receipt.permit, output)
+    console.print("Permit broker: ISSUED")
+    console.print(f"Queue item: {receipt.queue_id}")
+    console.print(f"Permit ID: {receipt.permit.payload.permit_id}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("init-planner-state")
+def init_planner_state_command(
+    queue_path: Annotated[Path, typer.Argument(help="Work queue YAML")],
+    state_db: Annotated[Path, typer.Option("--state-db", help="Planner state SQLite DB")] = Path(
+        ".astp"
+    )
+    / "planner.db",
+) -> None:
+    """Initialize durable planner state from a work queue."""
+    from astp.work_queue import WorkQueue
+
+    queue = load_model(queue_path, WorkQueue)
+    initialize_planner_state(state_db, queue)
+    console.print(f"Planner state initialized: {len(queue.items)} item(s)")
+    console.print(f"State DB: {state_db}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("planner-item-status")
+def planner_item_status_command(
+    queue_id: Annotated[str, typer.Argument(help="Queue item ID")],
+    state_db: Annotated[Path, typer.Option("--state-db", help="Planner state SQLite DB")] = Path(
+        ".astp"
+    )
+    / "planner.db",
+) -> None:
+    """Show durable planner state for one queue item."""
+    try:
+        entry = get_planner_state(state_db, queue_id)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    console.print(f"{entry.queue_id}: {entry.state.value.upper()}")
+    console.print(f"Attempts: {entry.attempts}")
+    console.print(f"Permit ID: {entry.permit_id or 'none'}")
+    console.print(f"Evidence ID: {entry.evidence_id or 'none'}")
+
+
+@app.command("interpret-observation")
+def interpret_observation_command(
+    evidence_path: Annotated[Path, typer.Argument(help="HTTP observation evidence JSON")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write interpretation YAML")],
+) -> None:
+    """Interpret stored evidence into conservative signals; no requests are made."""
+    evidence = HttpObservationEvidence.model_validate_json(
+        evidence_path.read_text(encoding="utf-8")
+    )
+    result = interpret_observation(evidence)
+    dump_yaml(result, output)
+    console.print(f"Signals: {len(result.signals)}")
+    console.print(f"Surface expansion suggested: {'YES' if result.should_expand_surface else 'NO'}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("map-surface")
+def map_surface_command(
+    registry_path: Annotated[Path, typer.Argument(help="Target registry YAML")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write surface map YAML")],
+    max_endpoints: Annotated[int, typer.Option("--max-endpoints", help="Hard endpoint cap")] = 250,
+) -> None:
+    """Build a bounded route map from already-discovered targets."""
+    registry = load_model(registry_path, TargetRegistry)
+    try:
+        result = build_surface_map(registry, max_endpoints=max_endpoints)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    dump_yaml(result, output)
+    console.print(f"Surface endpoints: {len(result.endpoints)}")
+    console.print(f"Truncated: {'YES' if result.truncated else 'NO'}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("show-adapters")
+def show_adapters_command() -> None:
+    """Display registered execution adapters and their safety contracts."""
+    registry = builtin_adapter_registry()
+    table = Table(title="ASTP Adapter Registry")
+    table.add_column("Adapter")
+    table.add_column("Network")
+    table.add_column("Permit required")
+    table.add_column("State changing")
+    for adapter in registry.adapters:
+        table.add_row(
+            adapter.id,
+            "YES" if adapter.network_capable else "NO",
+            "YES" if adapter.requires_execution_permit else "NO",
+            "YES" if adapter.state_changing else "NO",
+        )
+    console.print(table)
+
+
+@app.command("check-adapter")
+def check_adapter_command(
+    dsl_path: Annotated[Path, typer.Argument(help="Security Test DSL YAML")],
+    adapter_id: Annotated[
+        str, typer.Option("--adapter", help="Adapter ID")
+    ] = "http.observation.v1",
+) -> None:
+    """Validate DSL-to-adapter compatibility without execution."""
+    definition = load_model(dsl_path, SecurityTestDefinition)
+    registry = builtin_adapter_registry()
+    try:
+        ensure_adapter_compatible(registry.get(adapter_id), definition)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    console.print("Adapter compatible: YES")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("prepare-autonomy-session")
+def prepare_autonomy_session_command(
+    queue_path: Annotated[Path, typer.Argument(help="Work queue YAML")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write session plan YAML")],
+    max_actions: Annotated[int, typer.Option("--max-actions", help="Action budget")] = 20,
+    max_requests: Annotated[int, typer.Option("--max-requests", help="Request budget")] = 20,
+    max_errors: Annotated[int, typer.Option("--max-errors", help="Error budget")] = 3,
+    max_seconds: Annotated[int, typer.Option("--max-seconds", help="Wall-clock budget")] = 900,
+    max_depth: Annotated[int, typer.Option("--max-depth", help="Discovery depth budget")] = 3,
+) -> None:
+    """Prepare a bounded autonomy session plan; execution remains disabled."""
+    from astp.work_queue import WorkQueue
+
+    queue = load_model(queue_path, WorkQueue)
+    budget = SessionBudget(
+        max_actions=max_actions,
+        max_requests=max_requests,
+        max_errors=max_errors,
+        max_wall_clock_seconds=max_seconds,
+        max_discovery_depth=max_depth,
+    )
+    plan = prepare_autonomy_session(queue, budget)
+    dump_yaml(plan, output)
+    console.print(f"Prepared items: {len(plan.items)}")
+    console.print(f"Budget allows session: {'YES' if plan.budget_decision.allowed else 'NO'}")
+    console.print("Execution enabled: NO")
+    console.print("Every network action still requires a fresh permit.")
+    console.print(f"Written to: {output}")
+
+
+@app.command("prioritize-targets")
+def prioritize_targets_command(
+    registry_path: Annotated[Path, typer.Argument(help="Target registry YAML")],
+    output: Annotated[
+        Path | None, typer.Option("--output", "-o", help="Optional YAML output")
+    ] = None,
+) -> None:
+    """Rank already-discovered targets using deterministic non-exploit heuristics."""
+    registry = load_model(registry_path, TargetRegistry)
+    rows = prioritize_registry(registry)
+    table = Table(title="ASTP Surface Priorities")
+    table.add_column("Score", justify="right")
+    table.add_column("Target")
+    for row in rows:
+        table.add_row(str(row.score), row.target)
+    console.print(table)
+    if output is not None:
+        dump_yaml({"targets": [row.model_dump(mode="json") for row in rows]}, output)
+        console.print(f"Written to: {output}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("analyze-web-posture")
+def analyze_web_posture_command(
+    evidence_path: Annotated[Path, typer.Argument(help="HTTP observation evidence JSON")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write posture assessment YAML")],
+) -> None:
+    """Analyze already-collected HTTP headers; signals are not confirmed vulnerabilities."""
+    evidence = HttpObservationEvidence.model_validate_json(
+        evidence_path.read_text(encoding="utf-8")
+    )
+    result = analyze_http_posture(evidence)
+    dump_yaml(result, output)
+    console.print(f"Signals: {len(result.signals)}")
+    console.print("Confirmed vulnerabilities: 0")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
 
 
 @app.command("evaluate-test")

@@ -307,3 +307,8 @@ astp build-hypotheses .\.astp\security-graph.yaml `
 
 See `docs/M2_7_REDIRECT_SAFE_TARGET_EXPANSION.md` through
 `docs/M3_6_REPORTING_RETEST.md` and `docs/NEXT_STEPS.md`.
+
+
+## M3.7–M4.6 control-plane expansion
+
+See `RELEASE_NOTES_M3_7_M4_6.md` for the permit broker, durable planner state, result interpreter, bounded surface mapper, adapter registry, proof-verifier contracts, autonomy-session preparation, budgets, prioritization, and safe web-posture analysis.
