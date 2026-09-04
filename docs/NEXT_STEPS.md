@@ -1,127 +1,36 @@
-# ASTP next steps
+# ASTP Next Steps
 
-## Completed foundation
+Current cumulative release: **v0.23.0 / M3.6**.
 
-Milestones 0 through 1.4 establish conservative scope compilation, granular authorization, bounded
-approvals, signed execution permits, replay protection, revocation, key IDs for rotation, and a
-hash-linked local audit trail.
+Completed control-plane progression:
 
-Milestone 2 adds the first permit-gated network component: a one-request HTTP observation worker for
-`GET` and `HEAD`.
+```text
+M2.6 program runtime gates
+M2.7 redirect-safe target candidates
+M2.8 evidence-derived link discovery
+M2.9 target registry + provenance
+M3.0 deterministic observation planner
+M3.1 fair multi-program work queue
+M3.2 Security Test DSL v0.1
+M3.3 security graph v0.1
+M3.4 hypothesis graph v0.1
+M3.5 proof states + finding correlation
+M3.6 evidence report + retest plan
+```
 
-Milestone 2.1 adds canonical action identities, durable local per-target rate state, explicit
-evidence IDs/sensitivity labels, and a hash-linked evidence manifest with artifact integrity checks.
+Recommended next implementation block:
 
-Milestone 2.2 adds a transport interface, DNS/connection provenance, a bounded transport-failure
-taxonomy, and structured failure evidence.
+1. **M3.7 Permit Broker** — convert selected `authorizable` plan items into explicit operator-reviewed permit issuance requests; never bulk-sign silently.
+2. **M3.8 Durable Planner State** — persist plan/hypothesis transitions transactionally and make crash recovery deterministic.
+3. **M3.9 Observation Result Interpreter** — feed status/headers/content metadata back into the graph without vulnerability claims.
+4. **M3.10 Bounded Surface Mapper** — configurable breadth/depth budgets, still one permit per network action and respecting program rate limits.
+5. **M3.11 Adapter Registry v0.1** — declarative external-tool capabilities before any scanner integration.
+6. **M3.12 Proof Verifier Contracts** — test-specific proof requirements and reproducibility checks.
 
-Milestone 2.3 binds connections to the addresses resolved for the authorized hostname, preserves TLS
-hostname verification, adds engagement-specific redaction profiles, marks redirects as distinct
-actions requiring new permits, and adds portable evidence bundles with verifiable receipts.
+The invariant remains:
 
-Milestone 2.4 introduces a local SQLite runtime for transactional worker admission, atomically
-combines replay/lifecycle state with rate admission, adds explicit worker capability declarations,
-and formalizes worker/admission/evidence dependency protocols. The CLI HTTP worker uses this runtime
-by default while the older JSON lifecycle path remains available for compatibility.
+```text
+Planner -> Policy evaluation -> Execution permit -> Adapter/worker -> Evidence
+```
 
-## Milestone 2.5 — Durable evidence and execution receipts
-
-1. execution-attempt IDs distinct from permits and evidence IDs;
-2. durable execution receipts covering admission, transport result, and evidence registration;
-3. recoverable evidence registration after a post-network process interruption;
-4. explicit evidence-store adapter implementation behind the M2.4 protocol;
-5. SQLite migrations and runtime health/introspection commands;
-6. adversarial crash-boundary tests before browser execution is introduced.
-
-## CTF track
-
-When CTF implementation begins, update the complete project documentation—not only the CTF roadmap—
-so README, architecture, security boundaries, terminology, CLI documentation, and milestone roadmap
-all describe CTF mode consistently.
-
-The first CTF implementation should define the challenge contract and isolated solver SDK described
-in `CTF_MODE_ROADMAP.md`: artifact classification, flag-format validation, solve traces, and
-reproducible retired/local challenges before category-specific autonomous solvers.
-
-## Later milestones
-
-Browser observation, context graph, external scanner adapters, unified finding schema, finding
-correlation, proof validation, CVSS 4 + EPSS + KEV risk prioritization, reporting, retest,
-white-box analysis, mobile analysis, and planner/LLM orchestration behind the same policy and permit
-boundary.
-
-Before distributed workers, replace shared-secret HMAC permits with asymmetric signatures and move
-lifecycle/rate/audit state to transactional and independently protected storage.
-
-## M2.5 completed — Bug Bounty Program Intake
-
-- First-class `BugBountyProgram` model.
-- Authenticated-browser intake is the preferred source path.
-- Manifest V3 Browser Companion uses explicit `activeTab` access and loopback token auth.
-- Deterministic scope/policy extraction preserves source provenance.
-- Broad/qualitative rules become review issues rather than implicit permission.
-- `compile-program` blocks executable engagement creation while blocking issues remain.
-- Smart Fit / BugHunt fixture added as the first real-program intake case.
-
-### M2.6 candidate — Program Review + Dynamic Operational Gates
-
-1. Explicit review-resolution records instead of editing `issues` manually.
-2. Program revision/diff model and policy snapshot history.
-3. Runtime gate for ONLINE/OFFLINE program state.
-4. Recommended HTTP identity metadata such as program User-Agent.
-5. Program-specific excluded finding taxonomy.
-6. First controlled Smart Fit field trial using only the existing GET/HEAD worker.
-
-CTF documentation is intentionally not globally rewritten yet. The previously agreed full
-CTF documentation update occurs when CTF implementation begins, not during intake work.
-
-
-## M2.5.1 completed — Authenticated Program Discovery & Catalog
-
-- Program-listing classification and same-origin candidate discovery.
-- Sequential authenticated detail-page synchronization through the user's browser session.
-- Persistent `BugBountyWorkspace` catalog with raw capture and normalized-program references.
-- CLI catalog view and multi-program active selection.
-- Plain-text DOM section parsing and automatic output-directory creation.
-
-Next architectural block: target Browser/Discovery Worker. Multi-program target execution remains
-deferred until worker scheduling can preserve independent engagement/policy/permit boundaries.
-
-## M2.5.2 completed — Browser/Server Protocol Hardening
-
-The first real authenticated BugHunt field trial exposed a browser-extension integration failure.
-M2.5.2 adds protocol health negotiation, visible server logs, JSON errors, a two-step host
-permission/discovery flow, persisted session progress, and end-to-end loopback HTTP tests.
-
-Before M2.6, repeat the real BugHunt catalog synchronization and inspect any platform-specific
-candidate-link or SPA-rendering failures that remain.
-
-## M2.5.3 completed — Policy Review & Parser Correctness
-
-M2.5.3 closes parser correctness findings from the first authenticated Smart Fit field trial:
-constraint false positives, provenance section drift, constraint deduplication, capture timestamp
-propagation, stable program identity, source-supported finding exclusions, and explicit policy
-review. The next field step is to re-sync Smart Fit, inspect the regenerated policy, and resolve
-only those blocking issues for which the operator can provide safe explicit mappings. Target-side
-M2.6 work remains downstream of a READY engagement.
-
-
-## M2.5.4 completed — Semantic Exclusion Guardrails
-
-Broad organization/product/asset exclusions now remain semantic deny guardrails instead of being
-considered resolved by an incomplete hostname list. Authorization requires explicit per-target
-classification against each guardrail.
-
-## M2.6 completed — Program Runtime Gates & Field-Ready Compilation
-
-- Compiled engagements preserve the bug-bounty program revision and operational metadata.
-- Online-only policies require a fresh revision-bound status attestation.
-- OFFLINE is a hard DENY; missing/stale/unknown status is INSUFFICIENT_CONTEXT.
-- Permit lifetime is capped by the attestation lifetime and permit schema v3 records its ID.
-- The GET/HEAD observation worker uses the program-recommended User-Agent when available.
-
-Next field checkpoint: compile the reviewed Smart Fit program, create a fresh ONLINE attestation only
-after confirming the program is currently online in the authenticated BugHunt UI, then run
-authorization against one explicitly in-scope target with every semantic guardrail assessed. Only
-after that dry authorization passes should a single GET/HEAD permit be issued for the controlled
-field trial. Target crawling/browser discovery remains a later milestone.
+No planner, hypothesis, queue, DSL, graph, or report object is an execution capability.

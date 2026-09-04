@@ -255,3 +255,55 @@ astp review-program <PROGRAM_ID> --issue 1 --semantic-deny "product_family=Unive
 astp review-program <PROGRAM_ID> --issue 2 --semantic-deny "organization_family=ASAP"
 astp review-program <PROGRAM_ID> --issue 3 --semantic-deny "asset_family=Smart Fit gym totem systems"
 ```
+
+## M2.7–M3.6 — Discovery, planning, graph, proof, and reporting control plane
+
+The cumulative v0.23.0 build extends the existing permit-gated observation worker without adding a
+network bypass. New capabilities are control-plane only until a separately signed permit reaches the
+existing worker boundary.
+
+```text
+existing evidence
+  -> redirect/link candidates (M2.7/M2.8)
+  -> deduplicated target registry (M2.9)
+  -> policy-evaluated observation plan (M3.0)
+  -> fair multi-program queue (M3.1)
+  -> Security Test DSL (M3.2)
+  -> security graph (M3.3)
+  -> hypothesis graph (M3.4)
+  -> proof-state finding correlation (M3.5)
+  -> evidence report + retest plan (M3.6)
+```
+
+The boundary remains:
+
+```text
+candidate/hypothesis/plan/queue -> policy -> fresh signed permit -> worker -> evidence
+```
+
+None of the new artifacts contains a reusable execution capability. A plan item may be marked
+`authorizable`, but it still contains no permit and cannot cause a network request.
+
+A typical post-observation workflow is:
+
+```powershell
+astp discover-targets .\.astp\observation.json .\engagements\program.yaml `
+  --output .\.astp\discovery.yaml
+
+astp merge-targets .\.astp\discovery.yaml .\engagements\program.yaml `
+  --registry .\.astp\target-registry.yaml
+
+astp plan-observations .\.astp\target-registry.yaml .\engagements\program.yaml `
+  .\examples\test-observation.yaml `
+  --program-status-attestation .\.astp\program-online.yaml `
+  --rps 1 --output .\.astp\plan.yaml
+
+astp build-security-graph .\.astp\target-registry.yaml `
+  --output .\.astp\security-graph.yaml
+
+astp build-hypotheses .\.astp\security-graph.yaml `
+  --output .\.astp\hypotheses.yaml
+```
+
+See `docs/M2_7_REDIRECT_SAFE_TARGET_EXPANSION.md` through
+`docs/M3_6_REPORTING_RETEST.md` and `docs/NEXT_STEPS.md`.

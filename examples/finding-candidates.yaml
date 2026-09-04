@@ -1,0 +1,16 @@
+candidates:
+  - vulnerability: Example authorization boundary signal
+    asset: https://example.com
+    endpoint: /object/1
+    role: test-user
+    proof_state: suspected
+    signals:
+      - sensor: example
+        evidence_id: evidence-example-1
+        observation: Example only; replace with real evidence-backed observation.
+        confidence: 0.5
+    cwe:
+      - CWE-639
+    owasp:
+      - WSTG-ATHZ
+    remediation: Enforce server-side authorization on every object access.

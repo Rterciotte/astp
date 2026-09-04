@@ -1,0 +1,23 @@
+schema_version: "1"
+id: observation.http.dsl
+title: Bounded HTTP observation
+category: observation
+risk_class: safe_active
+preconditions: []
+signals:
+  - http_target
+execution_strategy: observe_http
+success_conditions:
+  - response_metadata_captured
+evidence:
+  required:
+    - response_metadata
+    - response_body_hash
+    - audit_record
+standards:
+  cwe: []
+  owasp: []
+  asvs: []
+description: >-
+  Performs one policy- and permit-gated observation-only HTTP GET or HEAD using the
+  existing bounded worker. The DSL definition itself never grants execution rights.

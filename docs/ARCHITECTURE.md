@@ -141,3 +141,70 @@ policy requires the program to be online, authorization requires a fresh matchin
 attestation before semantic exclusion, risk, and rate gates may reach ALLOW. Signed permits are
 bound to the resulting engagement policy digest and cannot outlive the operational attestation.
 Program-recommended HTTP identity metadata is consumed by the bounded observation worker.
+
+## Evidence-derived discovery boundary (M2.7–M2.9)
+
+A worker response may reveal a redirect or link, but the response cannot authorize the destination.
+ASTP converts discoveries into non-executable candidates. Deterministic safety checks run before the
+candidate is stored in a provenance-preserving Target Registry.
+
+```text
+permit-gated evidence
+    -> TargetCandidate(executable=false)
+    -> deterministic target safety
+    -> TargetRegistry
+```
+
+HTTPS downgrade, credentials in URLs, redacted targets and private/loopback/link-local literal
+addresses are not auto-promotable. Out-of-scope targets may remain recorded as provenance but cannot
+enter an authorizable observation plan.
+
+## Planner and queue boundary (M3.0–M3.1)
+
+The deterministic planner reuses the normal authorization engine. `ALLOW` means only that a proposed
+action is *authorizable*. It does not create a permit and it does not call a worker. A multi-program
+queue contains only authorizable proposals and preserves one fresh-permit requirement per item.
+
+```text
+Target Registry
+    -> planner
+    -> AuthorizationResult
+    -> authorizable proposal
+    -> work queue
+    -> [future explicit permit broker]
+    -> signed permit
+    -> worker
+```
+
+Program boundaries are never merged. Queue fairness does not combine scope, rate, semantic-exclusion,
+or operational-status authority across engagements.
+
+## Test DSL boundary (M3.2)
+
+Security Test DSL v0.1 describes intent independently of an execution adapter. It can be converted to
+the existing runtime `TestDefinition`, but it never grants execution rights. Observation strategies
+are restricted to passive or safe-active risk classes.
+
+## Graph and hypothesis boundary (M3.3–M3.4)
+
+The Security Graph stores relationships between assets, evidence and actions. Hypotheses are derived
+control-plane objects. A hypothesis may suggest a next safe action, but explicitly records that policy
+evaluation and a fresh permit are required.
+
+```text
+Evidence/Registry -> Security Graph -> Hypothesis Graph -> Planner -> Policy -> Permit
+```
+
+A hypothesis is neither a finding nor authorization.
+
+## Proof and reporting boundary (M3.5–M3.6)
+
+Findings use explicit proof states:
+
+```text
+SUSPECTED -> LIKELY -> VERIFIED -> IMPACT_CONFIRMED
+```
+
+Correlation deduplicates signals without promoting beyond the strongest supplied evidence state.
+Reporting consumes correlated findings and emits a retest checklist. Retest entries are plans only;
+each future retest must pass current policy and receive a fresh signed permit.

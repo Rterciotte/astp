@@ -139,7 +139,7 @@ class ObservationResult(BaseModel):
 def observation_user_agent(engagement: Engagement) -> str:
     if engagement.program is not None and engagement.program.recommended_user_agent:
         return engagement.program.recommended_user_agent
-    return "ASTP/0.13 observation-worker"
+    return "ASTP/0.23 observation-worker"
 
 
 def _canonical_json(data: object) -> bytes:
