@@ -63,14 +63,17 @@ Operator / future planner
     -> authorize
     -> issue permit
     -> worker verifies signature + freshness + current policy
-    -> lifecycle lock consumes permit exactly once
+    -> capability compatibility check
+    -> SQLite transaction checks lifecycle + rate admission
+    -> transaction reserves rate slot and consumes permit atomically
     -> worker performs one bounded GET/HEAD
     -> worker writes redacted evidence
-    -> audit append under lock
+    -> audit append
 ```
 
-The permit is consumed before the network connection opens. This intentionally favors safety over
-retry convenience: a timeout or transport failure requires a newly issued permit.
+A rate-limit rejection rolls back admission and leaves the permit available. Once admission commits,
+the permit is consumed before the network connection opens. A later timeout or transport failure
+therefore requires a newly issued permit.
 
 Redirects are never followed in M2. They are recorded and classified only.
 
@@ -85,7 +88,7 @@ Adapters must normalize tool input/output; tools must never become the system of
 
 ## Current trust limitations
 
-M2's lifecycle and audit locks are suitable for the local single-host development boundary, not a
-distributed trust boundary. Shared-secret HMAC also means any verifier with the secret can mint a
+M2.4's SQLite worker runtime and local audit storage are suitable for the single-host development
+boundary, not a distributed trust boundary. Shared-secret HMAC also means any verifier with the secret can mint a
 permit. Before distributed workers, migrate to asymmetric signatures and transactional shared
 lifecycle/audit storage where workers receive verification capability but not signing authority.

@@ -14,11 +14,13 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from astp.action import http_action_id, http_target_rate_key
+from astp.contracts import HTTP_OBSERVATION_CAPABILITY, ensure_capability_compatible
 from astp.evidence_store import SensitivityLabel, register_evidence
 from astp.lifecycle import append_audit_event, consume_execution_permit
 from astp.models import Engagement, TestDefinition, target_in_scope
 from astp.permits import PermitVerificationRequest, SignedExecutionPermit
 from astp.rate_limit import acquire_rate_slot
+from astp.runtime_state import admit_worker_action
 from astp.transport import (
     ObservationTransport,
     ObservationTransportError,
@@ -265,6 +267,17 @@ def _validate_observation_request(
         )
     if max_body_bytes < 0 or max_body_bytes > MAX_BODY_BYTES:
         raise ObservationError(f"Maximum body size must be between 0 and {MAX_BODY_BYTES} bytes.")
+    try:
+        ensure_capability_compatible(
+            HTTP_OBSERVATION_CAPABILITY,
+            permit,
+            target=target,
+            method=method,
+            timeout_seconds=timeout_seconds,
+            max_body_bytes=max_body_bytes,
+        )
+    except ValueError as exc:
+        raise ObservationError(str(exc)) from exc
 
 
 def _read_bounded(response, method: str, max_body_bytes: int) -> tuple[bytes, bool]:
@@ -354,6 +367,7 @@ def observe_http(
     evidence_path: Path,
     manifest_path: Path,
     rate_state_path: Path,
+    runtime_db_path: Path | None = None,
     sensitivity: SensitivityLabel = SensitivityLabel.INTERNAL,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
@@ -370,60 +384,101 @@ def observe_http(
         max_body_bytes,
     )
 
-    consume_result = consume_execution_permit(
-        permit,
-        engagement,
-        test,
-        PermitVerificationRequest(
-            target=target,
-            http_method=normalized_method,
-            identity=identity,
-            requested_requests_per_second=requested_rps,
-            now=now,
-        ),
-        keys,
-        state_path,
-    )
-    if not consume_result.accepted:
-        append_audit_event(
-            audit_path,
-            "observation.rejected",
-            permit_id=permit.payload.permit_id,
-            details={
-                "status": consume_result.lifecycle_status.value,
-                "message": consume_result.message,
-                "target": redact_url(
-                    target, engagement.constraints.redaction.sensitive_query_parameters
-                ),
-            },
-            now=now,
-        )
-        raise ObservationError(consume_result.message)
-
-    rate_limit = requested_rps or permit.payload.max_requests_per_second
-    acquired, retry_after = acquire_rate_slot(
-        rate_state_path,
-        http_target_rate_key(target),
-        rate_limit,
+    verification_request = PermitVerificationRequest(
+        target=target,
+        http_method=normalized_method,
+        identity=identity,
+        requested_requests_per_second=requested_rps,
         now=now,
     )
-    if not acquired:
-        append_audit_event(
-            audit_path,
-            "observation.rate_limited",
-            permit_id=permit.payload.permit_id,
-            details={
-                "action_id": action_id,
-                "retry_after_seconds": retry_after,
-                "target": redact_url(
-                    target, engagement.constraints.redaction.sensitive_query_parameters
-                ),
-            },
+    rate_limit = requested_rps or permit.payload.max_requests_per_second
+
+    if runtime_db_path is not None:
+        admission = admit_worker_action(
+            permit,
+            engagement,
+            test,
+            verification_request,
+            keys,
+            runtime_db_path,
+            action_key=http_target_rate_key(target),
+            max_requests_per_second=rate_limit,
+        )
+        if not admission.accepted:
+            event = (
+                "observation.rate_limited"
+                if admission.retry_after_seconds > 0
+                else "observation.rejected"
+            )
+            append_audit_event(
+                audit_path,
+                event,
+                permit_id=permit.payload.permit_id,
+                details={
+                    "status": admission.lifecycle_status.value,
+                    "message": admission.message,
+                    "retry_after_seconds": admission.retry_after_seconds,
+                    "target": redact_url(
+                        target, engagement.constraints.redaction.sensitive_query_parameters
+                    ),
+                },
+                now=now,
+            )
+            if admission.retry_after_seconds > 0:
+                raise ObservationError(
+                    "Durable target rate limit reached; "
+                    f"retry after {admission.retry_after_seconds:.3f} seconds. "
+                    "Permit remains available."
+                )
+            raise ObservationError(admission.message)
+    else:
+        consume_result = consume_execution_permit(
+            permit,
+            engagement,
+            test,
+            verification_request,
+            keys,
+            state_path,
+        )
+        if not consume_result.accepted:
+            append_audit_event(
+                audit_path,
+                "observation.rejected",
+                permit_id=permit.payload.permit_id,
+                details={
+                    "status": consume_result.lifecycle_status.value,
+                    "message": consume_result.message,
+                    "target": redact_url(
+                        target, engagement.constraints.redaction.sensitive_query_parameters
+                    ),
+                },
+                now=now,
+            )
+            raise ObservationError(consume_result.message)
+
+        acquired, retry_after = acquire_rate_slot(
+            rate_state_path,
+            http_target_rate_key(target),
+            rate_limit,
             now=now,
         )
-        raise ObservationError(
-            f"Durable target rate limit reached; retry after {retry_after:.3f} seconds."
-        )
+        if not acquired:
+            append_audit_event(
+                audit_path,
+                "observation.rate_limited",
+                permit_id=permit.payload.permit_id,
+                details={
+                    "action_id": action_id,
+                    "retry_after_seconds": retry_after,
+                    "target": redact_url(
+                        target, engagement.constraints.redaction.sensitive_query_parameters
+                    ),
+                },
+                now=now,
+            )
+            raise ObservationError(
+                f"Durable target rate limit reached; retry after {retry_after:.3f} seconds."
+            )
 
     append_audit_event(
         audit_path,
@@ -443,7 +498,7 @@ def observe_http(
         target,
         method=normalized_method,
         headers={
-            "User-Agent": "ASTP/0.10 observation-worker",
+            "User-Agent": "ASTP/0.11 observation-worker",
             "Accept": "*/*",
         },
     )

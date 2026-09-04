@@ -168,3 +168,18 @@ astp export-evidence-bundle .\.astp\evidence-manifest.jsonl `
 
 astp verify-evidence-bundle .\.astp\evidence-bundle.zip
 ```
+
+
+## Milestone 2.4 — durable runtime and worker contracts
+
+M2.4 makes `.astp/runtime.db` the default worker-admission state for HTTP observations. Permit replay
+state and per-target rate admission are now decided in one SQLite transaction, so a rate-limit
+rejection does not consume the permit. The HTTP worker also declares an explicit
+`http.observation.v1` capability contract. See `docs/M2_4_DURABLE_RUNTIME.md`.
+
+Runtime lifecycle commands:
+
+```powershell
+astp runtime-permit-status PERMIT_ID
+astp revoke-runtime-permit PERMIT_ID --reason "scope changed"
+```

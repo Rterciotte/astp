@@ -41,6 +41,7 @@ from astp.permits import (
     issue_execution_permit,
     verify_execution_permit,
 )
+from astp.runtime_state import revoke_runtime_permit, runtime_permit_status
 from astp.scope_compiler import CompilationStatus, compile_scope_file
 
 app = typer.Typer(
@@ -53,6 +54,7 @@ console = Console()
 
 DEFAULT_STATE_PATH = Path(".astp") / "permit-state.json"
 DEFAULT_AUDIT_PATH = Path(".astp") / "audit.jsonl"
+DEFAULT_RUNTIME_DB_PATH = Path(".astp") / "runtime.db"
 
 
 @app.command("show-engagement")
@@ -497,6 +499,42 @@ def permit_status_command(
     console.print(permit_status(state_path, permit_id).value.upper())
 
 
+@app.command("runtime-permit-status")
+def runtime_permit_status_command(
+    permit_id: Annotated[str, typer.Argument(help="Permit ID")],
+    runtime_db_path: Annotated[
+        Path, typer.Option("--runtime-db", help="Transactional worker runtime database")
+    ] = DEFAULT_RUNTIME_DB_PATH,
+) -> None:
+    """Show permit state from the transactional worker runtime database."""
+    console.print(runtime_permit_status(runtime_db_path, permit_id).value.upper())
+
+
+@app.command("revoke-runtime-permit")
+def revoke_runtime_permit_command(
+    permit_id: Annotated[str, typer.Argument(help="Permit ID to revoke")],
+    reason: Annotated[str, typer.Option("--reason", help="Human-readable revocation reason")],
+    runtime_db_path: Annotated[
+        Path, typer.Option("--runtime-db", help="Transactional worker runtime database")
+    ] = DEFAULT_RUNTIME_DB_PATH,
+    audit_path: Annotated[
+        Path, typer.Option("--audit", help="Append-only audit log")
+    ] = DEFAULT_AUDIT_PATH,
+) -> None:
+    """Revoke a permit in the transactional worker runtime database."""
+    try:
+        status = revoke_runtime_permit(runtime_db_path, permit_id, reason=reason)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    append_audit_event(
+        audit_path,
+        "permit.runtime_revoked",
+        permit_id=permit_id,
+        details={"reason": reason},
+    )
+    console.print(f"Permit {permit_id} status: {status.value.upper()}")
+
+
 @app.command("verify-audit")
 def verify_audit_command(
     audit_path: Annotated[Path, typer.Argument(help="Audit JSONL file")],
@@ -546,6 +584,13 @@ def observe_http_command(
         Path, typer.Option("--rate-state", help="Durable rate-limit state file")
     ] = Path(".astp")
     / "rate-state.json",
+    runtime_db_path: Annotated[
+        Path,
+        typer.Option(
+            "--runtime-db",
+            help="Transactional worker runtime database",
+        ),
+    ] = DEFAULT_RUNTIME_DB_PATH,
     sensitivity: Annotated[
         SensitivityLabel, typer.Option("--sensitivity", help="Evidence sensitivity label")
     ] = SensitivityLabel.INTERNAL,
@@ -581,6 +626,7 @@ def observe_http_command(
             evidence_path=output,
             manifest_path=manifest_path,
             rate_state_path=rate_state_path,
+            runtime_db_path=runtime_db_path,
             sensitivity=sensitivity,
             timeout_seconds=timeout_seconds,
             max_body_bytes=max_body_bytes,
@@ -610,7 +656,7 @@ def observe_http_command(
         table.add_row("Redirect in scope", "YES" if evidence.redirect.in_scope else "NO")
     console.print(table)
     console.print("Permit consumed: [bold]YES[/bold]")
-    console.print("Network execution: observation-only GET/HEAD (Milestone 2.3)")
+    console.print("Network execution: observation-only GET/HEAD (Milestone 2.4)")
 
 
 @app.command("verify-evidence")

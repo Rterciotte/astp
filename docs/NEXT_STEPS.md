@@ -19,14 +19,19 @@ Milestone 2.3 binds connections to the addresses resolved for the authorized hos
 hostname verification, adds engagement-specific redaction profiles, marks redirects as distinct
 actions requiring new permits, and adds portable evidence bundles with verifiable receipts.
 
-## Milestone 2.4 — Durable state and worker contracts
+Milestone 2.4 introduces a local SQLite runtime for transactional worker admission, atomically
+combines replay/lifecycle state with rate admission, adds explicit worker capability declarations,
+and formalizes worker/admission/evidence dependency protocols. The CLI HTTP worker uses this runtime
+by default while the older JSON lifecycle path remains available for compatibility.
 
-1. formal policy-service, signer, verifier, worker, and evidence-store protocols;
-2. transactional lifecycle and rate-limit storage, starting with a local SQLite adapter;
-3. atomic observation reservation combining permit consumption and rate admission;
-4. explicit worker capability declarations and compatibility checks;
-5. evidence-store interface suitable for later S3/MinIO backends;
-6. deterministic failure/recovery tests around interrupted writes and worker crashes.
+## Milestone 2.5 — Durable evidence and execution receipts
+
+1. execution-attempt IDs distinct from permits and evidence IDs;
+2. durable execution receipts covering admission, transport result, and evidence registration;
+3. recoverable evidence registration after a post-network process interruption;
+4. explicit evidence-store adapter implementation behind the M2.4 protocol;
+5. SQLite migrations and runtime health/introspection commands;
+6. adversarial crash-boundary tests before browser execution is introduced.
 
 ## CTF track
 
