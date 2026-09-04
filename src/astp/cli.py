@@ -1,5 +1,6 @@
 import json
 import os
+import secrets
 from pathlib import Path
 from typing import Annotated
 
@@ -8,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from astp.authorization import AuthorizationRequest, authorize_test
+from astp.browser_intake import capture_to_text, load_capture, serve_capture
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
 from astp.io import dump_yaml, load_model
@@ -41,6 +43,8 @@ from astp.permits import (
     issue_execution_permit,
     verify_execution_permit,
 )
+from astp.program_intake import compile_program, import_program_file, import_program_text
+from astp.program_models import BugBountyProgram
 from astp.runtime_state import revoke_runtime_permit, runtime_permit_status
 from astp.scope_compiler import CompilationStatus, compile_scope_file
 
@@ -729,6 +733,101 @@ def verify_evidence_bundle_command(
     console.print(message)
     if not valid:
         raise typer.Exit(code=9)
+
+
+@app.command("browser-intake-server")
+def browser_intake_server_command(
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write the latest browser capture JSON here"),
+    ] = Path(".astp")
+    / "browser-capture.json",
+    port: Annotated[
+        int,
+        typer.Option("--port", help="Loopback port used by the browser companion"),
+    ] = 8765,
+) -> None:
+    """Receive an explicit capture from the ASTP browser companion on loopback only."""
+    if port < 1024 or port > 65535:
+        raise typer.BadParameter("port must be between 1024 and 65535")
+    intake_token = secrets.token_urlsafe(24)
+    console.print(f"ASTP browser intake listening on http://127.0.0.1:{port}")
+    console.print(f"Captures will be written to: {output}")
+    console.print("One-time intake token (paste into the browser companion):")
+    console.print(intake_token, markup=False)
+    serve_capture(output, port=port, intake_token=intake_token)
+
+
+@app.command("import-program")
+def import_program_command(
+    source: Annotated[Path, typer.Argument(help="Markdown/text/HTML or browser capture JSON")],
+    name: Annotated[str, typer.Option("--name", help="Bug bounty program name")],
+    platform: Annotated[str, typer.Option("--platform", help="Program platform, e.g. bughunt")],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write normalized BugBountyProgram YAML here"),
+    ],
+    browser_capture: Annotated[
+        bool,
+        typer.Option("--browser-capture", help="Treat source as an ASTP browser capture JSON"),
+    ] = False,
+) -> None:
+    """Normalize a program source while preserving provenance and unresolved rules."""
+    if browser_capture:
+        capture = load_capture(source)
+        program = import_program_text(
+            capture_to_text(capture),
+            name=name,
+            platform=platform,
+            source_type="authenticated_browser",
+            source_url=capture.url,
+        )
+        program.source.title = capture.title
+        program.source.captured_at = capture.captured_at
+    else:
+        program = import_program_file(source, name=name, platform=platform)
+
+    dump_yaml(program, output)
+    table = Table(title="ASTP Bug Bounty Program Intake")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Program", program.name)
+    table.add_row("Platform", program.platform)
+    table.add_row("Status", program.status.value.upper())
+    table.add_row("Allowed scope", str(len(program.allowed_scope())))
+    table.add_row("Denied scope", str(len(program.denied_scope())))
+    table.add_row("Constraints", str(len(program.constraints)))
+    table.add_row("Review issues", str(len(program.issues)))
+    console.print(table)
+    for issue in program.issues:
+        console.print(f"- [yellow]{issue.code}[/yellow]: {issue.message}")
+    console.print(f"Normalized program written to: {output}")
+
+
+@app.command("compile-program")
+def compile_program_command(
+    program_path: Annotated[Path, typer.Argument(help="Normalized BugBountyProgram YAML")],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write executable Engagement YAML here"),
+    ],
+    max_requests_per_second: Annotated[
+        float | None,
+        typer.Option("--rps", help="Explicitly reviewed numeric execution rate"),
+    ] = None,
+) -> None:
+    """Compile a reviewed program into an executable ASTP engagement."""
+    program = load_model(program_path, BugBountyProgram)
+    try:
+        engagement = compile_program(
+            program,
+            max_requests_per_second=max_requests_per_second,
+        )
+    except ValueError as exc:
+        console.print(f"[bold yellow]Compilation blocked:[/bold yellow] {exc}")
+        raise typer.Exit(code=2) from exc
+    dump_yaml(engagement, output)
+    console.print(f"Executable engagement written to: {output}")
 
 
 @app.command("evaluate-test")

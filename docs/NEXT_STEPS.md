@@ -52,3 +52,25 @@ boundary.
 
 Before distributed workers, replace shared-secret HMAC permits with asymmetric signatures and move
 lifecycle/rate/audit state to transactional and independently protected storage.
+
+## M2.5 completed — Bug Bounty Program Intake
+
+- First-class `BugBountyProgram` model.
+- Authenticated-browser intake is the preferred source path.
+- Manifest V3 Browser Companion uses explicit `activeTab` access and loopback token auth.
+- Deterministic scope/policy extraction preserves source provenance.
+- Broad/qualitative rules become review issues rather than implicit permission.
+- `compile-program` blocks executable engagement creation while blocking issues remain.
+- Smart Fit / BugHunt fixture added as the first real-program intake case.
+
+### M2.6 candidate — Program Review + Dynamic Operational Gates
+
+1. Explicit review-resolution records instead of editing `issues` manually.
+2. Program revision/diff model and policy snapshot history.
+3. Runtime gate for ONLINE/OFFLINE program state.
+4. Recommended HTTP identity metadata such as program User-Agent.
+5. Program-specific excluded finding taxonomy.
+6. First controlled Smart Fit field trial using only the existing GET/HEAD worker.
+
+CTF documentation is intentionally not globally rewritten yet. The previously agreed full
+CTF documentation update occurs when CTF implementation begins, not during intake work.

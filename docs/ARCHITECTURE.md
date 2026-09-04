@@ -92,3 +92,16 @@ M2.4's SQLite worker runtime and local audit storage are suitable for the single
 boundary, not a distributed trust boundary. Shared-secret HMAC also means any verifier with the secret can mint a
 permit. Before distributed workers, migrate to asymmetric signatures and transactional shared
 lifecycle/audit storage where workers receive verification capability but not signing authority.
+
+## Program intake boundary (M2.5)
+
+Program intake is separate from target execution. The browser companion may read only the
+active page after an explicit user gesture and cannot execute a security test. Captured
+program material is normalized into `BugBountyProgram`; only a reviewed program can compile
+into `Engagement`, and execution still follows the existing permit-gated worker path.
+
+```text
+Browser Companion -> BrowserCapture -> BugBountyProgram -> Engagement
+                                                     ↓
+                                  authorization -> permit -> worker -> evidence
+```

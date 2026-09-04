@@ -13,6 +13,23 @@ hash-verifiable evidence.
 It is not a scanner and does not perform exploitation, fuzzing, crawling, credential attacks, state
 changes, arbitrary shell execution, or unrestricted autonomous networking.
 
+## Milestone 2.5 — Bug Bounty Program Intake
+
+ASTP can now normalize bug bounty rules into a first-class `BugBountyProgram` before
+compiling an executable engagement. The preferred workflow is an explicit capture from a
+page already authenticated in the user's browser through the local `browser-companion/`.
+No third-party credentials or cookies are required by ASTP.
+
+Key commands:
+
+```powershell
+astp browser-intake-server --output .\.astp\browser-capture.json
+astp import-program .\.astp\browser-capture.json --browser-capture --name "Program" --platform bughunt -o program.yaml
+astp compile-program program.yaml --rps 1 -o engagement.yaml
+```
+
+See `docs/M2_5_PROGRAM_INTAKE.md` and `docs/BROWSER_COMPANION.md`.
+
 ## Windows quick start
 
 ```powershell
