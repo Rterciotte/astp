@@ -35,6 +35,41 @@ class SemanticExclusionRule(BaseModel):
     source_text: str | None = None
 
 
+class OperationalStatus(str, Enum):
+    ONLINE = "online"
+    OFFLINE = "offline"
+    UNKNOWN = "unknown"
+
+
+class ProgramBinding(BaseModel):
+    program_id: str
+    platform: str
+    source_content_sha256: str
+    source_url: str | None = None
+    requires_online: bool = False
+    operational_attestation_max_age_seconds: int = Field(default=300, ge=30, le=3600)
+    recommended_user_agent: str | None = None
+    excluded_finding_types: list[str] = Field(default_factory=list)
+
+
+class ProgramOperationalAttestation(BaseModel):
+    id: str
+    program_id: str
+    source_content_sha256: str
+    status: OperationalStatus
+    observed_at: datetime
+    source_type: str
+    source_url: str | None = None
+    note: str | None = None
+
+    @field_validator("observed_at")
+    @classmethod
+    def require_attestation_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("observed_at must include a timezone")
+        return value
+
+
 class ScopeKind(str, Enum):
     DOMAIN = "domain"
     WILDCARD_DOMAIN = "wildcard_domain"
@@ -129,6 +164,7 @@ class Engagement(BaseModel):
     scope: ScopePolicy
     methods: MethodPolicy = Field(default_factory=MethodPolicy)
     constraints: Constraints = Field(default_factory=Constraints)
+    program: ProgramBinding | None = None
 
 
 class TestDefinition(BaseModel):

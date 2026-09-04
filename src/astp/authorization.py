@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from urllib.parse import urlparse
 
@@ -12,6 +12,8 @@ from astp.models import (
     Decision,
     Engagement,
     EvaluationRequest,
+    OperationalStatus,
+    ProgramOperationalAttestation,
     ScopeRule,
     TestDefinition,
     _match_rule,
@@ -39,6 +41,7 @@ class AuthorizationRequest(BaseModel):
     requested_requests_per_second: float | None = Field(default=None, gt=0, le=1000)
     semantic_exclusion_clears: set[str] = Field(default_factory=set)
     semantic_exclusion_matches: set[str] = Field(default_factory=set)
+    program_operational_attestation: ProgramOperationalAttestation | None = None
     now: datetime | None = None
 
 
@@ -48,6 +51,8 @@ class AuthorizationResult(BaseModel):
     missing_context: list[str] = Field(default_factory=list)
     approval_ids: list[str] = Field(default_factory=list)
     effective_max_requests_per_second: float | None = None
+    operational_attestation_id: str | None = None
+    operational_status_valid_until: datetime | None = None
 
 
 def _matching_rules(target: str, rules: list[ScopeRule]) -> list[ScopeRule]:
@@ -211,6 +216,96 @@ def _check_asset_constraints(
     return None
 
 
+def _check_program_operational_gate(
+    engagement: Engagement,
+    request: AuthorizationRequest,
+    checks: list[AuthorizationCheck],
+) -> tuple[Decision | None, str | None, datetime | None]:
+    binding = engagement.program
+    if binding is None or not binding.requires_online:
+        return None, None, None
+
+    attestation = request.program_operational_attestation
+    if attestation is None:
+        checks.append(
+            AuthorizationCheck(
+                name="program_operational_status",
+                status=CheckStatus.REVIEW,
+                message="A fresh ONLINE program-status attestation is required.",
+            )
+        )
+        return Decision.INSUFFICIENT_CONTEXT, None, None
+
+    if (
+        attestation.program_id != binding.program_id
+        or attestation.source_content_sha256 != binding.source_content_sha256
+    ):
+        checks.append(
+            AuthorizationCheck(
+                name="program_operational_status",
+                status=CheckStatus.REVIEW,
+                message="Program-status attestation is bound to a different program revision.",
+            )
+        )
+        return Decision.INSUFFICIENT_CONTEXT, attestation.id, None
+
+    current = request.now or datetime.now(UTC)
+    if attestation.observed_at > current + timedelta(seconds=30):
+        checks.append(
+            AuthorizationCheck(
+                name="program_operational_status",
+                status=CheckStatus.REVIEW,
+                message="Program-status attestation timestamp is unexpectedly in the future.",
+            )
+        )
+        return Decision.INSUFFICIENT_CONTEXT, attestation.id, None
+
+    valid_until = attestation.observed_at + timedelta(
+        seconds=binding.operational_attestation_max_age_seconds
+    )
+    if current >= valid_until:
+        checks.append(
+            AuthorizationCheck(
+                name="program_operational_status",
+                status=CheckStatus.REVIEW,
+                message="Program-status attestation is stale and must be refreshed.",
+            )
+        )
+        return Decision.INSUFFICIENT_CONTEXT, attestation.id, valid_until
+
+    if attestation.status == OperationalStatus.OFFLINE:
+        checks.append(
+            AuthorizationCheck(
+                name="program_operational_status",
+                status=CheckStatus.FAIL,
+                message="Program is attested OFFLINE; target execution is prohibited.",
+            )
+        )
+        return Decision.DENY, attestation.id, valid_until
+
+    if attestation.status != OperationalStatus.ONLINE:
+        checks.append(
+            AuthorizationCheck(
+                name="program_operational_status",
+                status=CheckStatus.REVIEW,
+                message="Program operational status is not known to be ONLINE.",
+            )
+        )
+        return Decision.INSUFFICIENT_CONTEXT, attestation.id, valid_until
+
+    checks.append(
+        AuthorizationCheck(
+            name="program_operational_status",
+            status=CheckStatus.PASS,
+            message=(
+                "Program is freshly attested ONLINE; attestation "
+                f"{attestation.id} is valid until {valid_until.isoformat()}."
+            ),
+        )
+    )
+    return None, attestation.id, valid_until
+
+
 def _check_semantic_exclusions(
     engagement: Engagement,
     request: AuthorizationRequest,
@@ -369,6 +464,17 @@ def authorize_test(
         )
         return AuthorizationResult(decision=Decision.DENY, checks=checks)
 
+    operational_decision, operational_attestation_id, operational_valid_until = (
+        _check_program_operational_gate(engagement, request, checks)
+    )
+    if operational_decision is not None:
+        return AuthorizationResult(
+            decision=operational_decision,
+            checks=checks,
+            operational_attestation_id=operational_attestation_id,
+            operational_status_valid_until=operational_valid_until,
+        )
+
     semantic_decision = _check_semantic_exclusions(engagement, request, checks)
     if semantic_decision is not None:
         return AuthorizationResult(decision=semantic_decision, checks=checks)
@@ -472,6 +578,8 @@ def authorize_test(
         checks=checks,
         approval_ids=approval_ids,
         effective_max_requests_per_second=effective_rate,
+        operational_attestation_id=operational_attestation_id,
+        operational_status_valid_until=operational_valid_until,
     )
 
 

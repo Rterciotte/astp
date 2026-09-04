@@ -132,3 +132,12 @@ Program discovery selection is not execution authorization. An ACTIVE catalog pr
 NEEDS_REVIEW. Only a normalized program with no unresolved blocking policy issues is READY for
 engagement compilation. Operator-added numeric traffic limits and deny mappings are recorded as
 review decisions with provenance and are never rewritten as platform-published rules.
+
+
+## Program runtime gate (M2.6)
+
+A READY bug-bounty program is compiled with an immutable binding to the source-policy SHA-256. If
+policy requires the program to be online, authorization requires a fresh matching operational
+attestation before semantic exclusion, risk, and rate gates may reach ALLOW. Signed permits are
+bound to the resulting engagement policy digest and cannot outlive the operational attestation.
+Program-recommended HTTP identity metadata is consumed by the bounded observation worker.

@@ -30,6 +30,22 @@ astp compile-program program.yaml --rps 1 -o engagement.yaml
 
 See `docs/M2_5_PROGRAM_INTAKE.md` and `docs/BROWSER_COMPANION.md`.
 
+
+## Milestone 2.6 — Program Runtime Gates
+
+A reviewed program now compiles into an engagement that preserves its exact source-policy revision,
+semantic deny guardrails, reviewed request rate, online-only requirement, recommended User-Agent,
+and extracted excluded-finding metadata. Programs that prohibit testing while offline require a
+fresh revision-bound operational-status attestation before authorization or permit issuance. Permit
+lifetime is capped by the attestation lifetime.
+
+```powershell
+astp attest-program-status .\programs\program.yaml --status online --source operator -o .\.astp\program-online.yaml
+astp compile-program .\programs\program.yaml -o .\engagements\program.yaml
+```
+
+See `docs/M2_6_PROGRAM_RUNTIME_GATES.md`.
+
 ## Windows quick start
 
 ```powershell

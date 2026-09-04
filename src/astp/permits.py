@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from astp.authorization import AuthorizationRequest, authorize_test
 from astp.models import Decision, Engagement, RiskClass, TestDefinition
 
-PERMIT_SCHEMA_VERSION = "2"
+PERMIT_SCHEMA_VERSION = "3"
 DEFAULT_PERMIT_TTL_SECONDS = 300
 MAX_PERMIT_TTL_SECONDS = 900
 MIN_SIGNING_KEY_BYTES = 32
@@ -45,6 +45,7 @@ class ExecutionPermitPayload(BaseModel):
     identity: str | None = None
     max_requests_per_second: float = Field(gt=0, le=1000)
     approval_ids: tuple[str, ...] = ()
+    operational_attestation_id: str | None = None
     policy_digest: str
     issued_at: datetime
     expires_at: datetime
@@ -117,6 +118,8 @@ def _signature(payload: ExecutionPermitPayload, key: str | bytes) -> str:
     data = _model_payload(payload)
     if payload.schema_version == "1":
         data.pop("key_id", None)
+    if payload.schema_version in {"1", "2"}:
+        data.pop("operational_attestation_id", None)
     message = _canonical_json(data)
     return hmac.new(encoded_key, message, hashlib.sha256).hexdigest()
 
@@ -143,6 +146,12 @@ def issue_execution_permit(
         raise ValueError(f"permit TTL must be between 1 and {MAX_PERMIT_TTL_SECONDS} seconds")
 
     current = now or datetime.now(UTC)
+    expires_at = current + timedelta(seconds=ttl_seconds)
+    if authorization.operational_status_valid_until is not None:
+        expires_at = min(expires_at, authorization.operational_status_valid_until)
+    if expires_at <= current:
+        raise ValueError("program operational attestation expires before permit issuance")
+
     payload = ExecutionPermitPayload(
         permit_id=str(uuid4()),
         key_id=key_id,
@@ -155,9 +164,10 @@ def issue_execution_permit(
         identity=request.identity,
         max_requests_per_second=authorization.effective_max_requests_per_second,
         approval_ids=tuple(sorted(authorization.approval_ids)),
+        operational_attestation_id=authorization.operational_attestation_id,
         policy_digest=policy_digest(engagement, test),
         issued_at=current,
-        expires_at=current + timedelta(seconds=ttl_seconds),
+        expires_at=expires_at,
     )
     return SignedExecutionPermit(
         payload=payload,

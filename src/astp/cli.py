@@ -1,6 +1,5 @@
 import json
 import os
-import secrets
 from pathlib import Path
 from typing import Annotated
 
@@ -9,9 +8,6 @@ from rich.console import Console
 from rich.table import Table
 
 from astp.authorization import AuthorizationRequest, authorize_test
-from astp.browser_intake import capture_to_text, load_capture
-from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
-from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
 from astp.io import dump_yaml, load_model
 from astp.lifecycle import (
     append_audit_event,
@@ -25,19 +21,8 @@ from astp.models import (
     Decision,
     Engagement,
     EvaluationRequest,
-    ScopeKind,
-    ScopeRule,
-    SemanticExclusionKind,
     TestDefinition,
     evaluate_test,
-)
-from astp.observation import (
-    DEFAULT_MAX_BODY_BYTES,
-    DEFAULT_TIMEOUT_SECONDS,
-    HttpObservationEvidence,
-    ObservationError,
-    observe_http,
-    verify_observation_evidence,
 )
 from astp.permits import (
     DEFAULT_PERMIT_TTL_SECONDS,
@@ -46,36 +31,18 @@ from astp.permits import (
     issue_execution_permit,
     verify_execution_permit,
 )
-from astp.program_catalog import (
-    BugBountyWorkspace,
-    ProgramSyncStatus,
-    save_workspace,
-    set_active_programs,
-)
-from astp.program_intake import (
-    compile_program,
-    import_program_file,
-    import_program_text,
-    resolve_issue_with_denies,
-    resolve_issue_with_semantic_exclusion,
-    resolve_rate_issue,
-)
-from astp.program_models import BugBountyProgram
-from astp.program_server import serve_program_intake
-from astp.runtime_state import revoke_runtime_permit, runtime_permit_status
 from astp.scope_compiler import CompilationStatus, compile_scope_file
 
 app = typer.Typer(
     help=(
-        "ASTP policy-first security testing platform. "
-        "M2 enables bounded observation-only HTTP execution."
+        "ASTP policy-first security testing foundation. "
+        "Offensive execution is not implemented yet."
     )
 )
 console = Console()
 
 DEFAULT_STATE_PATH = Path(".astp") / "permit-state.json"
 DEFAULT_AUDIT_PATH = Path(".astp") / "audit.jsonl"
-DEFAULT_RUNTIME_DB_PATH = Path(".astp") / "runtime.db"
 
 
 @app.command("show-engagement")
@@ -197,20 +164,6 @@ def authorize_test_command(
         float | None,
         typer.Option("--rps", help="Requested maximum request rate"),
     ] = None,
-    semantic_clear: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--semantic-clear",
-            help="Semantic exclusion rule ID explicitly reviewed as not matching the target",
-        ),
-    ] = None,
-    semantic_match: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--semantic-match",
-            help="Semantic exclusion rule ID explicitly identified as matching the target",
-        ),
-    ] = None,
 ) -> None:
     """Produce an auditable authorization decision without executing a test."""
     engagement = load_model(engagement_path, Engagement)
@@ -226,8 +179,6 @@ def authorize_test_command(
             http_method=http_method,
             identity=identity,
             requested_requests_per_second=requested_rps,
-            semantic_exclusion_clears=set(semantic_clear or []),
-            semantic_exclusion_matches=set(semantic_match or []),
         ),
     )
 
@@ -315,20 +266,6 @@ def issue_permit_command(
         float | None,
         typer.Option("--rps", help="Requested maximum request rate"),
     ] = None,
-    semantic_clear: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--semantic-clear",
-            help="Semantic exclusion rule ID explicitly reviewed as not matching the target",
-        ),
-    ] = None,
-    semantic_match: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--semantic-match",
-            help="Semantic exclusion rule ID explicitly identified as matching the target",
-        ),
-    ] = None,
     ttl_seconds: Annotated[
         int,
         typer.Option("--ttl-seconds", help="Permit lifetime in seconds; maximum 900"),
@@ -349,8 +286,6 @@ def issue_permit_command(
         http_method=http_method,
         identity=identity,
         requested_requests_per_second=requested_rps,
-        semantic_exclusion_clears=set(semantic_clear or []),
-        semantic_exclusion_matches=set(semantic_match or []),
     )
     authorization = authorize_test(engagement, test, request)
     if authorization.decision != Decision.ALLOW:
@@ -391,7 +326,7 @@ def issue_permit_command(
     console.print(f"Expires at: {permit.payload.expires_at.isoformat()}")
     console.print(f"Maximum rate: {permit.payload.max_requests_per_second:g} req/s")
     console.print(f"Written to: {output}")
-    console.print("Permit issuance does not execute a network action.")
+    console.print("Execution remains DISABLED (Milestone 1.4).")
 
 
 @app.command("verify-permit")
@@ -453,7 +388,7 @@ def verify_permit_command(
         table.add_row(check.name, check.status.value.upper(), check.message)
     console.print(table)
     console.print(f"\nPermit valid: [bold]{'YES' if result.valid else 'NO'}[/bold]")
-    console.print("Verification only; no network action was performed.")
+    console.print("Execution remains DISABLED (Milestone 1.4).")
     if not result.valid:
         raise typer.Exit(code=3)
 
@@ -511,7 +446,7 @@ def consume_permit_command(
     console.print(f"Permit consumed: [bold]{'YES' if result.accepted else 'NO'}[/bold]")
     console.print(f"Lifecycle status: {result.lifecycle_status.value.upper()}")
     console.print(result.message)
-    console.print("Permit consumed; this command performs no network action.")
+    console.print("Execution remains DISABLED (Milestone 1.4).")
     if not result.accepted:
         raise typer.Exit(code=4)
 
@@ -552,42 +487,6 @@ def permit_status_command(
     console.print(permit_status(state_path, permit_id).value.upper())
 
 
-@app.command("runtime-permit-status")
-def runtime_permit_status_command(
-    permit_id: Annotated[str, typer.Argument(help="Permit ID")],
-    runtime_db_path: Annotated[
-        Path, typer.Option("--runtime-db", help="Transactional worker runtime database")
-    ] = DEFAULT_RUNTIME_DB_PATH,
-) -> None:
-    """Show permit state from the transactional worker runtime database."""
-    console.print(runtime_permit_status(runtime_db_path, permit_id).value.upper())
-
-
-@app.command("revoke-runtime-permit")
-def revoke_runtime_permit_command(
-    permit_id: Annotated[str, typer.Argument(help="Permit ID to revoke")],
-    reason: Annotated[str, typer.Option("--reason", help="Human-readable revocation reason")],
-    runtime_db_path: Annotated[
-        Path, typer.Option("--runtime-db", help="Transactional worker runtime database")
-    ] = DEFAULT_RUNTIME_DB_PATH,
-    audit_path: Annotated[
-        Path, typer.Option("--audit", help="Append-only audit log")
-    ] = DEFAULT_AUDIT_PATH,
-) -> None:
-    """Revoke a permit in the transactional worker runtime database."""
-    try:
-        status = revoke_runtime_permit(runtime_db_path, permit_id, reason=reason)
-    except ValueError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    append_audit_event(
-        audit_path,
-        "permit.runtime_revoked",
-        permit_id=permit_id,
-        details={"reason": reason},
-    )
-    console.print(f"Permit {permit_id} status: {status.value.upper()}")
-
-
 @app.command("verify-audit")
 def verify_audit_command(
     audit_path: Annotated[Path, typer.Argument(help="Audit JSONL file")],
@@ -602,550 +501,6 @@ def verify_audit_command(
     console.print(message)
     if not valid:
         raise typer.Exit(code=5)
-
-
-@app.command("observe-http")
-def observe_http_command(
-    permit_path: Annotated[Path, typer.Argument(help="Signed execution permit YAML")],
-    engagement_path: Annotated[Path, typer.Argument(help="Current engagement YAML")],
-    test_path: Annotated[Path, typer.Argument(help="Current test definition YAML")],
-    target: Annotated[str, typer.Option("--target", help="Exact HTTP(S) target URL")],
-    http_method: Annotated[
-        str, typer.Option("--http-method", help="Observation method: GET or HEAD")
-    ] = "GET",
-    identity: Annotated[
-        str | None, typer.Option("--identity", help="Logical identity/role")
-    ] = None,
-    requested_rps: Annotated[
-        float | None, typer.Option("--rps", help="Requested maximum request rate")
-    ] = None,
-    state_path: Annotated[
-        Path, typer.Option("--state", help="Permit lifecycle state file")
-    ] = DEFAULT_STATE_PATH,
-    audit_path: Annotated[
-        Path, typer.Option("--audit", help="Append-only audit log")
-    ] = DEFAULT_AUDIT_PATH,
-    evidence_path: Annotated[
-        Path | None,
-        typer.Option("--evidence", help="Write observation evidence JSON here"),
-    ] = None,
-    manifest_path: Annotated[
-        Path, typer.Option("--manifest", help="Evidence manifest JSONL")
-    ] = Path(".astp")
-    / "evidence-manifest.jsonl",
-    rate_state_path: Annotated[
-        Path, typer.Option("--rate-state", help="Durable rate-limit state file")
-    ] = Path(".astp")
-    / "rate-state.json",
-    runtime_db_path: Annotated[
-        Path,
-        typer.Option(
-            "--runtime-db",
-            help="Transactional worker runtime database",
-        ),
-    ] = DEFAULT_RUNTIME_DB_PATH,
-    sensitivity: Annotated[
-        SensitivityLabel, typer.Option("--sensitivity", help="Evidence sensitivity label")
-    ] = SensitivityLabel.INTERNAL,
-    timeout_seconds: Annotated[
-        float, typer.Option("--timeout", help="Network timeout in seconds; maximum 30")
-    ] = DEFAULT_TIMEOUT_SECONDS,
-    max_body_bytes: Annotated[
-        int,
-        typer.Option(
-            "--max-body-bytes",
-            help="Maximum response body bytes captured; maximum 1048576",
-        ),
-    ] = DEFAULT_MAX_BODY_BYTES,
-) -> None:
-    """Perform one permit-gated GET/HEAD observation and write redacted evidence."""
-    permit = load_model(permit_path, SignedExecutionPermit)
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
-    _, keys = _permit_keyring()
-    output = evidence_path or (Path(".astp") / "evidence" / f"{permit.payload.permit_id}.json")
-    try:
-        result = observe_http(
-            permit,
-            engagement,
-            test,
-            keys,
-            target=target,
-            method=http_method,
-            identity=identity,
-            requested_rps=requested_rps,
-            state_path=state_path,
-            audit_path=audit_path,
-            evidence_path=output,
-            manifest_path=manifest_path,
-            rate_state_path=rate_state_path,
-            runtime_db_path=runtime_db_path,
-            sensitivity=sensitivity,
-            timeout_seconds=timeout_seconds,
-            max_body_bytes=max_body_bytes,
-        )
-    except ObservationError as exc:
-        console.print(f"Observation completed: [bold]NO[/bold]\n{exc}")
-        raise typer.Exit(code=6) from exc
-
-    evidence = result.evidence
-    table = Table(title="ASTP HTTP Observation")
-    table.add_column("Field")
-    table.add_column("Value")
-    table.add_row("Method", evidence.method)
-    table.add_row("Target", evidence.target)
-    table.add_row("Status", str(evidence.status_code))
-    table.add_row("Captured body", f"{evidence.body_bytes_captured} bytes")
-    table.add_row("Body truncated", "YES" if evidence.body_truncated else "NO")
-    table.add_row("Evidence ID", evidence.evidence_id)
-    table.add_row("Action ID", evidence.action_id)
-    table.add_row("Sensitivity", evidence.sensitivity.value)
-    table.add_row("Evidence hash", evidence.evidence_hash)
-    table.add_row("Evidence", str(result.evidence_path))
-    table.add_row("Manifest", str(result.manifest_path))
-    if evidence.redirect is not None:
-        table.add_row("Redirect", evidence.redirect.target)
-        table.add_row("Redirect followed", "NO")
-        table.add_row("Redirect in scope", "YES" if evidence.redirect.in_scope else "NO")
-    console.print(table)
-    console.print("Permit consumed: [bold]YES[/bold]")
-    console.print("Network execution: observation-only GET/HEAD (Milestone 2.4)")
-
-
-@app.command("verify-evidence")
-def verify_evidence_command(
-    evidence_path: Annotated[Path, typer.Argument(help="HTTP observation evidence JSON")],
-) -> None:
-    """Verify the canonical SHA-256 hash of stored observation evidence."""
-    try:
-        evidence = HttpObservationEvidence.model_validate_json(
-            evidence_path.read_text(encoding="utf-8")
-        )
-    except (OSError, ValueError) as exc:
-        console.print(f"Evidence valid: [bold]NO[/bold]\n{exc}")
-        raise typer.Exit(code=7) from exc
-    valid = verify_observation_evidence(evidence)
-    console.print(f"Evidence valid: [bold]{'YES' if valid else 'NO'}[/bold]")
-    console.print(f"Evidence hash: {evidence.evidence_hash}")
-    if not valid:
-        raise typer.Exit(code=7)
-
-
-@app.command("verify-evidence-manifest")
-def verify_evidence_manifest_command(
-    manifest_path: Annotated[Path, typer.Argument(help="Evidence manifest JSONL")],
-    skip_artifacts: Annotated[
-        bool, typer.Option("--skip-artifacts", help="Verify chain only, not artifact hashes")
-    ] = False,
-) -> None:
-    """Verify the hash-linked evidence manifest and, by default, all artifacts."""
-    try:
-        valid, message = verify_evidence_manifest(
-            manifest_path, verify_artifacts=not skip_artifacts
-        )
-    except (OSError, ValueError) as exc:
-        console.print(f"Evidence manifest valid: [bold]NO[/bold]\n{exc}")
-        raise typer.Exit(code=8) from exc
-    console.print(f"Evidence manifest valid: [bold]{'YES' if valid else 'NO'}[/bold]")
-    console.print(message)
-    if not valid:
-        raise typer.Exit(code=8)
-
-
-@app.command("export-evidence-bundle")
-def export_evidence_bundle_command(
-    manifest_path: Annotated[Path, typer.Argument(help="Evidence manifest JSONL")],
-    output: Annotated[
-        Path, typer.Option("--output", "-o", help="Write portable evidence bundle ZIP here")
-    ],
-) -> None:
-    """Export a verified evidence manifest and its artifacts as a portable bundle."""
-    try:
-        receipt = export_evidence_bundle(manifest_path, output)
-    except (OSError, ValueError) as exc:
-        console.print(f"Evidence bundle exported: [bold]NO[/bold]\n{exc}")
-        raise typer.Exit(code=9) from exc
-    console.print("Evidence bundle exported: [bold]YES[/bold]")
-    console.print(f"Bundle ID: {receipt.bundle_id}")
-    console.print(f"Artifacts: {len(receipt.artifacts)}")
-    console.print(f"Receipt hash: {receipt.receipt_hash}")
-    console.print(f"Written to: {output}")
-
-
-@app.command("verify-evidence-bundle")
-def verify_evidence_bundle_command(
-    bundle_path: Annotated[Path, typer.Argument(help="Portable evidence bundle ZIP")],
-) -> None:
-    """Verify a portable evidence bundle receipt, manifest snapshot, and artifacts."""
-    valid, message = verify_evidence_bundle(bundle_path)
-    console.print(f"Evidence bundle valid: [bold]{'YES' if valid else 'NO'}[/bold]")
-    console.print(message)
-    if not valid:
-        raise typer.Exit(code=9)
-
-
-@app.command("browser-intake-server")
-def browser_intake_server_command(
-    output: Annotated[
-        Path,
-        typer.Option("--output", "-o", help="Write the latest browser capture JSON here"),
-    ] = Path(".astp")
-    / "browser-capture.json",
-    platform: Annotated[
-        str,
-        typer.Option("--platform", help="Authenticated bug bounty platform identifier"),
-    ] = "bughunt",
-    catalog: Annotated[
-        Path,
-        typer.Option("--catalog", help="Persistent program catalog YAML"),
-    ] = Path(".astp")
-    / "program-catalog.yaml",
-    captures_dir: Annotated[
-        Path,
-        typer.Option("--captures-dir", help="Raw authenticated program captures"),
-    ] = Path(".astp")
-    / "program-captures",
-    programs_dir: Annotated[
-        Path,
-        typer.Option("--programs-dir", help="Normalized program YAML directory"),
-    ] = Path("programs"),
-    port: Annotated[
-        int,
-        typer.Option("--port", help="Loopback port used by the browser companion"),
-    ] = 8765,
-) -> None:
-    """Serve authenticated program discovery and intake on loopback only."""
-    if port < 1024 or port > 65535:
-        raise typer.BadParameter("port must be between 1024 and 65535")
-    intake_token = secrets.token_urlsafe(24)
-    console.print(f"ASTP browser intake listening on http://127.0.0.1:{port}")
-    console.print(f"Platform: {platform}")
-    console.print(f"Latest capture: {output}")
-    console.print(f"Program catalog: {catalog}")
-    console.print("Intake token (paste into the browser companion):")
-    console.print(intake_token, markup=False)
-    serve_program_intake(
-        intake_token=intake_token,
-        platform=platform,
-        latest_capture_path=output,
-        catalog_path=catalog,
-        captures_dir=captures_dir,
-        programs_dir=programs_dir,
-        port=port,
-    )
-
-
-@app.command("programs")
-def programs_command(
-    catalog: Annotated[
-        Path,
-        typer.Option("--catalog", help="Program catalog YAML"),
-    ] = Path(".astp")
-    / "program-catalog.yaml",
-) -> None:
-    """Display discovered bug bounty programs and their synchronization state."""
-    if not catalog.exists():
-        console.print(
-            "[yellow]No program catalog found. Run authenticated discovery first.[/yellow]"
-        )
-        raise typer.Exit(code=2)
-    workspace = load_model(catalog, BugBountyWorkspace)
-    table = Table(title=f"ASTP Programs — {workspace.platform}")
-    table.add_column("#", justify="right")
-    table.add_column("Active")
-    table.add_column("Program")
-    table.add_column("Status")
-    table.add_column("ID")
-    for index, item in enumerate(workspace.programs, start=1):
-        display_status = (
-            "READY"
-            if item.sync_status in {ProgramSyncStatus.SYNCED, ProgramSyncStatus.READY}
-            else item.sync_status.value.upper()
-        )
-        table.add_row(
-            str(index),
-            "YES" if item.active else "",
-            item.candidate.name,
-            display_status,
-            item.candidate.id,
-        )
-    console.print(table)
-    console.print(f"Active programs: {len(workspace.active_programs())}")
-
-
-@app.command("select-programs")
-def select_programs_command(
-    program_id: Annotated[
-        list[str] | None,
-        typer.Option("--id", help="Program ID to activate; repeatable"),
-    ] = None,
-    catalog: Annotated[
-        Path,
-        typer.Option("--catalog", help="Program catalog YAML"),
-    ] = Path(".astp")
-    / "program-catalog.yaml",
-) -> None:
-    """Select one or more synchronized programs as active workspace programs."""
-    workspace = load_model(catalog, BugBountyWorkspace)
-    selected = set(program_id or [])
-    if not selected:
-        table = Table(title="Select active bug bounty programs")
-        table.add_column("#", justify="right")
-        table.add_column("Program")
-        table.add_column("Status")
-        selectable: list[str] = []
-        for index, item in enumerate(workspace.programs, start=1):
-            table.add_row(str(index), item.candidate.name, item.sync_status.value.upper())
-            selectable.append(item.candidate.id)
-        console.print(table)
-        raw = typer.prompt("Program numbers, comma-separated (for example 1,3)")
-        try:
-            indexes = {int(value.strip()) for value in raw.split(",") if value.strip()}
-        except ValueError as exc:
-            raise typer.BadParameter("selection must contain program numbers") from exc
-        if any(index < 1 or index > len(selectable) for index in indexes):
-            raise typer.BadParameter("selection contains an unknown program number")
-        selected = {selectable[index - 1] for index in indexes}
-
-    unavailable = {
-        item.candidate.id
-        for item in workspace.programs
-        if item.candidate.id in selected and item.sync_status == ProgramSyncStatus.FAILED
-    }
-    if unavailable:
-        raise typer.BadParameter("cannot activate failed programs: " + ", ".join(unavailable))
-    set_active_programs(workspace, selected)
-    save_workspace(workspace, catalog)
-    console.print("Active programs updated:")
-    for item in workspace.active_programs():
-        console.print(f"  + {item.candidate.name} ({item.candidate.id})")
-
-
-@app.command("import-program")
-def import_program_command(
-    source: Annotated[Path, typer.Argument(help="Markdown/text/HTML or browser capture JSON")],
-    name: Annotated[str, typer.Option("--name", help="Bug bounty program name")],
-    platform: Annotated[str, typer.Option("--platform", help="Program platform, e.g. bughunt")],
-    output: Annotated[
-        Path,
-        typer.Option("--output", "-o", help="Write normalized BugBountyProgram YAML here"),
-    ],
-    browser_capture: Annotated[
-        bool,
-        typer.Option("--browser-capture", help="Treat source as an ASTP browser capture JSON"),
-    ] = False,
-) -> None:
-    """Normalize a program source while preserving provenance and unresolved rules."""
-    if browser_capture:
-        capture = load_capture(source)
-        program = import_program_text(
-            capture_to_text(capture),
-            name=name,
-            platform=platform,
-            source_type="authenticated_browser",
-            source_url=capture.url,
-            captured_at=capture.captured_at,
-        )
-        program.source.title = capture.title
-    else:
-        program = import_program_file(source, name=name, platform=platform)
-
-    dump_yaml(program, output)
-    table = Table(title="ASTP Bug Bounty Program Intake")
-    table.add_column("Field")
-    table.add_column("Value")
-    table.add_row("Program", program.name)
-    table.add_row("Platform", program.platform)
-    table.add_row("Status", program.status.value.upper())
-    table.add_row("Allowed scope", str(len(program.allowed_scope())))
-    table.add_row("Denied scope", str(len(program.denied_scope())))
-    table.add_row("Constraints", str(len(program.constraints)))
-    table.add_row("Review issues", str(len(program.issues)))
-    console.print(table)
-    for issue in program.issues:
-        console.print(f"- [yellow]{issue.code}[/yellow]: {issue.message}")
-    console.print(f"Normalized program written to: {output}")
-
-
-def _parse_review_deny(value: str) -> ScopeRule:
-    try:
-        raw_kind, raw_value = value.split("=", 1)
-        kind = ScopeKind(raw_kind.strip())
-    except (ValueError, KeyError) as exc:
-        raise typer.BadParameter(
-            "deny mappings must use KIND=VALUE, for example wildcard_domain=*.example.com"
-        ) from exc
-    raw_value = raw_value.strip()
-    if not raw_value:
-        raise typer.BadParameter("deny mapping value cannot be empty")
-    return ScopeRule(kind=kind, value=raw_value)
-
-
-@app.command("review-program")
-def review_program_command(
-    program_id: Annotated[
-        str,
-        typer.Argument(help="Catalog program ID to review"),
-    ],
-    catalog: Annotated[
-        Path,
-        typer.Option("--catalog", help="Program catalog YAML"),
-    ] = Path(".astp")
-    / "program-catalog.yaml",
-    rate: Annotated[
-        float | None,
-        typer.Option(
-            "--rps",
-            help=(
-                "Operator-selected conservative RPS for qualitative traffic restrictions; "
-                "this is recorded as an operator decision, not a program-published limit"
-            ),
-        ),
-    ] = None,
-    issue_index: Annotated[
-        int | None,
-        typer.Option("--issue", help="1-based review issue number to resolve with deny mappings"),
-    ] = None,
-    deny: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--deny",
-            help="Reviewed deny mapping KIND=VALUE; repeat for multiple mappings",
-        ),
-    ] = None,
-    semantic_deny: Annotated[
-        str | None,
-        typer.Option(
-            "--semantic-deny",
-            help=(
-                "Semantic deny guardrail KIND=VALUE; kinds: product_family, "
-                "organization_family, asset_family"
-            ),
-        ),
-    ] = None,
-    note: Annotated[
-        str | None,
-        typer.Option("--note", help="Operator review note stored with the resolution"),
-    ] = None,
-) -> None:
-    """Review blocking policy ambiguities without inventing program rules."""
-    workspace = load_model(catalog, BugBountyWorkspace)
-    item = next(
-        (entry for entry in workspace.programs if entry.candidate.id == program_id),
-        None,
-    )
-    if item is None:
-        raise typer.BadParameter(f"unknown catalog program ID: {program_id}")
-    if not item.normalized_path:
-        raise typer.BadParameter("program has not been normalized yet")
-
-    program_path = Path(item.normalized_path)
-    program = load_model(program_path, BugBountyProgram)
-    if program.id != item.candidate.id:
-        program.id = item.candidate.id
-
-    changed = False
-    if rate is not None:
-        try:
-            resolve_rate_issue(program, rate)
-        except ValueError as exc:
-            raise typer.BadParameter(str(exc)) from exc
-        changed = True
-
-    if issue_index is not None and semantic_deny is not None:
-        if deny:
-            raise typer.BadParameter("use either --semantic-deny or --deny, not both")
-        try:
-            raw_kind, raw_value = semantic_deny.split("=", 1)
-            semantic_kind = SemanticExclusionKind(raw_kind.strip())
-        except ValueError as exc:
-            raise typer.BadParameter(
-                "semantic deny must use KIND=VALUE; kinds: product_family, "
-                "organization_family, asset_family"
-            ) from exc
-        try:
-            resolve_issue_with_semantic_exclusion(
-                program,
-                issue_index=issue_index,
-                kind=semantic_kind,
-                value=raw_value,
-                note=note,
-            )
-        except ValueError as exc:
-            raise typer.BadParameter(str(exc)) from exc
-        changed = True
-    elif issue_index is not None:
-        deny_rules = [_parse_review_deny(value) for value in (deny or [])]
-        try:
-            resolve_issue_with_denies(
-                program,
-                issue_index=issue_index,
-                deny_rules=deny_rules,
-                note=note,
-            )
-        except ValueError as exc:
-            raise typer.BadParameter(str(exc)) from exc
-        changed = True
-    elif deny or semantic_deny:
-        raise typer.BadParameter("--deny/--semantic-deny requires --issue")
-
-    if changed:
-        dump_yaml(program, program_path)
-        item.sync_status = (
-            ProgramSyncStatus.NEEDS_REVIEW if program.unresolved_issues else ProgramSyncStatus.READY
-        )
-        save_workspace(workspace, catalog)
-
-    table = Table(title=f"ASTP Policy Review — {program.name}")
-    table.add_column("#", justify="right")
-    table.add_column("State")
-    table.add_column("Code")
-    table.add_column("Source")
-    for index, issue in enumerate(program.issues, start=1):
-        state = "RESOLVED" if issue.resolved else "BLOCKING"
-        table.add_row(index.__str__(), state, issue.code, issue.source_text or "")
-    console.print(table)
-    console.print(f"Policy status: {program.status.value.upper()}")
-    if program.reviewed_max_requests_per_second is not None:
-        console.print(
-            "Reviewed execution rate: "
-            f"{program.reviewed_max_requests_per_second:g} req/s [operator decision]"
-        )
-    if program.semantic_exclusions:
-        console.print("Semantic deny guardrails:")
-        for rule in program.semantic_exclusions:
-            console.print(f"- {rule.id}: {rule.kind.value}={rule.value}")
-    if program.unresolved_issues:
-        console.print(
-            "[yellow]Execution remains blocked until every blocking issue has a safe, "
-            "explicit resolution.[/yellow]"
-        )
-
-
-@app.command("compile-program")
-def compile_program_command(
-    program_path: Annotated[Path, typer.Argument(help="Normalized BugBountyProgram YAML")],
-    output: Annotated[
-        Path,
-        typer.Option("--output", "-o", help="Write executable Engagement YAML here"),
-    ],
-    max_requests_per_second: Annotated[
-        float | None,
-        typer.Option("--rps", help="Explicitly reviewed numeric execution rate"),
-    ] = None,
-) -> None:
-    """Compile a reviewed program into an executable ASTP engagement."""
-    program = load_model(program_path, BugBountyProgram)
-    try:
-        engagement = compile_program(
-            program,
-            max_requests_per_second=max_requests_per_second,
-        )
-    except ValueError as exc:
-        console.print(f"[bold yellow]Compilation blocked:[/bold yellow] {exc}")
-        raise typer.Exit(code=2) from exc
-    dump_yaml(engagement, output)
-    console.print(f"Executable engagement written to: {output}")
 
 
 @app.command("evaluate-test")

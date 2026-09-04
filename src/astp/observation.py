@@ -136,6 +136,12 @@ class ObservationResult(BaseModel):
     manifest_path: Path
 
 
+def observation_user_agent(engagement: Engagement) -> str:
+    if engagement.program is not None and engagement.program.recommended_user_agent:
+        return engagement.program.recommended_user_agent
+    return "ASTP/0.13 observation-worker"
+
+
 def _canonical_json(data: object) -> bytes:
     return json.dumps(
         data,
@@ -498,7 +504,7 @@ def observe_http(
         target,
         method=normalized_method,
         headers={
-            "User-Agent": "ASTP/0.11 observation-worker",
+            "User-Agent": observation_user_agent(engagement),
             "Accept": "*/*",
         },
     )

@@ -10,6 +10,7 @@ from astp.models import (
     Constraints,
     Engagement,
     MethodPolicy,
+    ProgramBinding,
     ScopeKind,
     ScopePolicy,
     ScopeRule,
@@ -618,5 +619,14 @@ def compile_program(
             no_dos="no_dos" in constraints_by_code,
             no_social_engineering="no_social_engineering" in constraints_by_code,
             no_data_destruction=True,
+        ),
+        program=ProgramBinding(
+            program_id=program.id,
+            platform=program.platform,
+            source_content_sha256=program.source.content_sha256,
+            source_url=program.source.source_url,
+            requires_online="program_must_be_online" in constraints_by_code,
+            recommended_user_agent=program.recommended_user_agent,
+            excluded_finding_types=list(program.excluded_finding_types),
         ),
     )

@@ -1,0 +1,60 @@
+id: bughunt-grupo-smart-fit-bug-bounty-p-blico-400f88b1c5
+name: Grupo Smart Fit - Bug Bounty Público
+scope:
+  allowed:
+  - kind: wildcard_domain
+    value: '*.smartfit.com.br'
+  - kind: domain
+    value: smartfit.com
+  - kind: url_prefix
+    value: https://apps.apple.com/br/app/smart-fit-app/id1308265270/
+  - kind: wildcard_domain
+    value: '*.smartfit.com'
+  - kind: url_prefix
+    value: https://play.google.com/store/apps/details?id=com.smartfitcoach.app/
+  denied:
+  - kind: domain
+    value: universidade.smartfit.com.br
+  - kind: domain
+    value: universidad.smartfit.com
+  approval_required: []
+methods:
+  passive: allow
+  safe_active: allow
+  state_changing: approval_required
+  intrusive: deny
+constraints:
+  max_requests_per_second: 1.0
+  no_dos: true
+  no_social_engineering: true
+  no_data_destruction: true
+  assets: []
+  redaction:
+    sensitive_headers: []
+    sensitive_query_parameters: []
+    sensitive_body_fields: []
+  semantic_exclusions:
+  - id: semex-8a8bf1181d0a
+    kind: product_family
+    value: Universidade Smart Fit
+    source_text: Qualquer sistema, domínio, subdomínio, API ou serviço relacionado
+      às plataformas de Universidade Smart Fit, independentemente do país
+  - id: semex-99c27802d859
+    kind: organization_family
+    value: ASAP
+    source_text: Qualquer sistema, domínio, subdomínio, API ou serviço pertencente
+      ou operado pela empresa ASAP
+  - id: semex-999be0c07598
+    kind: asset_family
+    value: Smart Fit gym totem systems
+    source_text: Sistemas, aplicações, APIs, equipamentos e serviços relacionados
+      aos totens utilizados nas academias Smart Fit
+program:
+  program_id: bughunt-grupo-smart-fit-bug-bounty-p-blico-400f88b1c5
+  platform: bughunt
+  source_content_sha256: a454876f0ab9ebcea2d14bc28b2d11801853b97f28cf5664f4518b0d550c9b29
+  source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
+  requires_online: true
+  operational_attestation_max_age_seconds: 300
+  recommended_user_agent: Bughunt - Security Research
+  excluded_finding_types: []

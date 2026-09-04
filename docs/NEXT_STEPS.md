@@ -104,3 +104,24 @@ propagation, stable program identity, source-supported finding exclusions, and e
 review. The next field step is to re-sync Smart Fit, inspect the regenerated policy, and resolve
 only those blocking issues for which the operator can provide safe explicit mappings. Target-side
 M2.6 work remains downstream of a READY engagement.
+
+
+## M2.5.4 completed — Semantic Exclusion Guardrails
+
+Broad organization/product/asset exclusions now remain semantic deny guardrails instead of being
+considered resolved by an incomplete hostname list. Authorization requires explicit per-target
+classification against each guardrail.
+
+## M2.6 completed — Program Runtime Gates & Field-Ready Compilation
+
+- Compiled engagements preserve the bug-bounty program revision and operational metadata.
+- Online-only policies require a fresh revision-bound status attestation.
+- OFFLINE is a hard DENY; missing/stale/unknown status is INSUFFICIENT_CONTEXT.
+- Permit lifetime is capped by the attestation lifetime and permit schema v3 records its ID.
+- The GET/HEAD observation worker uses the program-recommended User-Agent when available.
+
+Next field checkpoint: compile the reviewed Smart Fit program, create a fresh ONLINE attestation only
+after confirming the program is currently online in the authenticated BugHunt UI, then run
+authorization against one explicitly in-scope target with every semantic guardrail assessed. Only
+after that dry authorization passes should a single GET/HEAD permit be issued for the controlled
+field trial. Target crawling/browser discovery remains a later milestone.
