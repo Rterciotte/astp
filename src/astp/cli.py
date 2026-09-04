@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from astp.authorization import AuthorizationRequest, authorize_test
+from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
 from astp.io import dump_yaml, load_model
 from astp.lifecycle import (
     append_audit_event,
@@ -536,6 +537,17 @@ def observe_http_command(
         Path | None,
         typer.Option("--evidence", help="Write observation evidence JSON here"),
     ] = None,
+    manifest_path: Annotated[
+        Path, typer.Option("--manifest", help="Evidence manifest JSONL")
+    ] = Path(".astp")
+    / "evidence-manifest.jsonl",
+    rate_state_path: Annotated[
+        Path, typer.Option("--rate-state", help="Durable rate-limit state file")
+    ] = Path(".astp")
+    / "rate-state.json",
+    sensitivity: Annotated[
+        SensitivityLabel, typer.Option("--sensitivity", help="Evidence sensitivity label")
+    ] = SensitivityLabel.INTERNAL,
     timeout_seconds: Annotated[
         float, typer.Option("--timeout", help="Network timeout in seconds; maximum 30")
     ] = DEFAULT_TIMEOUT_SECONDS,
@@ -566,6 +578,9 @@ def observe_http_command(
             state_path=state_path,
             audit_path=audit_path,
             evidence_path=output,
+            manifest_path=manifest_path,
+            rate_state_path=rate_state_path,
+            sensitivity=sensitivity,
             timeout_seconds=timeout_seconds,
             max_body_bytes=max_body_bytes,
         )
@@ -582,8 +597,12 @@ def observe_http_command(
     table.add_row("Status", str(evidence.status_code))
     table.add_row("Captured body", f"{evidence.body_bytes_captured} bytes")
     table.add_row("Body truncated", "YES" if evidence.body_truncated else "NO")
+    table.add_row("Evidence ID", evidence.evidence_id)
+    table.add_row("Action ID", evidence.action_id)
+    table.add_row("Sensitivity", evidence.sensitivity.value)
     table.add_row("Evidence hash", evidence.evidence_hash)
     table.add_row("Evidence", str(result.evidence_path))
+    table.add_row("Manifest", str(result.manifest_path))
     if evidence.redirect is not None:
         table.add_row("Redirect", evidence.redirect.target)
         table.add_row("Redirect followed", "NO")
@@ -610,6 +629,27 @@ def verify_evidence_command(
     console.print(f"Evidence hash: {evidence.evidence_hash}")
     if not valid:
         raise typer.Exit(code=7)
+
+
+@app.command("verify-evidence-manifest")
+def verify_evidence_manifest_command(
+    manifest_path: Annotated[Path, typer.Argument(help="Evidence manifest JSONL")],
+    skip_artifacts: Annotated[
+        bool, typer.Option("--skip-artifacts", help="Verify chain only, not artifact hashes")
+    ] = False,
+) -> None:
+    """Verify the hash-linked evidence manifest and, by default, all artifacts."""
+    try:
+        valid, message = verify_evidence_manifest(
+            manifest_path, verify_artifacts=not skip_artifacts
+        )
+    except (OSError, ValueError) as exc:
+        console.print(f"Evidence manifest valid: [bold]NO[/bold]\n{exc}")
+        raise typer.Exit(code=8) from exc
+    console.print(f"Evidence manifest valid: [bold]{'YES' if valid else 'NO'}[/bold]")
+    console.print(message)
+    if not valid:
+        raise typer.Exit(code=8)
 
 
 @app.command("evaluate-test")

@@ -157,6 +157,8 @@ def _observe(
         state_path=tmp_path / "state.json",
         audit_path=tmp_path / "audit.jsonl",
         evidence_path=tmp_path / "evidence.json",
+        manifest_path=tmp_path / "evidence-manifest.jsonl",
+        rate_state_path=tmp_path / "rate-state.json",
         max_body_bytes=max_body_bytes,
         now=NOW,
     )
@@ -218,16 +220,18 @@ def test_in_scope_redirect_is_still_not_followed(tmp_path: Path, http_server: st
 def test_replay_is_rejected_before_second_network_action(tmp_path: Path, http_server: str) -> None:
     target = f"{http_server}/data"
     engagement, test, permit = _permit(target)
-    kwargs = dict(
-        target=target,
-        method="GET",
-        identity=None,
-        requested_rps=1,
-        state_path=tmp_path / "state.json",
-        audit_path=tmp_path / "audit.jsonl",
-        evidence_path=tmp_path / "evidence.json",
-        now=NOW,
-    )
+    kwargs = {
+        "target": target,
+        "method": "GET",
+        "identity": None,
+        "requested_rps": 1,
+        "state_path": tmp_path / "state.json",
+        "audit_path": tmp_path / "audit.jsonl",
+        "evidence_path": tmp_path / "evidence.json",
+        "manifest_path": tmp_path / "evidence-manifest.jsonl",
+        "rate_state_path": tmp_path / "rate-state.json",
+        "now": NOW,
+    }
     observe_http(permit, engagement, test, KEY, **kwargs)
     with pytest.raises(ObservationError, match="already been consumed"):
         observe_http(permit, engagement, test, KEY, **kwargs)
@@ -249,6 +253,8 @@ def test_post_is_rejected_without_consuming_permit(tmp_path: Path, http_server: 
             state_path=tmp_path / "state.json",
             audit_path=tmp_path / "audit.jsonl",
             evidence_path=tmp_path / "evidence.json",
+            manifest_path=tmp_path / "evidence-manifest.jsonl",
+            rate_state_path=tmp_path / "rate-state.json",
             now=NOW,
         )
     assert permit_status(tmp_path / "state.json", permit.payload.permit_id).value == "available"
@@ -296,6 +302,8 @@ def test_concurrent_replay_allows_only_one_network_request(
                 state_path=tmp_path / "state.json",
                 audit_path=tmp_path / "audit.jsonl",
                 evidence_path=tmp_path / f"evidence-{threading.get_ident()}.json",
+                manifest_path=tmp_path / "evidence-manifest.jsonl",
+                rate_state_path=tmp_path / "rate-state.json",
                 now=NOW,
             )
             results.append("accepted")

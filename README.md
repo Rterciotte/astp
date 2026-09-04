@@ -4,9 +4,11 @@ ASTP is a policy-first platform for authorized security testing automation. Mile
 established conservative scope compilation, granular authorization, bounded approvals, signed
 single-use execution permits, revocation, key rotation IDs, and a tamper-evident local audit chain.
 
-**Milestone 2 adds the first real network-capable component:** a tightly bounded HTTP observation
+**Milestone 2 added the first real network-capable component:** a tightly bounded HTTP observation
 worker that can perform exactly one permit-gated `GET` or `HEAD` request and persist redacted,
 hash-verifiable evidence.
+
+**Milestone 2.1 hardens that worker** with canonical action IDs, durable per-target rate state, explicit evidence IDs and sensitivity labels, and a hash-linked evidence manifest that can verify both its own chain and artifact hashes.
 
 It is not a scanner and does not perform exploitation, fuzzing, crawling, credential attacks, state
 changes, arbitrary shell execution, or unrestricted autonomous networking.
@@ -98,14 +100,19 @@ network execution: observation-only GET/HEAD
 Run the exact same `observe-http` command again and replay protection should reject it before a
 second network request is made.
 
-## Verify evidence and audit
+## Verify evidence, manifest, and audit
+
+M2.1 writes `.astp/evidence-manifest.jsonl` and `.astp/rate-state.json` by default.
+The manifest is append-only and hash-linked; each entry also stores the SHA-256 of its artifact.
+
 
 ```powershell
 astp verify-evidence .\.astp\evidence\PERMIT_ID.json
+astp verify-evidence-manifest .\.astp\evidence-manifest.jsonl
 astp verify-audit .\.astp\audit.jsonl
 ```
 
-Both should report `YES` for untampered data.
+All should report `YES` for untampered data.
 
 ## Redirect behavior
 
@@ -133,5 +140,5 @@ astp verify-audit .\.astp\audit.jsonl
 
 Local lifecycle/evidence data under `.astp/` is intentionally excluded from Git.
 
-See `docs/HTTP_OBSERVATION_WORKER.md`, `docs/PERMIT_LIFECYCLE.md`,
+See `docs/M2_1_HARDENING.md`, `docs/CTF_MODE_ROADMAP.md`, `docs/HTTP_OBSERVATION_WORKER.md`, `docs/PERMIT_LIFECYCLE.md`,
 `docs/EXECUTION_PERMITS.md`, and `docs/NEXT_STEPS.md`.

@@ -10,12 +10,16 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from astp.action import http_action_id, http_target_rate_key
+from astp.evidence_store import SensitivityLabel, register_evidence
 from astp.lifecycle import append_audit_event, consume_execution_permit
 from astp.models import Engagement, TestDefinition, target_in_scope
 from astp.permits import PermitVerificationRequest, SignedExecutionPermit
+from astp.rate_limit import acquire_rate_slot
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
 MAX_TIMEOUT_SECONDS = 30.0
@@ -69,7 +73,10 @@ class RedirectObservation(BaseModel):
 class HttpObservationEvidence(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    schema_version: str = "1"
+    schema_version: str = "2"
+    evidence_id: str
+    action_id: str
+    sensitivity: SensitivityLabel = SensitivityLabel.INTERNAL
     permit_id: str
     engagement_id: str
     test_id: str
@@ -98,6 +105,7 @@ class HttpObservationEvidence(BaseModel):
 class ObservationResult(BaseModel):
     evidence: HttpObservationEvidence
     evidence_path: Path
+    manifest_path: Path
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
@@ -155,8 +163,7 @@ def _is_textual(content_type: str | None) -> bool:
     media_type = content_type.split(";", 1)[0].strip().lower()
     return (
         media_type.startswith("text/")
-        or media_type.endswith("+json")
-        or media_type.endswith("+xml")
+        or media_type.endswith(("+json", "+xml"))
         or media_type in {"application/json", "application/xml", "application/javascript"}
     )
 
@@ -245,11 +252,15 @@ def observe_http(
     state_path: Path,
     audit_path: Path,
     evidence_path: Path,
+    manifest_path: Path,
+    rate_state_path: Path,
+    sensitivity: SensitivityLabel = SensitivityLabel.INTERNAL,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
     now: datetime | None = None,
 ) -> ObservationResult:
     normalized_method = method.upper()
+    action_id = http_action_id(target, normalized_method, identity)
     _validate_observation_request(
         permit,
         target,
@@ -286,6 +297,29 @@ def observe_http(
         )
         raise ObservationError(consume_result.message)
 
+    rate_limit = requested_rps or permit.payload.max_requests_per_second
+    acquired, retry_after = acquire_rate_slot(
+        rate_state_path,
+        http_target_rate_key(target),
+        rate_limit,
+        now=now,
+    )
+    if not acquired:
+        append_audit_event(
+            audit_path,
+            "observation.rate_limited",
+            permit_id=permit.payload.permit_id,
+            details={
+                "action_id": action_id,
+                "retry_after_seconds": retry_after,
+                "target": redact_url(target),
+            },
+            now=now,
+        )
+        raise ObservationError(
+            f"Durable target rate limit reached; retry after {retry_after:.3f} seconds."
+        )
+
     append_audit_event(
         audit_path,
         "observation.started",
@@ -299,7 +333,7 @@ def observe_http(
         target,
         method=normalized_method,
         headers={
-            "User-Agent": "ASTP/0.7 observation-worker",
+            "User-Agent": "ASTP/0.8 observation-worker",
             "Accept": "*/*",
         },
     )
@@ -339,7 +373,10 @@ def observe_http(
 
     observed_at = now or datetime.now(UTC)
     preliminary = HttpObservationEvidence(
-        schema_version="1",
+        schema_version="2",
+        evidence_id=str(uuid4()),
+        action_id=action_id,
+        sensitivity=sensitivity,
         permit_id=permit.payload.permit_id,
         engagement_id=engagement.id,
         test_id=test.id,
@@ -360,6 +397,16 @@ def observe_http(
     canonical_payload = preliminary.model_dump(mode="json", exclude={"evidence_hash"})
     evidence = preliminary.model_copy(update={"evidence_hash": _evidence_hash(canonical_payload)})
     _write_evidence(evidence_path, evidence)
+    manifest_entry = register_evidence(
+        manifest_path,
+        evidence_path,
+        evidence_type="http.observation",
+        evidence_id=evidence.evidence_id,
+        permit_id=permit.payload.permit_id,
+        action_id=action_id,
+        sensitivity=sensitivity,
+        now=now,
+    )
     append_audit_event(
         audit_path,
         "observation.completed",
@@ -367,9 +414,13 @@ def observe_http(
         details={
             "status_code": status_code,
             "evidence_hash": evidence.evidence_hash,
+            "evidence_id": evidence.evidence_id,
+            "manifest_entry_hash": manifest_entry.entry_hash,
             "evidence_path": str(evidence_path),
             "redirect_followed": False,
         },
         now=now,
     )
-    return ObservationResult(evidence=evidence, evidence_path=evidence_path)
+    return ObservationResult(
+        evidence=evidence, evidence_path=evidence_path, manifest_path=manifest_path
+    )
