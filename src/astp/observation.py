@@ -22,8 +22,8 @@ from astp.rate_limit import acquire_rate_slot
 from astp.transport import (
     ObservationTransport,
     ObservationTransportError,
+    PinnedObservationTransport,
     ResolvedEndpoint,
-    UrllibObservationTransport,
 )
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
@@ -72,6 +72,8 @@ class ObservationError(RuntimeError):
 class RedirectObservation(BaseModel):
     target: str
     in_scope: bool
+    same_origin: bool
+    requires_new_permit: bool = True
     followed: bool = False
 
 
@@ -148,11 +150,12 @@ def _redact_inline_secrets(value: str) -> str:
     return redacted
 
 
-def redact_url(value: str) -> str:
+def redact_url(value: str, extra_query_names: set[str] | None = None) -> str:
     parsed = urlsplit(value)
+    sensitive_names = _SENSITIVE_QUERY_NAMES | (extra_query_names or set())
     query = []
     for name, item_value in parse_qsl(parsed.query, keep_blank_values=True):
-        replacement = "[REDACTED]" if name.lower() in _SENSITIVE_QUERY_NAMES else item_value
+        replacement = "[REDACTED]" if name.lower() in sensitive_names else item_value
         query.append((name, replacement))
     return urlunsplit(
         (
@@ -165,13 +168,15 @@ def redact_url(value: str) -> str:
     )
 
 
-def _redact_headers(headers: Mapping[str, str]) -> dict[str, str]:
+def _redact_headers(
+    headers: Mapping[str, str],
+    extra_header_names: set[str] | None = None,
+) -> dict[str, str]:
+    sensitive_names = _SENSITIVE_HEADER_NAMES | (extra_header_names or set())
     rendered: dict[str, str] = {}
     for name, value in headers.items():
         rendered[name] = (
-            "[REDACTED]"
-            if name.lower() in _SENSITIVE_HEADER_NAMES
-            else _redact_inline_secrets(value)
+            "[REDACTED]" if name.lower() in sensitive_names else _redact_inline_secrets(value)
         )
     return rendered
 
@@ -187,7 +192,26 @@ def _is_textual(content_type: str | None) -> bool:
     )
 
 
-def _decode_preview(body: bytes, content_type: str | None) -> str | None:
+def _redact_json_fields(value: object, sensitive_fields: set[str]) -> object:
+    if isinstance(value, dict):
+        return {
+            key: (
+                "[REDACTED]"
+                if str(key).lower() in sensitive_fields
+                else _redact_json_fields(item, sensitive_fields)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_json_fields(item, sensitive_fields) for item in value]
+    return value
+
+
+def _decode_preview(
+    body: bytes,
+    content_type: str | None,
+    sensitive_body_fields: set[str] | None = None,
+) -> str | None:
     if not body or not _is_textual(content_type):
         return None
     charset = "utf-8"
@@ -201,7 +225,20 @@ def _decode_preview(body: bytes, content_type: str | None) -> str | None:
         text = body.decode(charset, errors="replace")
     except LookupError:
         text = body.decode("utf-8", errors="replace")
-    return _redact_inline_secrets(text[:MAX_PREVIEW_CHARS])
+    preview = text[:MAX_PREVIEW_CHARS]
+    media_type = (content_type or "").split(";", 1)[0].strip().lower()
+    if sensitive_body_fields and (media_type == "application/json" or media_type.endswith("+json")):
+        try:
+            parsed = json.loads(preview)
+        except json.JSONDecodeError:
+            pass
+        else:
+            preview = json.dumps(
+                _redact_json_fields(parsed, sensitive_body_fields),
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+    return _redact_inline_secrets(preview)
 
 
 def _validate_observation_request(
@@ -282,7 +319,7 @@ def _write_failure_evidence(
         test_id=test.id,
         observed_at=observed_at,
         method=method,
-        target=redact_url(target),
+        target=redact_url(target, engagement.constraints.redaction.sensitive_query_parameters),
         failure_kind=failure_kind,
         evidence_hash="pending",
     )
@@ -355,7 +392,9 @@ def observe_http(
             details={
                 "status": consume_result.lifecycle_status.value,
                 "message": consume_result.message,
-                "target": redact_url(target),
+                "target": redact_url(
+                    target, engagement.constraints.redaction.sensitive_query_parameters
+                ),
             },
             now=now,
         )
@@ -376,7 +415,9 @@ def observe_http(
             details={
                 "action_id": action_id,
                 "retry_after_seconds": retry_after,
-                "target": redact_url(target),
+                "target": redact_url(
+                    target, engagement.constraints.redaction.sensitive_query_parameters
+                ),
             },
             now=now,
         )
@@ -388,16 +429,21 @@ def observe_http(
         audit_path,
         "observation.started",
         permit_id=permit.payload.permit_id,
-        details={"method": normalized_method, "target": redact_url(target)},
+        details={
+            "method": normalized_method,
+            "target": redact_url(
+                target, engagement.constraints.redaction.sensitive_query_parameters
+            ),
+        },
         now=now,
     )
 
-    active_transport = transport or UrllibObservationTransport()
+    active_transport = transport or PinnedObservationTransport()
     request = Request(
         target,
         method=normalized_method,
         headers={
-            "User-Agent": "ASTP/0.9 observation-worker",
+            "User-Agent": "ASTP/0.10 observation-worker",
             "Accept": "*/*",
         },
     )
@@ -432,7 +478,9 @@ def observe_http(
             details={
                 "failure_kind": exc.kind.value,
                 "evidence_id": failure_evidence.evidence_id,
-                "target": redact_url(target),
+                "target": redact_url(
+                    target, engagement.constraints.redaction.sensitive_query_parameters
+                ),
             },
             now=now,
         )
@@ -445,9 +493,22 @@ def observe_http(
     redirect = None
     if location and 300 <= status_code < 400:
         redirect_target = urljoin(target, location)
+        current = urlsplit(target)
+        redirected = urlsplit(redirect_target)
+        current_port = current.port or (443 if current.scheme.lower() == "https" else 80)
+        redirected_port = redirected.port or (443 if redirected.scheme.lower() == "https" else 80)
+        same_origin = (
+            current.scheme.lower() == redirected.scheme.lower()
+            and (current.hostname or "").lower() == (redirected.hostname or "").lower()
+            and current_port == redirected_port
+        )
         redirect = RedirectObservation(
-            target=redact_url(redirect_target),
+            target=redact_url(
+                redirect_target, engagement.constraints.redaction.sensitive_query_parameters
+            ),
             in_scope=target_in_scope(redirect_target, engagement.scope),
+            same_origin=same_origin,
+            requires_new_permit=True,
             followed=False,
         )
 
@@ -462,15 +523,21 @@ def observe_http(
         test_id=test.id,
         observed_at=observed_at,
         method=normalized_method,
-        target=redact_url(target),
+        target=redact_url(target, engagement.constraints.redaction.sensitive_query_parameters),
         status_code=status_code,
         reason=str(reason) if reason is not None else None,
-        response_headers=_redact_headers(headers),
+        response_headers=_redact_headers(
+            headers, engagement.constraints.redaction.sensitive_headers
+        ),
         content_type=content_type,
         body_bytes_captured=len(body),
         body_truncated=truncated,
         body_sha256=hashlib.sha256(body).hexdigest(),
-        body_preview=_decode_preview(body, content_type),
+        body_preview=_decode_preview(
+            body,
+            content_type,
+            engagement.constraints.redaction.sensitive_body_fields,
+        ),
         redirect=redirect,
         resolved_endpoint=resolved_endpoint,
         transport_failure=None,

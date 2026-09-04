@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.table import Table
 
 from astp.authorization import AuthorizationRequest, authorize_test
+from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
 from astp.io import dump_yaml, load_model
 from astp.lifecycle import (
@@ -609,7 +610,7 @@ def observe_http_command(
         table.add_row("Redirect in scope", "YES" if evidence.redirect.in_scope else "NO")
     console.print(table)
     console.print("Permit consumed: [bold]YES[/bold]")
-    console.print("Network execution: observation-only GET/HEAD (Milestone 2)")
+    console.print("Network execution: observation-only GET/HEAD (Milestone 2.3)")
 
 
 @app.command("verify-evidence")
@@ -650,6 +651,38 @@ def verify_evidence_manifest_command(
     console.print(message)
     if not valid:
         raise typer.Exit(code=8)
+
+
+@app.command("export-evidence-bundle")
+def export_evidence_bundle_command(
+    manifest_path: Annotated[Path, typer.Argument(help="Evidence manifest JSONL")],
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Write portable evidence bundle ZIP here")
+    ],
+) -> None:
+    """Export a verified evidence manifest and its artifacts as a portable bundle."""
+    try:
+        receipt = export_evidence_bundle(manifest_path, output)
+    except (OSError, ValueError) as exc:
+        console.print(f"Evidence bundle exported: [bold]NO[/bold]\n{exc}")
+        raise typer.Exit(code=9) from exc
+    console.print("Evidence bundle exported: [bold]YES[/bold]")
+    console.print(f"Bundle ID: {receipt.bundle_id}")
+    console.print(f"Artifacts: {len(receipt.artifacts)}")
+    console.print(f"Receipt hash: {receipt.receipt_hash}")
+    console.print(f"Written to: {output}")
+
+
+@app.command("verify-evidence-bundle")
+def verify_evidence_bundle_command(
+    bundle_path: Annotated[Path, typer.Argument(help="Portable evidence bundle ZIP")],
+) -> None:
+    """Verify a portable evidence bundle receipt, manifest snapshot, and artifacts."""
+    valid, message = verify_evidence_bundle(bundle_path)
+    console.print(f"Evidence bundle valid: [bold]{'YES' if valid else 'NO'}[/bold]")
+    console.print(message)
+    if not valid:
+        raise typer.Exit(code=9)
 
 
 @app.command("evaluate-test")

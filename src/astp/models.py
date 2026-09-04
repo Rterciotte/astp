@@ -85,12 +85,28 @@ class AssetConstraint(BaseModel):
         return [path if path.startswith("/") else f"/{path}" for path in paths]
 
 
+class RedactionProfile(BaseModel):
+    sensitive_headers: set[str] = Field(default_factory=set)
+    sensitive_query_parameters: set[str] = Field(default_factory=set)
+    sensitive_body_fields: set[str] = Field(default_factory=set)
+
+    @field_validator(
+        "sensitive_headers",
+        "sensitive_query_parameters",
+        "sensitive_body_fields",
+    )
+    @classmethod
+    def normalize_names(cls, values: set[str]) -> set[str]:
+        return {value.strip().lower() for value in values if value.strip()}
+
+
 class Constraints(BaseModel):
     max_requests_per_second: float = Field(default=2.0, gt=0, le=1000)
     no_dos: bool = True
     no_social_engineering: bool = True
     no_data_destruction: bool = True
     assets: list[AssetConstraint] = Field(default_factory=list)
+    redaction: RedactionProfile = Field(default_factory=RedactionProfile)
 
 
 class Engagement(BaseModel):

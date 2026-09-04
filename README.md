@@ -150,3 +150,21 @@ M2.2 introduces an injectable HTTP transport boundary, records DNS endpoint prov
 DNS/TLS/timeout/connection/I/O failures, and persists structured failure evidence in the hash-linked
 evidence manifest. Redirects remain observation-only and are never followed. See
 `docs/M2_2_TRANSPORT_HARDENING.md`.
+
+
+## Milestone 2.3 — worker boundary completion
+
+M2.3 binds network connections to addresses from the worker's own bounded DNS resolution while
+preserving hostname-based TLS validation, adds engagement-specific evidence redaction profiles,
+records redirects as distinct actions that always require a new permit, and adds portable evidence
+bundles with cryptographic receipts. Redirects are still never followed automatically. See
+`docs/M2_3_WORKER_BOUNDARY.md`.
+
+Evidence bundles:
+
+```powershell
+astp export-evidence-bundle .\.astp\evidence-manifest.jsonl `
+  --output .\.astp\evidence-bundle.zip
+
+astp verify-evidence-bundle .\.astp\evidence-bundle.zip
+```

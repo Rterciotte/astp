@@ -13,16 +13,20 @@ Milestone 2.1 adds canonical action identities, durable local per-target rate st
 evidence IDs/sensitivity labels, and a hash-linked evidence manifest with artifact integrity checks.
 
 Milestone 2.2 adds a transport interface, DNS/connection provenance, a bounded transport-failure
-taxonomy, and structured failure evidence. Redirects are still recorded but never followed.
+taxonomy, and structured failure evidence.
 
-## Milestone 2.3 — Worker boundary completion
+Milestone 2.3 binds connections to the addresses resolved for the authorized hostname, preserves TLS
+hostname verification, adds engagement-specific redaction profiles, marks redirects as distinct
+actions requiring new permits, and adds portable evidence bundles with verifiable receipts.
 
-1. engagement-level redaction profiles;
-2. evidence bundle export and receipt verification;
-3. connection-bound DNS/TLS provenance to reduce DNS-rebinding ambiguity;
-4. explicit same-origin redirect permits before any redirect following is enabled;
-5. separate policy-service / signer / verifier / worker / evidence-store interfaces;
-6. move local JSON lifecycle/rate state toward a transactional storage abstraction.
+## Milestone 2.4 — Durable state and worker contracts
+
+1. formal policy-service, signer, verifier, worker, and evidence-store protocols;
+2. transactional lifecycle and rate-limit storage, starting with a local SQLite adapter;
+3. atomic observation reservation combining permit consumption and rate admission;
+4. explicit worker capability declarations and compatibility checks;
+5. evidence-store interface suitable for later S3/MinIO backends;
+6. deterministic failure/recovery tests around interrupted writes and worker crashes.
 
 ## CTF track
 
