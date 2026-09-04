@@ -12,20 +12,27 @@ Milestone 2 adds the first permit-gated network component: a one-request HTTP ob
 Milestone 2.1 adds canonical action identities, durable local per-target rate state, explicit
 evidence IDs/sensitivity labels, and a hash-linked evidence manifest with artifact integrity checks.
 
-## Milestone 2.2 — Evidence and transport hardening
+Milestone 2.2 adds a transport interface, DNS/connection provenance, a bounded transport-failure
+taxonomy, and structured failure evidence. Redirects are still recorded but never followed.
 
-1. configurable redaction profiles per engagement;
-2. explicit DNS and connection metadata evidence without scope expansion;
-3. structured failure evidence for DNS/TLS/timeout cases;
-4. optional encrypted raw artifacts when explicitly required;
-5. explicit redirect authorization if same-origin redirect following is introduced;
-6. clearer policy-service / verifier / worker / evidence-store interfaces.
+## Milestone 2.3 — Worker boundary completion
+
+1. engagement-level redaction profiles;
+2. evidence bundle export and receipt verification;
+3. connection-bound DNS/TLS provenance to reduce DNS-rebinding ambiguity;
+4. explicit same-origin redirect permits before any redirect following is enabled;
+5. separate policy-service / signer / verifier / worker / evidence-store interfaces;
+6. move local JSON lifecycle/rate state toward a transactional storage abstraction.
 
 ## CTF track
 
-In parallel, define the non-network-heavy CTF challenge contract and isolated solver SDK described in
-`CTF_MODE_ROADMAP.md`. Begin with artifact classification, flag-format validation, solve traces, and
-reproducible retired/local challenges before adding category-specific autonomous solvers.
+When CTF implementation begins, update the complete project documentation—not only the CTF roadmap—
+so README, architecture, security boundaries, terminology, CLI documentation, and milestone roadmap
+all describe CTF mode consistently.
+
+The first CTF implementation should define the challenge contract and isolated solver SDK described
+in `CTF_MODE_ROADMAP.md`: artifact classification, flag-format validation, solve traces, and
+reproducible retired/local challenges before category-specific autonomous solvers.
 
 ## Later milestones
 

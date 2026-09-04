@@ -142,3 +142,11 @@ Local lifecycle/evidence data under `.astp/` is intentionally excluded from Git.
 
 See `docs/M2_1_HARDENING.md`, `docs/CTF_MODE_ROADMAP.md`, `docs/HTTP_OBSERVATION_WORKER.md`, `docs/PERMIT_LIFECYCLE.md`,
 `docs/EXECUTION_PERMITS.md`, and `docs/NEXT_STEPS.md`.
+
+
+## Milestone 2.2 — transport hardening
+
+M2.2 introduces an injectable HTTP transport boundary, records DNS endpoint provenance, classifies
+DNS/TLS/timeout/connection/I/O failures, and persists structured failure evidence in the hash-linked
+evidence manifest. Redirects remain observation-only and are never followed. See
+`docs/M2_2_TRANSPORT_HARDENING.md`.

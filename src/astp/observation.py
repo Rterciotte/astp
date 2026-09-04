@@ -7,9 +7,8 @@ import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import Request
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -20,6 +19,12 @@ from astp.lifecycle import append_audit_event, consume_execution_permit
 from astp.models import Engagement, TestDefinition, target_in_scope
 from astp.permits import PermitVerificationRequest, SignedExecutionPermit
 from astp.rate_limit import acquire_rate_slot
+from astp.transport import (
+    ObservationTransport,
+    ObservationTransportError,
+    ResolvedEndpoint,
+    UrllibObservationTransport,
+)
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
 MAX_TIMEOUT_SECONDS = 30.0
@@ -92,6 +97,8 @@ class HttpObservationEvidence(BaseModel):
     body_sha256: str
     body_preview: str | None = None
     redirect: RedirectObservation | None = None
+    resolved_endpoint: ResolvedEndpoint | None = None
+    transport_failure: str | None = None
     evidence_hash: str
 
     @field_validator("observed_at")
@@ -102,15 +109,27 @@ class HttpObservationEvidence(BaseModel):
         return value
 
 
+class HttpObservationFailureEvidence(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    schema_version: str = "1"
+    evidence_id: str
+    action_id: str
+    sensitivity: SensitivityLabel = SensitivityLabel.INTERNAL
+    permit_id: str
+    engagement_id: str
+    test_id: str
+    observed_at: datetime
+    method: str
+    target: str
+    failure_kind: str
+    evidence_hash: str
+
+
 class ObservationResult(BaseModel):
     evidence: HttpObservationEvidence
     evidence_path: Path
     manifest_path: Path
-
-
-class _NoRedirectHandler(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None
 
 
 def _canonical_json(data: object) -> bytes:
@@ -239,6 +258,50 @@ def _evidence_hash(payload: dict[str, object]) -> str:
     return hashlib.sha256(_canonical_json(payload)).hexdigest()
 
 
+def _write_failure_evidence(
+    *,
+    permit: SignedExecutionPermit,
+    engagement: Engagement,
+    test: TestDefinition,
+    action_id: str,
+    target: str,
+    method: str,
+    failure_kind: str,
+    evidence_path: Path,
+    manifest_path: Path,
+    sensitivity: SensitivityLabel,
+    now: datetime | None,
+) -> HttpObservationFailureEvidence:
+    observed_at = now or datetime.now(UTC)
+    preliminary = HttpObservationFailureEvidence(
+        evidence_id=str(uuid4()),
+        action_id=action_id,
+        sensitivity=sensitivity,
+        permit_id=permit.payload.permit_id,
+        engagement_id=engagement.id,
+        test_id=test.id,
+        observed_at=observed_at,
+        method=method,
+        target=redact_url(target),
+        failure_kind=failure_kind,
+        evidence_hash="pending",
+    )
+    payload = preliminary.model_dump(mode="json", exclude={"evidence_hash"})
+    evidence = preliminary.model_copy(update={"evidence_hash": _evidence_hash(payload)})
+    _write_evidence(evidence_path, evidence)
+    register_evidence(
+        manifest_path,
+        evidence_path,
+        evidence_type="http.observation.failure",
+        evidence_id=evidence.evidence_id,
+        permit_id=permit.payload.permit_id,
+        action_id=action_id,
+        sensitivity=sensitivity,
+        now=now,
+    )
+    return evidence
+
+
 def observe_http(
     permit: SignedExecutionPermit,
     engagement: Engagement,
@@ -258,6 +321,7 @@ def observe_http(
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
     now: datetime | None = None,
+    transport: ObservationTransport | None = None,
 ) -> ObservationResult:
     normalized_method = method.upper()
     action_id = http_action_id(target, normalized_method, identity)
@@ -328,35 +392,51 @@ def observe_http(
         now=now,
     )
 
-    opener = build_opener(_NoRedirectHandler())
+    active_transport = transport or UrllibObservationTransport()
     request = Request(
         target,
         method=normalized_method,
         headers={
-            "User-Agent": "ASTP/0.8 observation-worker",
+            "User-Agent": "ASTP/0.9 observation-worker",
             "Accept": "*/*",
         },
     )
 
     try:
-        try:
-            response = opener.open(request, timeout=timeout_seconds)
-        except HTTPError as exc:
-            response = exc
+        transport_result = active_transport.open(request, timeout=timeout_seconds)
+        response = transport_result.response
+        resolved_endpoint = transport_result.resolved_endpoint
         status_code = int(response.getcode())
         reason = getattr(response, "reason", None)
         headers = {name: value for name, value in response.headers.items()}
         content_type = response.headers.get("Content-Type")
         body, truncated = _read_bounded(response, normalized_method, max_body_bytes)
-    except (URLError, TimeoutError, OSError) as exc:
+    except ObservationTransportError as exc:
+        failure_evidence = _write_failure_evidence(
+            permit=permit,
+            engagement=engagement,
+            test=test,
+            action_id=action_id,
+            target=target,
+            method=normalized_method,
+            failure_kind=exc.kind.value,
+            evidence_path=evidence_path,
+            manifest_path=manifest_path,
+            sensitivity=sensitivity,
+            now=now,
+        )
         append_audit_event(
             audit_path,
             "observation.failed",
             permit_id=permit.payload.permit_id,
-            details={"error": type(exc).__name__, "target": redact_url(target)},
+            details={
+                "failure_kind": exc.kind.value,
+                "evidence_id": failure_evidence.evidence_id,
+                "target": redact_url(target),
+            },
             now=now,
         )
-        raise ObservationError(f"Observation request failed: {type(exc).__name__}.") from exc
+        raise ObservationError(f"Observation transport failed: {exc.kind.value}.") from exc
     finally:
         if "response" in locals():
             response.close()
@@ -392,6 +472,8 @@ def observe_http(
         body_sha256=hashlib.sha256(body).hexdigest(),
         body_preview=_decode_preview(body, content_type),
         redirect=redirect,
+        resolved_endpoint=resolved_endpoint,
+        transport_failure=None,
         evidence_hash="pending",
     )
     canonical_payload = preliminary.model_dump(mode="json", exclude={"evidence_hash"})
