@@ -24,6 +24,7 @@ class ProgramPageType(str, Enum):
 class ProgramSyncStatus(str, Enum):
     DISCOVERED = "discovered"
     SYNCED = "synced"
+    READY = "ready"
     NEEDS_REVIEW = "needs_review"
     FAILED = "failed"
 
@@ -212,6 +213,51 @@ def save_workspace(workspace: BugBountyWorkspace, path: Path) -> None:
     dump_yaml(workspace, path)
 
 
+def _carry_forward_matching_reviews(
+    previous: BugBountyProgram,
+    current: BugBountyProgram,
+) -> None:
+    previous_by_key = {
+        (issue.code, issue.source_text): issue
+        for issue in previous.issues
+        if issue.resolution is not None
+    }
+    carried_sources: set[str] = set()
+    for issue in current.issues:
+        previous_issue = previous_by_key.get((issue.code, issue.source_text))
+        if previous_issue is None or previous_issue.resolution is None:
+            continue
+        issue.resolution = previous_issue.resolution.model_copy(deep=True)
+        if issue.source_text:
+            carried_sources.add(issue.source_text)
+        if issue.code == "qualitative_rate_limit":
+            current.reviewed_max_requests_per_second = previous.reviewed_max_requests_per_second
+
+    current.semantic_exclusions = [
+        rule.model_copy(deep=True)
+        for rule in previous.semantic_exclusions
+        if rule.source_text in carried_sources
+    ]
+
+    operator_denies = [
+        entry.model_copy(deep=True)
+        for entry in previous.scope
+        if entry.effect.value == "deny"
+        and entry.provenance.source_type == "operator_review"
+        and entry.provenance.source_text in carried_sources
+    ]
+    existing = {
+        (entry.selector.kind.value, entry.selector.value.lower())
+        for entry in current.scope
+        if entry.effect.value == "deny"
+    }
+    for entry in operator_denies:
+        key = (entry.selector.kind.value, entry.selector.value.lower())
+        if key not in existing:
+            current.scope.append(entry)
+            existing.add(key)
+
+
 def sync_program_capture(
     workspace: BugBountyWorkspace,
     *,
@@ -243,11 +289,15 @@ def sync_program_capture(
         platform=item.candidate.platform,
         source_type="authenticated_browser",
         source_url=capture.url,
+        captured_at=capture.captured_at,
+        program_id=item.candidate.id,
     )
     program.source.title = capture.title
-    program.source.captured_at = capture.captured_at
 
     program_path = programs_dir / f"{candidate_id}.yaml"
+    if program_path.exists():
+        previous = load_model(program_path, BugBountyProgram)
+        _carry_forward_matching_reviews(previous, program)
     dump_yaml(program, program_path)
     item.capture_path = str(capture_path)
     item.normalized_path = str(program_path)
@@ -255,7 +305,7 @@ def sync_program_capture(
     item.last_synced_at = datetime.now(UTC)
     item.error = None
     item.sync_status = (
-        ProgramSyncStatus.NEEDS_REVIEW if program.issues else ProgramSyncStatus.SYNCED
+        ProgramSyncStatus.NEEDS_REVIEW if program.unresolved_issues else ProgramSyncStatus.READY
     )
     save_workspace(workspace, catalog_path)
     return program

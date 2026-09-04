@@ -25,6 +25,9 @@ from astp.models import (
     Decision,
     Engagement,
     EvaluationRequest,
+    ScopeKind,
+    ScopeRule,
+    SemanticExclusionKind,
     TestDefinition,
     evaluate_test,
 )
@@ -49,7 +52,14 @@ from astp.program_catalog import (
     save_workspace,
     set_active_programs,
 )
-from astp.program_intake import compile_program, import_program_file, import_program_text
+from astp.program_intake import (
+    compile_program,
+    import_program_file,
+    import_program_text,
+    resolve_issue_with_denies,
+    resolve_issue_with_semantic_exclusion,
+    resolve_rate_issue,
+)
 from astp.program_models import BugBountyProgram
 from astp.program_server import serve_program_intake
 from astp.runtime_state import revoke_runtime_permit, runtime_permit_status
@@ -187,6 +197,20 @@ def authorize_test_command(
         float | None,
         typer.Option("--rps", help="Requested maximum request rate"),
     ] = None,
+    semantic_clear: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--semantic-clear",
+            help="Semantic exclusion rule ID explicitly reviewed as not matching the target",
+        ),
+    ] = None,
+    semantic_match: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--semantic-match",
+            help="Semantic exclusion rule ID explicitly identified as matching the target",
+        ),
+    ] = None,
 ) -> None:
     """Produce an auditable authorization decision without executing a test."""
     engagement = load_model(engagement_path, Engagement)
@@ -202,6 +226,8 @@ def authorize_test_command(
             http_method=http_method,
             identity=identity,
             requested_requests_per_second=requested_rps,
+            semantic_exclusion_clears=set(semantic_clear or []),
+            semantic_exclusion_matches=set(semantic_match or []),
         ),
     )
 
@@ -289,6 +315,20 @@ def issue_permit_command(
         float | None,
         typer.Option("--rps", help="Requested maximum request rate"),
     ] = None,
+    semantic_clear: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--semantic-clear",
+            help="Semantic exclusion rule ID explicitly reviewed as not matching the target",
+        ),
+    ] = None,
+    semantic_match: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--semantic-match",
+            help="Semantic exclusion rule ID explicitly identified as matching the target",
+        ),
+    ] = None,
     ttl_seconds: Annotated[
         int,
         typer.Option("--ttl-seconds", help="Permit lifetime in seconds; maximum 900"),
@@ -309,6 +349,8 @@ def issue_permit_command(
         http_method=http_method,
         identity=identity,
         requested_requests_per_second=requested_rps,
+        semantic_exclusion_clears=set(semantic_clear or []),
+        semantic_exclusion_matches=set(semantic_match or []),
     )
     authorization = authorize_test(engagement, test, request)
     if authorization.decision != Decision.ALLOW:
@@ -815,11 +857,16 @@ def programs_command(
     table.add_column("Status")
     table.add_column("ID")
     for index, item in enumerate(workspace.programs, start=1):
+        display_status = (
+            "READY"
+            if item.sync_status in {ProgramSyncStatus.SYNCED, ProgramSyncStatus.READY}
+            else item.sync_status.value.upper()
+        )
         table.add_row(
             str(index),
             "YES" if item.active else "",
             item.candidate.name,
-            item.sync_status.value.upper(),
+            display_status,
             item.candidate.id,
         )
     console.print(table)
@@ -897,9 +944,9 @@ def import_program_command(
             platform=platform,
             source_type="authenticated_browser",
             source_url=capture.url,
+            captured_at=capture.captured_at,
         )
         program.source.title = capture.title
-        program.source.captured_at = capture.captured_at
     else:
         program = import_program_file(source, name=name, platform=platform)
 
@@ -918,6 +965,161 @@ def import_program_command(
     for issue in program.issues:
         console.print(f"- [yellow]{issue.code}[/yellow]: {issue.message}")
     console.print(f"Normalized program written to: {output}")
+
+
+def _parse_review_deny(value: str) -> ScopeRule:
+    try:
+        raw_kind, raw_value = value.split("=", 1)
+        kind = ScopeKind(raw_kind.strip())
+    except (ValueError, KeyError) as exc:
+        raise typer.BadParameter(
+            "deny mappings must use KIND=VALUE, for example wildcard_domain=*.example.com"
+        ) from exc
+    raw_value = raw_value.strip()
+    if not raw_value:
+        raise typer.BadParameter("deny mapping value cannot be empty")
+    return ScopeRule(kind=kind, value=raw_value)
+
+
+@app.command("review-program")
+def review_program_command(
+    program_id: Annotated[
+        str,
+        typer.Argument(help="Catalog program ID to review"),
+    ],
+    catalog: Annotated[
+        Path,
+        typer.Option("--catalog", help="Program catalog YAML"),
+    ] = Path(".astp")
+    / "program-catalog.yaml",
+    rate: Annotated[
+        float | None,
+        typer.Option(
+            "--rps",
+            help=(
+                "Operator-selected conservative RPS for qualitative traffic restrictions; "
+                "this is recorded as an operator decision, not a program-published limit"
+            ),
+        ),
+    ] = None,
+    issue_index: Annotated[
+        int | None,
+        typer.Option("--issue", help="1-based review issue number to resolve with deny mappings"),
+    ] = None,
+    deny: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--deny",
+            help="Reviewed deny mapping KIND=VALUE; repeat for multiple mappings",
+        ),
+    ] = None,
+    semantic_deny: Annotated[
+        str | None,
+        typer.Option(
+            "--semantic-deny",
+            help=(
+                "Semantic deny guardrail KIND=VALUE; kinds: product_family, "
+                "organization_family, asset_family"
+            ),
+        ),
+    ] = None,
+    note: Annotated[
+        str | None,
+        typer.Option("--note", help="Operator review note stored with the resolution"),
+    ] = None,
+) -> None:
+    """Review blocking policy ambiguities without inventing program rules."""
+    workspace = load_model(catalog, BugBountyWorkspace)
+    item = next(
+        (entry for entry in workspace.programs if entry.candidate.id == program_id),
+        None,
+    )
+    if item is None:
+        raise typer.BadParameter(f"unknown catalog program ID: {program_id}")
+    if not item.normalized_path:
+        raise typer.BadParameter("program has not been normalized yet")
+
+    program_path = Path(item.normalized_path)
+    program = load_model(program_path, BugBountyProgram)
+    if program.id != item.candidate.id:
+        program.id = item.candidate.id
+
+    changed = False
+    if rate is not None:
+        try:
+            resolve_rate_issue(program, rate)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        changed = True
+
+    if issue_index is not None and semantic_deny is not None:
+        if deny:
+            raise typer.BadParameter("use either --semantic-deny or --deny, not both")
+        try:
+            raw_kind, raw_value = semantic_deny.split("=", 1)
+            semantic_kind = SemanticExclusionKind(raw_kind.strip())
+        except ValueError as exc:
+            raise typer.BadParameter(
+                "semantic deny must use KIND=VALUE; kinds: product_family, "
+                "organization_family, asset_family"
+            ) from exc
+        try:
+            resolve_issue_with_semantic_exclusion(
+                program,
+                issue_index=issue_index,
+                kind=semantic_kind,
+                value=raw_value,
+                note=note,
+            )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        changed = True
+    elif issue_index is not None:
+        deny_rules = [_parse_review_deny(value) for value in (deny or [])]
+        try:
+            resolve_issue_with_denies(
+                program,
+                issue_index=issue_index,
+                deny_rules=deny_rules,
+                note=note,
+            )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        changed = True
+    elif deny or semantic_deny:
+        raise typer.BadParameter("--deny/--semantic-deny requires --issue")
+
+    if changed:
+        dump_yaml(program, program_path)
+        item.sync_status = (
+            ProgramSyncStatus.NEEDS_REVIEW if program.unresolved_issues else ProgramSyncStatus.READY
+        )
+        save_workspace(workspace, catalog)
+
+    table = Table(title=f"ASTP Policy Review — {program.name}")
+    table.add_column("#", justify="right")
+    table.add_column("State")
+    table.add_column("Code")
+    table.add_column("Source")
+    for index, issue in enumerate(program.issues, start=1):
+        state = "RESOLVED" if issue.resolved else "BLOCKING"
+        table.add_row(index.__str__(), state, issue.code, issue.source_text or "")
+    console.print(table)
+    console.print(f"Policy status: {program.status.value.upper()}")
+    if program.reviewed_max_requests_per_second is not None:
+        console.print(
+            "Reviewed execution rate: "
+            f"{program.reviewed_max_requests_per_second:g} req/s [operator decision]"
+        )
+    if program.semantic_exclusions:
+        console.print("Semantic deny guardrails:")
+        for rule in program.semantic_exclusions:
+            console.print(f"- {rule.id}: {rule.kind.value}={rule.value}")
+    if program.unresolved_issues:
+        console.print(
+            "[yellow]Execution remains blocked until every blocking issue has a safe, "
+            "explicit resolution.[/yellow]"
+        )
 
 
 @app.command("compile-program")

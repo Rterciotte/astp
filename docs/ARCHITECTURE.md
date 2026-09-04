@@ -125,3 +125,10 @@ separate user gesture so a browser permission prompt cannot silently cancel disc
 The companion may use the browser's existing authenticated session for navigation, but session
 material is never exported to ASTP. Browser intake remains a control-plane operation and is kept
 separate from target execution permits and workers.
+
+## Policy readiness boundary (M2.5.3)
+
+Program discovery selection is not execution authorization. An ACTIVE catalog program can remain
+NEEDS_REVIEW. Only a normalized program with no unresolved blocking policy issues is READY for
+engagement compilation. Operator-added numeric traffic limits and deny mappings are recorded as
+review decisions with provenance and are never rewritten as platform-published rules.

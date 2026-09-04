@@ -95,3 +95,12 @@ permission/discovery flow, persisted session progress, and end-to-end loopback H
 
 Before M2.6, repeat the real BugHunt catalog synchronization and inspect any platform-specific
 candidate-link or SPA-rendering failures that remain.
+
+## M2.5.3 completed — Policy Review & Parser Correctness
+
+M2.5.3 closes parser correctness findings from the first authenticated Smart Fit field trial:
+constraint false positives, provenance section drift, constraint deduplication, capture timestamp
+propagation, stable program identity, source-supported finding exclusions, and explicit policy
+review. The next field step is to re-sync Smart Fit, inspect the regenerated policy, and resolve
+only those blocking issues for which the operator can provide safe explicit mappings. Target-side
+M2.6 work remains downstream of a READY engagement.

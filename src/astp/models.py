@@ -22,6 +22,19 @@ class Decision(str, Enum):
     INSUFFICIENT_CONTEXT = "insufficient_context"
 
 
+class SemanticExclusionKind(str, Enum):
+    PRODUCT_FAMILY = "product_family"
+    ORGANIZATION_FAMILY = "organization_family"
+    ASSET_FAMILY = "asset_family"
+
+
+class SemanticExclusionRule(BaseModel):
+    id: str
+    kind: SemanticExclusionKind
+    value: str
+    source_text: str | None = None
+
+
 class ScopeKind(str, Enum):
     DOMAIN = "domain"
     WILDCARD_DOMAIN = "wildcard_domain"
@@ -107,6 +120,7 @@ class Constraints(BaseModel):
     no_data_destruction: bool = True
     assets: list[AssetConstraint] = Field(default_factory=list)
     redaction: RedactionProfile = Field(default_factory=RedactionProfile)
+    semantic_exclusions: list[SemanticExclusionRule] = Field(default_factory=list)
 
 
 class Engagement(BaseModel):

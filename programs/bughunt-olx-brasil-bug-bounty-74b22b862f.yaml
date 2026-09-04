@@ -1,4 +1,4 @@
-id: bughunt-olx-brasil-bug-bounty
+id: bughunt-olx-brasil-bug-bounty-74b22b862f
 name: OLX Brasil Bug Bounty
 platform: bughunt
 visibility: public
@@ -13,7 +13,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Escopo
     source_text: https://play.google.com/store/apps/details?id=com.schibsted.bomnegocio.androidApp&hl=pt_BR&showAllReviews=true/
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
   label: null
 - effect: allow
   selector:
@@ -24,7 +24,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Escopo
     source_text: https://apigw.olx.com.br
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
   label: null
 - effect: allow
   selector:
@@ -35,7 +35,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Escopo
     source_text: https://conta.olx.com.br
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
   label: null
 - effect: allow
   selector:
@@ -46,7 +46,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Escopo
     source_text: https://wallet.olx.com.br
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
   label: null
 - effect: allow
   selector:
@@ -57,7 +57,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Escopo
     source_text: https://wallet-api.olx.com.br
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
   label: null
 - effect: allow
   selector:
@@ -68,7 +68,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Escopo
     source_text: https://payment.olx.com.br
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
   label: null
 - effect: allow
   selector:
@@ -79,7 +79,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Escopo
     source_text: https://goldpayments.olx.com.br
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
   label: null
 - effect: allow
   selector:
@@ -90,7 +90,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Escopo
     source_text: https://payment-by-chat-api.olx.com.br
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
   label: null
 - effect: allow
   selector:
@@ -101,7 +101,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Escopo
     source_text: https://api-transaction.olx.com.br
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
   label: null
 - effect: allow
   selector:
@@ -112,7 +112,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Escopo
     source_text: https://delivery-tracking.olx.com.br
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
   label: null
 - effect: allow
   selector:
@@ -123,7 +123,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Escopo
     source_text: https://delivery-quote.olx.com.br
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
   label: null
 - effect: allow
   selector:
@@ -134,54 +134,51 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Escopo
     source_text: https://olx.com.br
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
   label: null
 constraints:
 - code: own_accounts_only
   effect: restrict
   value: true
   provenance:
-    source_type: authenticated_browser
+  - source_type: authenticated_browser
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Política do Programa
     source_text: Faça um esforço de boa fé para evitar violações da privacidade, destruição
       de dados e interrupção ou degradação do nosso serviço. Interaja apenas com contas
       que você possui ou com permissão explícita do titular da conta
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
 - code: no_dos
   effect: restrict
   value: true
   provenance:
-    source_type: authenticated_browser
+  - source_type: authenticated_browser
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Política do Programa
     source_text: Qualquer atividade que possa levar à interrupção do nosso serviço
       (ex. DoS).
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
+  - source_type: authenticated_browser
+    source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
+    section: Política do Programa
+    source_text: Negação de serviçO
+    captured_at: '2026-09-04T16:11:37.423000Z'
 - code: no_social_engineering
   effect: restrict
   value: true
   provenance:
-    source_type: authenticated_browser
+  - source_type: authenticated_browser
     source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
     section: Política do Programa
     source_text: Engenharia social (incluindo phishing) na nossa equipe ou terceiros.
-    captured_at: null
-- code: no_dos
-  effect: restrict
-  value: true
-  provenance:
-    source_type: authenticated_browser
-    source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
-    section: Política do Programa
-    source_text: Negação de serviçO
-    captured_at: null
+    captured_at: '2026-09-04T16:11:37.423000Z'
 excluded_finding_types: []
 recommended_user_agent: null
+reviewed_max_requests_per_second: null
 source:
   source_type: authenticated_browser
   source_url: https://admin.bughunt.com.br/program/detail?60ca003869707962894a5b33
   title: OLX Brasil Bug Bounty
-  captured_at: '2026-09-04T15:43:52.867000Z'
-  content_sha256: 5062b6d7ea215d15ad2efbb403d6c92bad302ff3759ce7f3a9fe4416785fb421
+  captured_at: '2026-09-04T16:11:37.423000Z'
+  content_sha256: feb08eefaa55ca9bd54ecd630b3e81364b93024b161338647001a2aee0c9b300
 issues: []

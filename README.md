@@ -211,3 +211,31 @@ See `docs/M2_5_1_PROGRAM_DISCOVERY.md`.
 The authenticated browser intake now exposes a versioned loopback protocol with a health check,
 visible operational logs, JSON errors, a separate Chrome host-permission step, and real HTTP
 integration tests. See `docs/M2_5_2_PROGRAM_PROTOCOL_FIX.md`.
+
+### M2.5.3 policy review and parser correctness
+
+Authenticated program intake now distinguishes ACTIVE from READY, fixes Portuguese DoS false
+positives, deduplicates constraints with multi-source provenance, propagates capture timestamps,
+uses the catalog ID as the stable program ID, extracts source-supported finding exclusions, and
+adds `astp review-program` for explicit operator review. Broad semantic exclusions remain blocking
+until mapped to explicit deny selectors. See `docs/M2_5_3_POLICY_REVIEW.md`.
+
+
+## M2.5.4 — Semantic Exclusion Guardrails
+
+Broad exclusions such as product families, organization-owned assets, and physical/totem
+systems can no longer be marked resolved merely by adding one concrete hostname. Reviewers
+record a semantic deny guardrail with `review-program --issue N --semantic-deny KIND=VALUE`.
+The guardrail is compiled into the engagement. Authorization and permit issuance then require
+an explicit per-target assessment for every semantic exclusion: `--semantic-clear RULE_ID` to
+record that the target was reviewed and does not match, or `--semantic-match RULE_ID` to deny
+the target. Missing or contradictory assessments produce `INSUFFICIENT_CONTEXT`; ambiguity
+never becomes permission.
+
+Example review commands for Smart Fit:
+
+```powershell
+astp review-program <PROGRAM_ID> --issue 1 --semantic-deny "product_family=Universidade Smart Fit"
+astp review-program <PROGRAM_ID> --issue 2 --semantic-deny "organization_family=ASAP"
+astp review-program <PROGRAM_ID> --issue 3 --semantic-deny "asset_family=Smart Fit gym totem systems"
+```

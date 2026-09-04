@@ -37,6 +37,8 @@ class AuthorizationRequest(BaseModel):
     http_method: str | None = None
     identity: str | None = None
     requested_requests_per_second: float | None = Field(default=None, gt=0, le=1000)
+    semantic_exclusion_clears: set[str] = Field(default_factory=set)
+    semantic_exclusion_matches: set[str] = Field(default_factory=set)
     now: datetime | None = None
 
 
@@ -209,6 +211,81 @@ def _check_asset_constraints(
     return None
 
 
+def _check_semantic_exclusions(
+    engagement: Engagement,
+    request: AuthorizationRequest,
+    checks: list[AuthorizationCheck],
+) -> Decision | None:
+    exclusions = engagement.constraints.semantic_exclusions
+    if not exclusions:
+        return None
+
+    known_ids = {rule.id for rule in exclusions}
+    contradictory = request.semantic_exclusion_clears & request.semantic_exclusion_matches
+    if contradictory:
+        checks.append(
+            AuthorizationCheck(
+                name="semantic_exclusions",
+                status=CheckStatus.REVIEW,
+                message=(
+                    "Conflicting semantic exclusion assessments were supplied for: "
+                    + ", ".join(sorted(contradictory))
+                ),
+            )
+        )
+        return Decision.INSUFFICIENT_CONTEXT
+
+    unknown = (request.semantic_exclusion_clears | request.semantic_exclusion_matches) - known_ids
+    if unknown:
+        checks.append(
+            AuthorizationCheck(
+                name="semantic_exclusions",
+                status=CheckStatus.REVIEW,
+                message=(
+                    "Unknown semantic exclusion IDs were supplied: " + ", ".join(sorted(unknown))
+                ),
+            )
+        )
+        return Decision.INSUFFICIENT_CONTEXT
+
+    matched = [rule for rule in exclusions if rule.id in request.semantic_exclusion_matches]
+    if matched:
+        checks.append(
+            AuthorizationCheck(
+                name="semantic_exclusions",
+                status=CheckStatus.FAIL,
+                message=(
+                    "Target matches a semantic deny guardrail: "
+                    + ", ".join(rule.id for rule in matched)
+                ),
+            )
+        )
+        return Decision.DENY
+
+    missing = [rule.id for rule in exclusions if rule.id not in request.semantic_exclusion_clears]
+    if missing:
+        checks.append(
+            AuthorizationCheck(
+                name="semantic_exclusions",
+                status=CheckStatus.REVIEW,
+                message=(
+                    "Target has not been reviewed against semantic deny guardrails: "
+                    + ", ".join(missing)
+                ),
+            )
+        )
+        return Decision.INSUFFICIENT_CONTEXT
+
+    checks.append(
+        AuthorizationCheck(
+            name="semantic_exclusions",
+            status=CheckStatus.PASS,
+            message="Target was explicitly cleared against every semantic deny guardrail.",
+        )
+    )
+    return None
+
+
 def _effective_rate_limit(
     engagement: Engagement,
     request: AuthorizationRequest,
@@ -291,6 +368,10 @@ def authorize_test(
             )
         )
         return AuthorizationResult(decision=Decision.DENY, checks=checks)
+
+    semantic_decision = _check_semantic_exclusions(engagement, request, checks)
+    if semantic_decision is not None:
+        return AuthorizationResult(decision=semantic_decision, checks=checks)
 
     constraint_decision = _check_asset_constraints(engagement, request, checks)
     if constraint_decision is not None:

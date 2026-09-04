@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import Enum
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from astp.models import ScopeRule
+from astp.models import ScopeRule, SemanticExclusionRule
 
 
 class ProgramImportStatus(str, Enum):
-    CLEAN = "clean"
+    READY = "ready"
     NEEDS_REVIEW = "needs_review"
 
 
@@ -51,13 +52,35 @@ class ProgramConstraint(BaseModel):
     code: str
     effect: RuleEffect = RuleEffect.RESTRICT
     value: str | bool | float | None = None
-    provenance: RuleProvenance
+    provenance: list[RuleProvenance] = Field(default_factory=list)
+
+    @field_validator("provenance", mode="before")
+    @classmethod
+    def accept_legacy_single_provenance(cls, value: Any) -> Any:
+        """Load M2.5.2 YAML where constraint provenance was one object."""
+        if isinstance(value, dict):
+            return [value]
+        return value
+
+
+class ProgramIssueResolution(BaseModel):
+    resolution_type: str
+    reviewed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    note: str | None = None
+    operator_value: str | float | bool | None = None
+    added_denies: list[ScopeRule] = Field(default_factory=list)
 
 
 class ProgramIssue(BaseModel):
     code: str
     message: str
     source_text: str | None = None
+    blocking: bool = True
+    resolution: ProgramIssueResolution | None = None
+
+    @property
+    def resolved(self) -> bool:
+        return self.resolution is not None
 
 
 class ProgramSourceSnapshot(BaseModel):
@@ -78,12 +101,22 @@ class BugBountyProgram(BaseModel):
     constraints: list[ProgramConstraint] = Field(default_factory=list)
     excluded_finding_types: list[str] = Field(default_factory=list)
     recommended_user_agent: str | None = None
+    reviewed_max_requests_per_second: float | None = None
+    semantic_exclusions: list[SemanticExclusionRule] = Field(default_factory=list)
     source: ProgramSourceSnapshot
     issues: list[ProgramIssue] = Field(default_factory=list)
 
     @property
+    def unresolved_issues(self) -> list[ProgramIssue]:
+        return [issue for issue in self.issues if issue.blocking and not issue.resolved]
+
+    @property
     def status(self) -> ProgramImportStatus:
-        return ProgramImportStatus.NEEDS_REVIEW if self.issues else ProgramImportStatus.CLEAN
+        return (
+            ProgramImportStatus.NEEDS_REVIEW
+            if self.unresolved_issues
+            else ProgramImportStatus.READY
+        )
 
     def allowed_scope(self) -> list[ScopeRule]:
         return [entry.selector for entry in self.scope if entry.effect == RuleEffect.ALLOW]

@@ -1,4 +1,4 @@
-id: bughunt-n-clea-bug-bounty-program
+id: bughunt-n-clea-bug-bounty-program-e672762b5c
 name: Núclea - Bug Bounty Program
 platform: bughunt
 visibility: public
@@ -13,7 +13,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.detectaflow.com.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -24,7 +24,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.nuclea.com.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -35,7 +35,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.apiimf.org.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -46,7 +46,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.chequelegal.com.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -57,7 +57,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.cip-bancos.org.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -68,7 +68,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.crcp.org.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -79,7 +79,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.crt4.com.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -90,7 +90,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.nucleaassociacao.org.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -101,7 +101,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.nucleachain.com.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -112,7 +112,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.nucleaconecta.com.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -123,7 +123,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.portaldaportabilidade.org.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -134,7 +134,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.nuclea-cotas.com.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -145,7 +145,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.nucleaportabilidade.com.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -156,7 +156,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.saopauloconsig.com.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -167,7 +167,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.pds-ext.org.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -178,7 +178,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.portaldoparticipante.org.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 - effect: allow
   selector:
@@ -189,53 +189,35 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.portaldoconsignado.com.br'
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
   label: null
 constraints:
 - code: no_social_engineering
   effect: restrict
   value: true
   provenance:
-    source_type: authenticated_browser
+  - source_type: authenticated_browser
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Política do Programa
     source_text: Engenharia social (por exemplo, tentativas de roubar cookies, páginas
       de login falsas para coletar credenciais)
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
 - code: no_dos
   effect: restrict
   value: true
   provenance:
-    source_type: authenticated_browser
+  - source_type: authenticated_browser
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Política do Programa
     source_text: Ataques de negação de serviço
-    captured_at: null
-- code: no_dos
-  effect: restrict
-  value: true
-  provenance:
-    source_type: authenticated_browser
-    source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
-    section: Política do Programa
-    source_text: Problemas que não afetam a versão mais recente dos navegadores modernos
-    captured_at: null
-- code: no_dos
-  effect: restrict
-  value: true
-  provenance:
-    source_type: authenticated_browser
-    source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
-    section: Política do Programa
-    source_text: Vulnerabilidades dos quais já estamos cientes ou foram relatados
-      anteriormente
-    captured_at: null
+    captured_at: '2026-09-04T16:11:34.418000Z'
 excluded_finding_types: []
 recommended_user_agent: null
+reviewed_max_requests_per_second: null
 source:
   source_type: authenticated_browser
   source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
   title: Núclea - Bug Bounty Program
-  captured_at: '2026-09-04T15:43:49.742000Z'
-  content_sha256: 93264ba2a89138ded5b4b9c27cb0516f74f83f4ea6c1de8b3bd30606cc1ca82f
+  captured_at: '2026-09-04T16:11:34.418000Z'
+  content_sha256: a290d8c71b885732a735c868db05d3f01baf8e7c0cea62d9eb5af07a87a5cc7a
 issues: []
