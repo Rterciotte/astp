@@ -249,3 +249,7 @@ Confidence fusion never upgrades a proof state. DNS/TLS capability definitions a
 and still require execution permits before any future worker may use them. Secret material is modeled
 as a non-exportable reference rather than embedded in plans or worker jobs. Worker job envelopes do
 not carry signing keys, arbitrary mounts, or arbitrary network authority.
+
+## M9.5-M11.0 integrity and closure layer
+
+Stored transport evidence can be normalized into DNS/TLS provenance without new network access. Verification work must be reviewed before it becomes an authorization candidate. Worker jobs and result receipts are durably bound to action/permit identifiers. Assessment checkpoints, quarantine, session journals, finalization, publication, and closure all preserve explicit integrity gates.

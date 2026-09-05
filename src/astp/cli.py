@@ -9,19 +9,24 @@ from rich.console import Console
 from rich.table import Table
 
 from astp.adapter_registry import builtin_adapter_registry, ensure_adapter_compatible
+from astp.artifact_planner import plan_javascript_artifacts
 from astp.assessment import assess_evidence, load_evidence_directory
 from astp.assessment_manifest import (
     AssessmentManifest,
     build_assessment_manifest,
     verify_assessment_manifest,
 )
+from astp.assessment_resume import evaluate_assessment_resume
 from astp.authorization import AuthorizationRequest, authorize_test
 from astp.autonomy_session import prepare_autonomy_session
 from astp.browser_intake import capture_to_text, load_capture
+from astp.capability_evidence import derive_network_capability_evidence
 from astp.circuit_breaker import FailureCircuitBreaker
+from astp.closure_gate import evaluate_closure
 from astp.confidence import fuse_normalized_signals
 from astp.controlled_loop import run_controlled_queue
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
+from astp.evidence_quarantine import quarantine_evidence
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
 from astp.execution_trace import append_trace_event, verify_execution_trace
 from astp.feedback import apply_evidence_feedback
@@ -33,6 +38,7 @@ from astp.http_fingerprint import fingerprint_http
 from astp.hypothesis import build_observation_hypotheses
 from astp.io import dump_yaml, load_model, load_yaml
 from astp.javascript_inventory import inventory_javascript
+from astp.js_static_analysis import analyze_javascript_file
 from astp.lifecycle import (
     append_audit_event,
     consume_execution_permit,
@@ -71,6 +77,7 @@ from astp.permits import (
     PermitVerificationRequest,
     SignedExecutionPermit,
     issue_execution_permit,
+    policy_digest,
     verify_execution_permit,
 )
 from astp.planner import ObservationPlan, build_observation_plan
@@ -96,6 +103,9 @@ from astp.program_models import BugBountyProgram
 from astp.program_runtime import create_operational_attestation
 from astp.program_server import serve_program_intake
 from astp.protocol_analyzers import analyze_protocol_posture
+from astp.publication_bundle import build_publication_bundle, verify_publication_bundle
+from astp.readiness import evaluate_assessment_readiness
+from astp.report_finalization import ReportFinalization, finalize_report
 from astp.reporting import render_markdown_report
 from astp.result_interpreter import interpret_observation
 from astp.resume_guard import evaluate_resume
@@ -105,6 +115,7 @@ from astp.runtime_state import revoke_runtime_permit, runtime_permit_status
 from astp.scope_compiler import CompilationStatus, compile_scope_file
 from astp.security_graph import build_security_graph
 from astp.session_budget import SessionBudget
+from astp.session_journal import append_session_event, verify_session_journal
 from astp.session_ledger import get_session_counters, initialize_session_ledger
 from astp.session_report import summarize_session_execution
 from astp.surface_mapper import build_surface_map
@@ -116,6 +127,13 @@ from astp.target_registry import (
     save_registry,
 )
 from astp.test_dsl import SecurityTestDefinition
+from astp.verification_broker import broker_reviewed_verification
+from astp.verification_queue import list_verification_queue
+from astp.verification_review import (
+    VerificationReview,
+    VerificationReviewDecision,
+    review_verification_item,
+)
 from astp.web_posture import analyze_http_posture
 from astp.work_queue import WorkQueue, build_fair_work_queue
 
@@ -2368,6 +2386,230 @@ def export_portable_assessment_command(
     console.print(f"Portable entries: {len(index.entries)}")
     console.print(f"Archive valid: {'YES' if verify_portable_assessment(output) else 'NO'}")
     console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("derive-network-evidence")
+def derive_network_evidence_command(
+    evidence_path: Annotated[Path, typer.Argument(help="HTTP observation evidence JSON")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write derived evidence YAML")],
+) -> None:
+    """Derive DNS/TLS provenance from stored HTTP transport evidence; no network."""
+    evidence = HttpObservationEvidence.model_validate_json(
+        evidence_path.read_text(encoding="utf-8")
+    )
+    dns, tls = derive_network_capability_evidence(evidence)
+    dump_yaml(
+        {
+            "schema_version": "1",
+            "dns": dns.model_dump(mode="json") if dns else None,
+            "tls": tls.model_dump(mode="json") if tls else None,
+        },
+        output,
+    )
+    console.print(f"DNS provenance: {'YES' if dns else 'NO'}")
+    console.print(f"TLS provenance: {'YES' if tls else 'NO'}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("analyze-javascript-static")
+def analyze_javascript_static_command(
+    artifact_path: Annotated[Path, typer.Argument(help="Stored JavaScript artifact")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write analysis YAML")],
+) -> None:
+    """Analyze a locally stored JavaScript artifact without fetching it."""
+    result = analyze_javascript_file(artifact_path)
+    dump_yaml(result, output)
+    console.print(f"Static JavaScript signals: {len(result.signals)}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("plan-javascript-fetches")
+def plan_javascript_fetches_command(
+    inventory_path: Annotated[Path, typer.Argument(help="JavaScriptInventory YAML")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write fetch plan YAML")],
+) -> None:
+    """Convert discovered JavaScript URLs into permit-required retrieval candidates."""
+    from astp.javascript_inventory import JavaScriptInventory
+
+    inventory = load_model(inventory_path, JavaScriptInventory)
+    plan = plan_javascript_artifacts(inventory)
+    dump_yaml(plan, output)
+    console.print(f"Artifact candidates: {len(plan.items)}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("review-verification")
+def review_verification_command(
+    queue_db: Annotated[Path, typer.Argument(help="Verification queue SQLite database")],
+    queue_id: Annotated[str, typer.Option("--queue-id")],
+    reviewer: Annotated[str, typer.Option("--reviewer")],
+    decision: Annotated[VerificationReviewDecision, typer.Option("--decision")],
+    output: Annotated[Path, typer.Option("--output", "-o")],
+) -> None:
+    """Review a durable verification item without authorizing or executing it."""
+    items = {item.id: item for item in list_verification_queue(queue_db)}
+    if queue_id not in items:
+        raise typer.BadParameter("verification queue item not found")
+    review = review_verification_item(items[queue_id], reviewer, decision)
+    dump_yaml(review, output)
+    console.print(f"Verification review: {review.decision.value.upper()}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("broker-verification")
+def broker_verification_command(
+    queue_db: Annotated[Path, typer.Argument(help="Verification queue SQLite database")],
+    review_path: Annotated[Path, typer.Argument(help="VerificationReview YAML")],
+    queue_id: Annotated[str, typer.Option("--queue-id")],
+    output: Annotated[Path, typer.Option("--output", "-o")],
+) -> None:
+    """Turn an approved review into a policy-authorization candidate only."""
+    items = {item.id: item for item in list_verification_queue(queue_db)}
+    if queue_id not in items:
+        raise typer.BadParameter("verification queue item not found")
+    review = load_model(review_path, VerificationReview)
+    candidate = broker_reviewed_verification(items[queue_id], review)
+    dump_yaml(candidate, output)
+    console.print("Policy authorization still required: YES")
+    console.print("Fresh permit still required: YES")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("check-assessment-resume")
+def check_assessment_resume_command(
+    checkpoint_path: Annotated[Path, typer.Argument(help="Assessment checkpoint JSON/YAML")],
+    engagement_path: Annotated[Path, typer.Argument(help="Current engagement YAML")],
+    test_path: Annotated[Path, typer.Argument(help="Current test definition YAML")],
+) -> None:
+    """Check checkpoint integrity and policy continuity before assessment resume."""
+    from astp.assessment_checkpoint import AssessmentCheckpoint
+
+    checkpoint = load_model(checkpoint_path, AssessmentCheckpoint)
+    engagement = load_model(engagement_path, Engagement)
+    test = load_model(test_path, TestDefinition)
+    decision = evaluate_assessment_resume(
+        checkpoint,
+        engagement_id=engagement.id,
+        current_policy_digest=policy_digest(engagement, test),
+    )
+    console.print(f"Resume allowed: {'YES' if decision.allowed else 'NO'}")
+    console.print(f"Replan required: {'YES' if decision.requires_replan else 'NO'}")
+    for reason in decision.reasons:
+        console.print(f"- {reason}")
+    console.print("Network execution: NOT PERFORMED")
+    if not decision.allowed:
+        raise typer.Exit(code=12)
+
+
+@app.command("quarantine-evidence")
+def quarantine_evidence_command(
+    repository_db: Annotated[Path, typer.Argument(help="Evidence quarantine SQLite DB")],
+    evidence_id: Annotated[str, typer.Option("--evidence-id")],
+    reason: Annotated[str, typer.Option("--reason")],
+) -> None:
+    """Persist an integrity or policy quarantine decision for evidence."""
+    item = quarantine_evidence(repository_db, evidence_id, reason)
+    console.print(f"Quarantined evidence: {item.evidence_id}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("journal-session")
+def journal_session_command(
+    journal_path: Annotated[Path, typer.Argument(help="Hash-linked session journal JSONL")],
+    session_id: Annotated[str, typer.Option("--session-id")],
+    event: Annotated[str, typer.Option("--event")],
+) -> None:
+    """Append and verify a hash-linked assessment session event."""
+    entry = append_session_event(journal_path, session_id, event)
+    console.print(f"Journal sequence: {entry.sequence}")
+    console.print(f"Journal valid: {'YES' if verify_session_journal(journal_path) else 'NO'}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("assessment-readiness")
+def assessment_readiness_command(
+    policy_ready: Annotated[bool, typer.Option("--policy-ready/--policy-blocked")] = False,
+    attestation_fresh: Annotated[
+        bool, typer.Option("--attestation-fresh/--attestation-stale")
+    ] = False,
+    permit_keys: Annotated[bool, typer.Option("--permit-keys/--no-permit-keys")] = False,
+    evidence_store: Annotated[bool, typer.Option("--evidence-store/--no-evidence-store")] = False,
+    worker_contracts: Annotated[
+        bool, typer.Option("--worker-contracts/--no-worker-contracts")
+    ] = False,
+) -> None:
+    """Evaluate deterministic prerequisites for a controlled assessment session."""
+    result = evaluate_assessment_readiness(
+        policy_ready=policy_ready,
+        attestation_fresh=attestation_fresh,
+        permit_keys_configured=permit_keys,
+        evidence_store_ready=evidence_store,
+        worker_contracts_ready=worker_contracts,
+    )
+    for check in result.checks:
+        console.print(f"{check.name}: {'READY' if check.ready else 'BLOCKED'}")
+    console.print(f"Overall ready: {'YES' if result.ready else 'NO'}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("finalize-report")
+def finalize_report_command(
+    manifest_path: Annotated[Path, typer.Argument(help="Assessment manifest YAML")],
+    review_path: Annotated[Path, typer.Argument(help="Operator review YAML")],
+    report_path: Annotated[Path, typer.Argument(help="Reviewed report Markdown")],
+    output: Annotated[Path, typer.Option("--output", "-o")],
+) -> None:
+    """Finalize a report only when review and manifest integrity agree."""
+    from astp.operator_review import OperatorReview
+
+    manifest = load_model(manifest_path, AssessmentManifest)
+    review = load_model(review_path, OperatorReview)
+    finalization = finalize_report(manifest, review, report_path)
+    dump_yaml(finalization, output)
+    console.print(f"Publishable: {'YES' if finalization.publishable else 'NO'}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("build-publication-bundle")
+def build_publication_bundle_command(
+    finalization_path: Annotated[Path, typer.Argument(help="ReportFinalization YAML")],
+    artifact: Annotated[
+        list[Path], typer.Option("--artifact", help="Artifact to include; repeatable")
+    ],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Publication ZIP")],
+) -> None:
+    """Build an integrity-checkable bundle after explicit assessment approval."""
+    finalization = load_model(finalization_path, ReportFinalization)
+    index = build_publication_bundle(output, finalization, artifact)
+    console.print(f"Publication entries: {len(index.entries)}")
+    console.print(f"Bundle valid: {'YES' if verify_publication_bundle(output) else 'NO'}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("closure-gate")
+def closure_gate_command(
+    review_path: Annotated[Path, typer.Argument(help="OperatorReview YAML")],
+    finalization_path: Annotated[Path, typer.Argument(help="ReportFinalization YAML")],
+    unresolved_verifications: Annotated[int, typer.Option("--unresolved-verifications")] = 0,
+    quarantined_evidence: Annotated[int, typer.Option("--quarantined-evidence")] = 0,
+) -> None:
+    """Require approved finalization and cleared queues before assessment closure."""
+    from astp.operator_review import OperatorReview
+
+    review = load_model(review_path, OperatorReview)
+    finalization = load_model(finalization_path, ReportFinalization)
+    decision = evaluate_closure(
+        review,
+        finalization,
+        unresolved_verifications=unresolved_verifications,
+        quarantined_evidence=quarantined_evidence,
+    )
+    console.print(f"Assessment closable: {'YES' if decision.closable else 'NO'}")
+    for reason in decision.reasons:
+        console.print(f"- {reason}")
+    console.print("Network execution: NOT PERFORMED")
+    if not decision.closable:
+        raise typer.Exit(code=13)
 
 
 @app.command("evaluate-test")

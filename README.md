@@ -345,3 +345,7 @@ secrets as non-exportable references, queue verification work for review, checkp
 progress, trace evidence-to-report lineage, calculate contextual non-CVSS ranking inputs, and
 assemble integrity-bound review/portable assessment artifacts. These features do not introduce a
 new target-network execution path.
+
+## M9.5-M11.0
+
+ASTP now includes offline DNS/TLS evidence derivation, static JavaScript analysis, reviewed verification brokering, durable worker job/receipt state, assessment resume/quarantine controls, risk fusion, publication integrity, readiness, and explicit closure gates.
