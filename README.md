@@ -392,3 +392,7 @@ ASTP now has fixed-argument compilers for bounded Nmap/Nuclei/ZAP modes, shell-f
 ### M26.5-M28.4
 
 ASTP now includes runtime qualification bundles, a shell-free worker supervisor plan, worker-receipt registration into the hash-linked Evidence Store, bounded verification scheduling, and an adaptive CONTINUE/REPLAN/STOP coordinator loop. These controls remain policy-first and do not grant the coordinator direct network authority.
+
+## M28.5-M30.4 runtime candidate
+
+ASTP now includes bundled worker blueprints, permit-before-I/O runtime candidate bridges, resumable adaptive assessment-session state, and hash-bound assessment bundles. Bundled runtime code is not equivalent to field qualification; full pentest readiness remains false until authorized runtime qualification and end-to-end field validation are complete.

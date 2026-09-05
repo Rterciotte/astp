@@ -334,3 +334,7 @@ The worker boundary now distinguishes executable code from field-qualified runti
 Worker receipts may enter the Evidence Store only after permit consumption has been recorded. The adaptive coordinator may CONTINUE, REPLAN, or STOP, but never grants itself network authority; every network action still returns through policy and a fresh exact-action permit.
 
 Full-pentest acceptance is a separate terminal gate and remains false until runtime qualification, broad active verification, adaptive-loop field validation, operator-gated state-changing validation, and a complete authorized end-to-end field test are all satisfied.
+
+## Runtime enablement candidate (M28.5-M30.4)
+
+The runtime boundary is now explicit: typed request -> policy/permit -> permit consumption -> bounded browser/tool I/O -> receipt -> Evidence Store -> coordinator. Browser redirects require a new authorization. Runtime bundling does not close readiness; field qualification remains a separate gate.

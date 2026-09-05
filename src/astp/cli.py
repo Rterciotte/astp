@@ -3441,3 +3441,29 @@ def full_pentest_acceptance_command() -> None:
 
 if __name__ == "__main__":
     app()
+
+
+@app.command("runtime-candidate-status")
+def runtime_candidate_status_command() -> None:
+    """Show bundled runtime candidates without claiming field qualification."""
+    import json
+
+    from astp.runtime_enablement import candidate_runtime_enablement
+
+    payload = [
+        item.model_dump(mode="json") | {"operational_ready": item.operational_ready}
+        for item in candidate_runtime_enablement()
+    ]
+    console.print(json.dumps(payload, indent=2))
+
+
+@app.command("assessment-candidate-status")
+def assessment_candidate_status_command() -> None:
+    """Show conservative autonomous-assessment acceptance state."""
+    import json
+
+    from astp.assessment_candidate import current_autonomous_assessment_candidate
+
+    console.print(
+        json.dumps(current_autonomous_assessment_candidate().model_dump(mode="json"), indent=2)
+    )
