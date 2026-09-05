@@ -384,7 +384,3 @@ Adds permit-consumed browser/external worker boundaries, verifier/proof catalogs
 ## M18.5-M20.4 — Verification depth and coordinator gates
 
 ASTP now derives conservative verifier signals from stored HTTP evidence, can propose bounded follow-up actions without bypassing policy, enforces sequential coordinator stage prerequisites, and distinguishes worker boundaries from real bundled/field-tested runtimes. Full pentest readiness remains false until broad active verification and physical browser/tool runtimes close.
-
-
-### M20.5–M22.4
-Runtime qualification and strict coordinator completion gates are now modeled separately from capability contracts.
