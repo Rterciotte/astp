@@ -380,3 +380,7 @@ ASTP now has an executable, read-only two-identity authorization differential pa
 
 ### M16.5-M18.4
 Adds permit-consumed browser/external worker boundaries, verifier/proof catalogs, runtime isolation declarations, and a bounded assessment coordinator. Full pentest readiness remains intentionally false.
+
+## M18.5-M20.4 — Verification depth and coordinator gates
+
+ASTP now derives conservative verifier signals from stored HTTP evidence, can propose bounded follow-up actions without bypassing policy, enforces sequential coordinator stage prerequisites, and distinguishes worker boundaries from real bundled/field-tested runtimes. Full pentest readiness remains false until broad active verification and physical browser/tool runtimes close.

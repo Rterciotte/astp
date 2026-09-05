@@ -12,6 +12,8 @@ class VerificationFamily(StrEnum):
     COOKIE = "cookie"
     SECURITY_HEADERS = "security_headers"
     INFORMATION_EXPOSURE = "information_exposure"
+    CACHE = "cache"
+    REDIRECT = "redirect"
 
 
 class VerifierDefinition(BaseModel):
@@ -48,6 +50,27 @@ def builtin_verifier_catalog() -> tuple[VerifierDefinition, ...]:
         VerifierDefinition(
             id="information-exposure.v1",
             family=VerificationFamily.INFORMATION_EXPOSURE,
+            active_request_required=False,
+        ),
+        VerifierDefinition(
+            id="cache.sensitive-response.v1",
+            family=VerificationFamily.CACHE,
+            active_request_required=False,
+        ),
+        VerifierDefinition(
+            id="redirect.reauthorization.v1",
+            family=VerificationFamily.REDIRECT,
+            active_request_required=False,
+            proof_ceiling="informational",
+        ),
+        VerifierDefinition(
+            id="security-headers.csp.v1",
+            family=VerificationFamily.SECURITY_HEADERS,
+            active_request_required=False,
+        ),
+        VerifierDefinition(
+            id="security-headers.hsts.v1",
+            family=VerificationFamily.SECURITY_HEADERS,
             active_request_required=False,
         ),
     )

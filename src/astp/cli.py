@@ -16,6 +16,7 @@ from astp.assessment_capabilities import current_capability_matrix
 from astp.assessment_completion import evaluate_pentest_completion
 from astp.assessment_coverage import current_assessment_coverage
 from astp.assessment_cycle import plan_safe_surface_observations
+from astp.assessment_depth import current_assessment_depth
 from astp.assessment_execution import (
     build_assessment_execution_plan,
     write_assessment_execution_plan,
@@ -42,7 +43,9 @@ from astp.circuit_breaker import FailureCircuitBreaker
 from astp.closure_gate import evaluate_closure
 from astp.confidence import fuse_normalized_signals
 from astp.controlled_loop import run_controlled_queue
-from astp.coordinator import build_coordinator_plan
+from astp.coordinator import CoordinatorStage, build_coordinator_plan
+from astp.coordinator_gates import CoordinatorGateContext, evaluate_stage_transition
+from astp.coordinator_history import list_transition_history, record_transition
 from astp.differential_analysis import compare_authorization_evidence
 from astp.end_to_end_plan import build_end_to_end_assessment_plan
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
@@ -159,6 +162,7 @@ from astp.verification_broker import (
     broker_reviewed_verification,
 )
 from astp.verification_execution import prepare_verification_execution
+from astp.verification_planner import propose_verification_action
 from astp.verification_queue import list_verification_queue
 from astp.verification_review import (
     VerificationReview,
@@ -166,8 +170,10 @@ from astp.verification_review import (
     review_verification_item,
 )
 from astp.verifier_catalog import builtin_verifier_catalog
+from astp.verifier_depth import verify_stored_http_evidence
 from astp.web_posture import analyze_http_posture
 from astp.work_queue import WorkQueue, build_fair_work_queue
+from astp.worker_runtime_manifest import builtin_worker_runtime_manifests
 
 app = typer.Typer(
     help=(
@@ -3091,6 +3097,95 @@ def prepare_assessment_coordinator_command(
         dump_yaml(plan, output)
     console.print_json(plan.model_dump_json())
     console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("verify-stored-http")
+def verify_stored_http_command(
+    evidence_path: Annotated[Path, typer.Argument(help="Stored HTTP observation evidence JSON")],
+) -> None:
+    """Derive conservative verifier signals from stored evidence; performs no network I/O."""
+    evidence = load_model(evidence_path, HttpObservationEvidence)
+    signals = verify_stored_http_evidence(evidence)
+    console.print_json(json.dumps([item.model_dump(mode="json") for item in signals]))
+    console.print("Confirmed vulnerabilities: 0")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("propose-verification-action")
+def propose_verification_action_command(
+    evidence_path: Annotated[Path, typer.Argument(help="Stored HTTP observation evidence JSON")],
+) -> None:
+    """Build bounded next-action proposals from stored verifier signals."""
+    evidence = load_model(evidence_path, HttpObservationEvidence)
+    proposals = [
+        propose_verification_action(signal) for signal in verify_stored_http_evidence(evidence)
+    ]
+    console.print_json(json.dumps([item.model_dump(mode="json") for item in proposals]))
+    console.print("Policy bypass: NO")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("evaluate-coordinator-transition")
+def evaluate_coordinator_transition_command(
+    engagement_id: Annotated[str, typer.Option("--engagement-id")],
+    from_stage: Annotated[CoordinatorStage, typer.Option("--from-stage")],
+    to_stage: Annotated[CoordinatorStage, typer.Option("--to-stage")],
+    history_db: Annotated[Path | None, typer.Option("--history-db")] = None,
+    evidence_available: Annotated[
+        bool, typer.Option("--evidence-available/--no-evidence-available")
+    ] = False,
+    verification_queue_empty: Annotated[
+        bool, typer.Option("--verification-queue-empty/--verification-queue-pending")
+    ] = True,
+    unresolved_retests: Annotated[
+        bool, typer.Option("--unresolved-retests/--no-unresolved-retests")
+    ] = False,
+    report_ready: Annotated[bool, typer.Option("--report-ready/--report-not-ready")] = False,
+    review_approved: Annotated[
+        bool, typer.Option("--review-approved/--review-not-approved")
+    ] = False,
+) -> None:
+    """Evaluate and optionally persist one coordinator stage transition."""
+    context = CoordinatorGateContext(
+        evidence_available=evidence_available,
+        verification_queue_empty=verification_queue_empty,
+        unresolved_retests=unresolved_retests,
+        report_ready=report_ready,
+        review_approved=review_approved,
+    )
+    result = evaluate_stage_transition(from_stage, to_stage, context)
+    if history_db is not None:
+        record_transition(history_db, engagement_id, result)
+    console.print_json(result.model_dump_json())
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("show-coordinator-history")
+def show_coordinator_history_command(
+    engagement_id: Annotated[str, typer.Option("--engagement-id")],
+    history_db: Annotated[Path, typer.Option("--history-db")],
+) -> None:
+    """Show durable coordinator transition history."""
+    records = list_transition_history(history_db, engagement_id)
+    console.print_json(json.dumps([item.model_dump(mode="json") for item in records]))
+
+
+@app.command("show-worker-runtime-manifests")
+def show_worker_runtime_manifests_command() -> None:
+    """Show bundled/field-tested status separately from worker boundary availability."""
+    manifests = builtin_worker_runtime_manifests()
+    payload = []
+    for manifest in manifests:
+        item = manifest.model_dump(mode="json")
+        item["operational_ready"] = manifest.operational_ready
+        payload.append(item)
+    console.print_json(json.dumps(payload))
+
+
+@app.command("assessment-depth")
+def assessment_depth_command() -> None:
+    """Show verifier depth and physical worker-runtime readiness without overclaiming."""
+    console.print_json(current_assessment_depth().model_dump_json())
 
 
 if __name__ == "__main__":

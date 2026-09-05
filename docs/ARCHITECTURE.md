@@ -314,3 +314,7 @@ State-changing verification remains operator-controlled. An exact-action approva
 
 ## M16.5-M18.4 worker boundary
 Browser and external adapter work now has an explicit permit-consumption-before-I/O boundary. Worker isolation forbids signing keys, arbitrary mounts/network, secret export, and shell execution by default. The coordinator is planning/state only unless execution is explicitly enabled by a higher-level reviewed workflow.
+
+## M18.5-M20.4 — Verification depth and coordinator gates
+
+ASTP now derives conservative verifier signals from stored HTTP evidence, can propose bounded follow-up actions without bypassing policy, enforces sequential coordinator stage prerequisites, and distinguishes worker boundaries from real bundled/field-tested runtimes. Full pentest readiness remains false until broad active verification and physical browser/tool runtimes close.

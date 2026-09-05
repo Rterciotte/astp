@@ -29,4 +29,16 @@ def builtin_proof_requirements() -> tuple[ProofRequirement, ...]:
         ProofRequirement(
             verifier_id="cookie.flags.v1", required_evidence_types=("http.observation",)
         ),
+        ProofRequirement(
+            verifier_id="security-headers.csp.v1", required_evidence_types=("http.observation",)
+        ),
+        ProofRequirement(
+            verifier_id="security-headers.hsts.v1", required_evidence_types=("http.observation",)
+        ),
+        ProofRequirement(
+            verifier_id="cache.sensitive-response.v1", required_evidence_types=("http.observation",)
+        ),
+        ProofRequirement(
+            verifier_id="redirect.reauthorization.v1", required_evidence_types=("http.observation",)
+        ),
     )

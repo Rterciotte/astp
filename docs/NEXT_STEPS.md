@@ -24,3 +24,7 @@ The M14.5-M16.4 block closes the autonomous two-identity differential executor a
 
 ## After M18.4
 Prioritize vulnerability-specific proof families, operator-gated state-changing execution, real isolated runtime packaging, and coordinator-driven recovery/replanning. `full_pentest_ready` must remain false until these are field-tested.
+
+## M18.5-M20.4 — Verification depth and coordinator gates
+
+ASTP now derives conservative verifier signals from stored HTTP evidence, can propose bounded follow-up actions without bypassing policy, enforces sequential coordinator stage prerequisites, and distinguishes worker boundaries from real bundled/field-tested runtimes. Full pentest readiness remains false until broad active verification and physical browser/tool runtimes close.
