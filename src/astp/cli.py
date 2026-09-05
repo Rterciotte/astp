@@ -41,9 +41,12 @@ from astp.capability_evidence import derive_network_capability_evidence
 from astp.capability_grant import SignedCapabilityGrant, issue_capability_grant
 from astp.circuit_breaker import FailureCircuitBreaker
 from astp.closure_gate import evaluate_closure
+from astp.completion_readiness import evaluate_completion_readiness
 from astp.confidence import fuse_normalized_signals
 from astp.controlled_loop import run_controlled_queue
 from astp.coordinator import CoordinatorStage, build_coordinator_plan
+from astp.coordinator_execution import build_execution_ticket
+from astp.coordinator_feedback import evaluate_feedback
 from astp.coordinator_gates import CoordinatorGateContext, evaluate_stage_transition
 from astp.coordinator_history import list_transition_history, record_transition
 from astp.differential_analysis import compare_authorization_evidence
@@ -51,6 +54,7 @@ from astp.end_to_end_plan import build_end_to_end_assessment_plan
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_quarantine import quarantine_evidence
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
+from astp.execution_budget import StageExecutionBudget, evaluate_stage_budget
 from astp.execution_intent import build_execution_intent
 from astp.execution_trace import append_trace_event, verify_execution_trace
 from astp.external_adapter_contracts import builtin_external_adapter_contracts
@@ -140,6 +144,12 @@ from astp.retest_scheduler import build_retest_request
 from astp.review_package import build_review_package
 from astp.risk_context import AssetImportance, Exposure, RiskContext, score_finding_context
 from astp.runtime_isolation import default_runtime_isolation_policy
+from astp.runtime_qualification import (
+    RuntimeQualificationEvidence,
+    qualification_template,
+    qualify_runtime,
+)
+from astp.runtime_specs import builtin_runtime_specs
 from astp.runtime_state import revoke_runtime_permit, runtime_permit_status
 from astp.safe_assessment_profile import SafeAssessmentProfile
 from astp.scope_compiler import CompilationStatus, compile_scope_file
@@ -157,6 +167,7 @@ from astp.target_registry import (
     save_registry,
 )
 from astp.test_dsl import SecurityTestDefinition
+from astp.verification_batch import build_verification_batch
 from astp.verification_broker import (
     VerificationAuthorizationCandidate,
     broker_reviewed_verification,
@@ -171,6 +182,7 @@ from astp.verification_review import (
 )
 from astp.verifier_catalog import builtin_verifier_catalog
 from astp.verifier_depth import verify_stored_http_evidence
+from astp.verifier_readiness import current_verifier_family_readiness
 from astp.web_posture import analyze_http_posture
 from astp.work_queue import WorkQueue, build_fair_work_queue
 from astp.worker_runtime_manifest import builtin_worker_runtime_manifests
@@ -3186,6 +3198,139 @@ def show_worker_runtime_manifests_command() -> None:
 def assessment_depth_command() -> None:
     """Show verifier depth and physical worker-runtime readiness without overclaiming."""
     console.print_json(current_assessment_depth().model_dump_json())
+
+
+@app.command("show-runtime-specs")
+def show_runtime_specs_command() -> None:
+    """Show version-pinned runtime specifications without claiming they are installed."""
+    console.print_json(
+        json.dumps([item.model_dump(mode="json") for item in builtin_runtime_specs()])
+    )
+
+
+@app.command("runtime-qualification-template")
+def runtime_qualification_template_command(
+    runtime_id: Annotated[str, typer.Argument()],
+    output: Annotated[Path | None, typer.Option("--output")] = None,
+) -> None:
+    """Create an offline runtime qualification evidence template."""
+    template = qualification_template(runtime_id)
+    if output is not None:
+        dump_yaml(template, output)
+    console.print_json(template.model_dump_json())
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("evaluate-runtime-qualification")
+def evaluate_runtime_qualification_command(
+    evidence_path: Annotated[Path, typer.Argument()],
+) -> None:
+    """Evaluate recorded runtime qualification evidence; performs no execution."""
+    evidence = load_model(evidence_path, RuntimeQualificationEvidence)
+    spec = next((item for item in builtin_runtime_specs() if item.id == evidence.runtime_id), None)
+    if spec is None:
+        raise typer.BadParameter(f"unknown runtime id: {evidence.runtime_id}")
+    result = qualify_runtime(spec, evidence)
+    console.print_json(result.model_dump_json())
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("show-verifier-readiness")
+def show_verifier_readiness_command() -> None:
+    """Show definition depth separately from operational verifier qualification."""
+    rows = current_verifier_family_readiness()
+    console.print_json(json.dumps([item.model_dump(mode="json") for item in rows]))
+
+
+@app.command("build-verification-batch")
+def build_verification_batch_command(
+    evidence_path: Annotated[Path, typer.Argument()],
+    output: Annotated[Path | None, typer.Option("--output")] = None,
+) -> None:
+    """Build a planning-only batch from stored HTTP verifier signals."""
+    evidence = load_model(evidence_path, HttpObservationEvidence)
+    batch = build_verification_batch(verify_stored_http_evidence(evidence))
+    if output is not None:
+        dump_yaml(batch, output)
+    console.print_json(batch.model_dump_json())
+    console.print("Fresh permit per action: YES")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("prepare-coordinator-ticket")
+def prepare_coordinator_ticket_command(
+    engagement_id: Annotated[str, typer.Option("--engagement-id")],
+    stage: Annotated[CoordinatorStage, typer.Option("--stage")],
+    action_id: Annotated[list[str], typer.Option("--action-id")],
+    output: Annotated[Path | None, typer.Option("--output")] = None,
+) -> None:
+    """Prepare a stage-scoped coordinator ticket; does not authorize execution."""
+    ticket = build_execution_ticket(engagement_id, stage, tuple(action_id))
+    if output is not None:
+        dump_yaml(ticket, output)
+    console.print_json(ticket.model_dump_json())
+    console.print("Execution enabled: NO")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("evaluate-stage-budget")
+def evaluate_stage_budget_command(
+    stage: Annotated[CoordinatorStage, typer.Option("--stage")],
+    network_actions: Annotated[int, typer.Option("--network-actions")] = 0,
+    errors: Annotated[int, typer.Option("--errors")] = 0,
+    elapsed_seconds: Annotated[int, typer.Option("--elapsed-seconds")] = 0,
+    max_network_actions: Annotated[int, typer.Option("--max-network-actions")] = 10,
+    max_errors: Annotated[int, typer.Option("--max-errors")] = 3,
+    max_seconds: Annotated[int, typer.Option("--max-seconds")] = 300,
+) -> None:
+    """Evaluate a bounded stage budget offline."""
+    budget = StageExecutionBudget(
+        stage=stage,
+        max_network_actions=max_network_actions,
+        max_errors=max_errors,
+        max_seconds=max_seconds,
+    )
+    result = evaluate_stage_budget(
+        budget,
+        network_actions=network_actions,
+        errors=errors,
+        elapsed_seconds=elapsed_seconds,
+    )
+    console.print_json(result.model_dump_json())
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("evaluate-coordinator-feedback")
+def evaluate_coordinator_feedback_command(
+    accepted_evidence: Annotated[int, typer.Option("--accepted-evidence")] = 0,
+    rejected_evidence: Annotated[int, typer.Option("--rejected-evidence")] = 0,
+    new_signals: Annotated[int, typer.Option("--new-signals")] = 0,
+    new_verification_proposals: Annotated[int, typer.Option("--new-verification-proposals")] = 0,
+    errors: Annotated[int, typer.Option("--errors")] = 0,
+) -> None:
+    """Decide whether the bounded coordinator should continue, replan, or stop."""
+    result = evaluate_feedback(
+        accepted_evidence=accepted_evidence,
+        rejected_evidence=rejected_evidence,
+        new_signals=new_signals,
+        new_verification_proposals=new_verification_proposals,
+        errors=errors,
+    )
+    console.print_json(result.model_dump_json())
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("completion-readiness")
+def completion_readiness_command() -> None:
+    """Show strict completion gates without treating contracts as operational runtimes."""
+    runtime_results = tuple(
+        qualify_runtime(spec, qualification_template(spec.id)) for spec in builtin_runtime_specs()
+    )
+    result = evaluate_completion_readiness(
+        runtime_results,
+        current_verifier_family_readiness(),
+    )
+    console.print_json(result.model_dump_json())
 
 
 if __name__ == "__main__":

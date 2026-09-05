@@ -14,6 +14,8 @@ class AssessmentDepthStatus(BaseModel):
     operational_worker_runtimes: int
     broad_active_verification_ready: bool
     full_runtime_ready: bool
+    runtime_qualification_required: bool = True
+    active_verifier_field_qualification_required: bool = True
 
 
 def current_assessment_depth() -> AssessmentDepthStatus:

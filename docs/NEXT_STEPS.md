@@ -28,3 +28,8 @@ Prioritize vulnerability-specific proof families, operator-gated state-changing 
 ## M18.5-M20.4 — Verification depth and coordinator gates
 
 ASTP now derives conservative verifier signals from stored HTTP evidence, can propose bounded follow-up actions without bypassing policy, enforces sequential coordinator stage prerequisites, and distinguishes worker boundaries from real bundled/field-tested runtimes. Full pentest readiness remains false until broad active verification and physical browser/tool runtimes close.
+
+
+## M20.5–M22.4 — Runtime qualification and coordinator execution gates
+
+ASTP now distinguishes runtime specifications, worker boundaries, and operational field qualification. A runtime is not operational merely because a permit-consumed boundary exists. Coordinator execution remains planning-only and stage-budgeted; accepted evidence must be manifest/provenance bound before it can feed replanning. Full completion additionally requires field-qualified runtimes, operational verifier families, and the operator-gated state-changing path to be tested end-to-end.

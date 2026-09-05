@@ -73,4 +73,17 @@ def builtin_verifier_catalog() -> tuple[VerifierDefinition, ...]:
             family=VerificationFamily.SECURITY_HEADERS,
             active_request_required=False,
         ),
+        VerifierDefinition(
+            id="cors.controlled-origin.v1",
+            family=VerificationFamily.CORS,
+            active_request_required=True,
+        ),
+        VerifierDefinition(
+            id="authorization.identity-differential.v1",
+            family=VerificationFamily.AUTHORIZATION,
+            active_request_required=True,
+        ),
+        VerifierDefinition(
+            id="cache.variation.v1", family=VerificationFamily.CACHE, active_request_required=True
+        ),
     )
