@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from pydantic import BaseModel, Field
 
+from astp.dedicated_verifiers import verify_cors_headers
 from astp.findings import FindingCandidate, ProofState
 from astp.observation import HttpObservationEvidence
 from astp.proof_verifier import ProofVerification, verify_finding_candidate
@@ -48,7 +49,8 @@ def verify_with_registry(
     registry: ProofVerifierRegistry | None = None,
     dedicated_verifiers: (
         dict[
-            str, Callable[[FindingCandidate, dict[str, HttpObservationEvidence]], ProofVerification]
+            str,
+            Callable[[FindingCandidate, dict[str, HttpObservationEvidence]], ProofVerification],
         ]
         | None
     ) = None,
@@ -56,7 +58,9 @@ def verify_with_registry(
     spec = select_proof_verifier(candidate, registry)
     if spec is None:
         return verify_finding_candidate(candidate, evidence_by_id)
-    verifier = (dedicated_verifiers or {}).get(spec.id)
+    builtins = {"cors.headers.v1": verify_cors_headers}
+    verifiers = {**builtins, **(dedicated_verifiers or {})}
+    verifier = verifiers.get(spec.id)
     if verifier is None:
         generic = verify_finding_candidate(candidate, evidence_by_id)
         maximum = min(

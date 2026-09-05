@@ -336,3 +336,12 @@ astp assess `
 ```
 
 This command is offline. Any future target-side action identified by the assessment still requires current policy authorization and a fresh execution permit.
+
+## M8.0–M9.4 assessment integrity and review layer
+
+ASTP can now fuse repeated signal confidence without changing proof state, inventory JavaScript
+references from stored evidence, model permit-gated DNS/TLS worker capabilities, keep authenticated
+secrets as non-exportable references, queue verification work for review, checkpoint assessment
+progress, trace evidence-to-report lineage, calculate contextual non-CVSS ranking inputs, and
+assemble integrity-bound review/portable assessment artifacts. These features do not introduce a
+new target-network execution path.

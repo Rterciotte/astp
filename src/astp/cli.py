@@ -10,10 +10,16 @@ from rich.table import Table
 
 from astp.adapter_registry import builtin_adapter_registry, ensure_adapter_compatible
 from astp.assessment import assess_evidence, load_evidence_directory
+from astp.assessment_manifest import (
+    AssessmentManifest,
+    build_assessment_manifest,
+    verify_assessment_manifest,
+)
 from astp.authorization import AuthorizationRequest, authorize_test
 from astp.autonomy_session import prepare_autonomy_session
 from astp.browser_intake import capture_to_text, load_capture
 from astp.circuit_breaker import FailureCircuitBreaker
+from astp.confidence import fuse_normalized_signals
 from astp.controlled_loop import run_controlled_queue
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
@@ -26,6 +32,7 @@ from astp.frontier import build_frontier
 from astp.http_fingerprint import fingerprint_http
 from astp.hypothesis import build_observation_hypotheses
 from astp.io import dump_yaml, load_model, load_yaml
+from astp.javascript_inventory import inventory_javascript
 from astp.lifecycle import (
     append_audit_event,
     consume_execution_permit,
@@ -33,6 +40,7 @@ from astp.lifecycle import (
     revoke_permit,
     verify_audit_chain,
 )
+from astp.lineage import build_assessment_lineage
 from astp.method_strategy import choose_observation_method
 from astp.models import (
     ApprovalArtifact,
@@ -47,6 +55,7 @@ from astp.models import (
     TestDefinition,
     evaluate_test,
 )
+from astp.network_capabilities import builtin_network_capabilities
 from astp.observation import (
     DEFAULT_MAX_BODY_BYTES,
     DEFAULT_TIMEOUT_SECONDS,
@@ -55,6 +64,7 @@ from astp.observation import (
     observe_http,
     verify_observation_evidence,
 )
+from astp.operator_review import ReviewDecision, record_operator_review
 from astp.permit_broker import broker_queue_item_permit
 from astp.permits import (
     DEFAULT_PERMIT_TTL_SECONDS,
@@ -66,6 +76,7 @@ from astp.permits import (
 from astp.planner import ObservationPlan, build_observation_plan
 from astp.planner_state import get_planner_state, initialize_planner_state
 from astp.policy_snapshot import capture_policy_snapshot
+from astp.portable_assessment import export_portable_assessment, verify_portable_assessment
 from astp.prioritization import prioritize_registry
 from astp.program_catalog import (
     BugBountyWorkspace,
@@ -88,6 +99,8 @@ from astp.protocol_analyzers import analyze_protocol_posture
 from astp.reporting import render_markdown_report
 from astp.result_interpreter import interpret_observation
 from astp.resume_guard import evaluate_resume
+from astp.review_package import build_review_package
+from astp.risk_context import AssetImportance, Exposure, RiskContext, score_finding_context
 from astp.runtime_state import revoke_runtime_permit, runtime_permit_status
 from astp.scope_compiler import CompilationStatus, compile_scope_file
 from astp.security_graph import build_security_graph
@@ -2174,6 +2187,187 @@ def validate_assessment_recovery_command(
     console.print("Network execution: NOT PERFORMED")
     if not validation.passed:
         raise typer.Exit(code=10)
+
+
+@app.command("inventory-javascript")
+def inventory_javascript_command(
+    evidence_path: Annotated[Path, typer.Argument(help="HTTP observation evidence JSON")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write JS inventory YAML")],
+) -> None:
+    """Inventory script references from stored HTML evidence only."""
+    evidence = HttpObservationEvidence.model_validate_json(
+        evidence_path.read_text(encoding="utf-8")
+    )
+    result = inventory_javascript(evidence)
+    dump_yaml(result, output)
+    console.print(f"JavaScript artifacts: {len(result.artifacts)}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("show-network-capabilities")
+def show_network_capabilities_command() -> None:
+    """Show permit-gated DNS/TLS worker contracts without executing them."""
+    table = Table(title="ASTP Network Capability Contracts")
+    table.add_column("Capability")
+    table.add_column("Permit")
+    table.add_column("State changing")
+    table.add_column("Arbitrary network")
+    for capability in builtin_network_capabilities():
+        table.add_row(
+            capability.id.value,
+            "YES" if capability.requires_execution_permit else "NO",
+            "YES" if capability.state_changing else "NO",
+            "YES" if capability.arbitrary_network else "NO",
+        )
+    console.print(table)
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("fuse-confidence")
+def fuse_confidence_command(
+    result_path: Annotated[Path, typer.Argument(help="Structured AssessmentResult YAML")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write confidence fusion YAML")],
+) -> None:
+    """Fuse repeated normalized signals without upgrading proof state."""
+    from astp.assessment import AssessmentResult
+
+    result = load_model(result_path, AssessmentResult)
+    fused = fuse_normalized_signals(result.signals)
+    dump_yaml(
+        {"schema_version": "1", "items": [item.model_dump(mode="json") for item in fused]},
+        output,
+    )
+    console.print(f"Fused signal groups: {len(fused)}")
+    console.print("Proof states changed: 0")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("build-assessment-lineage")
+def build_assessment_lineage_command(
+    result_path: Annotated[Path, typer.Argument(help="Structured AssessmentResult YAML")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write lineage YAML")],
+) -> None:
+    """Build evidence-to-signal-to-finding lineage from a stored assessment."""
+    from astp.assessment import AssessmentResult
+
+    result = load_model(result_path, AssessmentResult)
+    lineage = build_assessment_lineage(result)
+    dump_yaml(lineage, output)
+    console.print(f"Lineage nodes: {len(lineage.nodes)}")
+    console.print(f"Lineage edges: {len(lineage.edges)}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("score-assessment-risk")
+def score_assessment_risk_command(
+    result_path: Annotated[Path, typer.Argument(help="Structured AssessmentResult YAML")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write contextual risk YAML")],
+    exposure: Annotated[Exposure, typer.Option("--exposure")] = Exposure.UNKNOWN,
+    asset_importance: Annotated[
+        AssetImportance,
+        typer.Option("--asset-importance"),
+    ] = AssetImportance.UNKNOWN,
+) -> None:
+    """Calculate non-CVSS contextual ranking inputs for correlated findings."""
+    from astp.assessment import AssessmentResult
+
+    result = load_model(result_path, AssessmentResult)
+    context = RiskContext(exposure=exposure, asset_importance=asset_importance)
+    rows = [
+        {
+            "finding_id": finding.id,
+            "risk": score_finding_context(finding, context).model_dump(mode="json"),
+        }
+        for finding in result.findings.findings
+    ]
+    dump_yaml({"schema_version": "1", "is_cvss": False, "findings": rows}, output)
+    console.print(f"Contextual risk rows: {len(rows)}")
+    console.print("CVSS calculated: NO")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("build-assessment-manifest")
+def build_assessment_manifest_command(
+    result_path: Annotated[Path, typer.Argument(help="Structured AssessmentResult YAML")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write manifest YAML")],
+) -> None:
+    """Build an integrity-bound manifest for a stored assessment."""
+    from astp.assessment import AssessmentResult
+
+    result = load_model(result_path, AssessmentResult)
+    manifest = build_assessment_manifest(result)
+    dump_yaml(manifest, output)
+    console.print(f"Manifest hash: {manifest.manifest_hash}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("verify-assessment-manifest")
+def verify_assessment_manifest_command(
+    manifest_path: Annotated[Path, typer.Argument(help="Assessment manifest YAML")],
+) -> None:
+    """Verify assessment manifest integrity."""
+    manifest = load_model(manifest_path, AssessmentManifest)
+    valid = verify_assessment_manifest(manifest)
+    console.print(f"Assessment manifest valid: {'YES' if valid else 'NO'}")
+    console.print("Network execution: NOT PERFORMED")
+    if not valid:
+        raise typer.Exit(code=11)
+
+
+@app.command("review-assessment")
+def review_assessment_command(
+    manifest_path: Annotated[Path, typer.Argument(help="Assessment manifest YAML")],
+    reviewer: Annotated[str, typer.Option("--reviewer")],
+    decision: Annotated[ReviewDecision, typer.Option("--decision")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write operator review YAML")],
+    note: Annotated[list[str] | None, typer.Option("--note")] = None,
+) -> None:
+    """Record explicit human review bound to an integrity-verified assessment."""
+    manifest = load_model(manifest_path, AssessmentManifest)
+    review = record_operator_review(manifest, reviewer, decision, notes=note or [])
+    dump_yaml(review, output)
+    console.print(f"Decision: {review.decision.value.upper()}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("build-review-package")
+def build_review_package_command(
+    result_path: Annotated[Path, typer.Argument(help="Structured AssessmentResult YAML")],
+    output_dir: Annotated[Path, typer.Option("--output-dir", help="Review package directory")],
+) -> None:
+    """Assemble report, structured result, manifest, and lineage for operator review."""
+    from astp.assessment import AssessmentResult
+
+    result = load_model(result_path, AssessmentResult)
+    package = build_review_package(result, output_dir)
+    console.print(f"Manifest hash: {package.manifest.manifest_hash}")
+    console.print(f"Lineage nodes: {len(package.lineage.nodes)}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("export-portable-assessment")
+def export_portable_assessment_command(
+    manifest_path: Annotated[Path, typer.Argument(help="Assessment manifest YAML")],
+    review_path: Annotated[Path, typer.Argument(help="Operator review YAML")],
+    report_path: Annotated[Path, typer.Argument(help="Assessment Markdown report")],
+    result_path: Annotated[Path, typer.Argument(help="Structured assessment YAML")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Portable ZIP")],
+) -> None:
+    """Export a reviewed assessment as an integrity-checkable portable archive."""
+    from astp.operator_review import OperatorReview
+
+    manifest = load_model(manifest_path, AssessmentManifest)
+    review = load_model(review_path, OperatorReview)
+    index = export_portable_assessment(
+        output,
+        manifest=manifest,
+        review=review,
+        report_path=report_path,
+        result_path=result_path,
+    )
+    console.print(f"Portable entries: {len(index.entries)}")
+    console.print(f"Archive valid: {'YES' if verify_portable_assessment(output) else 'NO'}")
+    console.print("Network execution: NOT PERFORMED")
 
 
 @app.command("evaluate-test")

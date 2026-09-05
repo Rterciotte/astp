@@ -235,3 +235,17 @@ permit-gated evidence
 ```
 
 Evidence-driven replanning remains separate from execution. A newly discovered target or verification need is only a candidate action until it passes current policy and receives a fresh permit for a compatible worker.
+
+## Assessment integrity and operator review (M8.0–M9.4)
+
+The stored-evidence assessment path now has an integrity and review envelope:
+
+```text
+Evidence -> normalized signals -> confidence fusion -> candidate/proof pipeline
+         -> lineage -> assessment manifest -> operator review -> portable artifact
+```
+
+Confidence fusion never upgrades a proof state. DNS/TLS capability definitions are contracts only
+and still require execution permits before any future worker may use them. Secret material is modeled
+as a non-exportable reference rather than embedded in plans or worker jobs. Worker job envelopes do
+not carry signing keys, arbitrary mounts, or arbitrary network authority.
