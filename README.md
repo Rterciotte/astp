@@ -312,3 +312,12 @@ See `docs/M2_7_REDIRECT_SAFE_TARGET_EXPANSION.md` through
 ## M3.7–M4.6 control-plane expansion
 
 See `RELEASE_NOTES_M3_7_M4_6.md` for the permit broker, durable planner state, result interpreter, bounded surface mapper, adapter registry, proof-verifier contracts, autonomy-session preparation, budgets, prioritization, and safe web-posture analysis.
+
+## M4.7–M5.8 bounded autonomous observation
+
+ASTP now includes its first bounded multi-action observation loop. It remains GET/HEAD-only and sequential, requires an explicit `--execute`, re-authorizes and signs every action independently, stops on policy drift or stale program status, reserves atomic session budgets, caps actions per origin, opens a circuit breaker on repeated failures, and writes a hash-linked execution trace. See `RELEASE_NOTES_M4_7_M5_8.md` and `docs/M4_7_M5_8_FIELD_TEST.md`.
+## M5.9–M6.8 bounded evidence-driven iteration
+
+ASTP can feed completed observations into a session-bound registry, re-plan only deterministically safe candidates, enforce discovery depth, and suppress duplicate actions durably. HEAD observations escalate to GET only when a declared evidence requirement needs a body, and the follow-up still requires a fresh permit.
+
+The block also defines a non-state-changing web posture catalog, proof-specific verification plans, finding retest lifecycle, fair multi-program scheduling, and strict isolation contracts for future container workers. None of these control-plane objects authorizes or performs network execution.

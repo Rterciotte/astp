@@ -12,9 +12,14 @@ from astp.adapter_registry import builtin_adapter_registry, ensure_adapter_compa
 from astp.authorization import AuthorizationRequest, authorize_test
 from astp.autonomy_session import prepare_autonomy_session
 from astp.browser_intake import capture_to_text, load_capture
+from astp.circuit_breaker import FailureCircuitBreaker
+from astp.controlled_loop import run_controlled_queue
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
+from astp.execution_trace import append_trace_event, verify_execution_trace
+from astp.feedback import apply_evidence_feedback
 from astp.findings import FindingCandidate, FindingSet, correlate_findings
+from astp.frontier import build_frontier
 from astp.hypothesis import build_observation_hypotheses
 from astp.io import dump_yaml, load_model, load_yaml
 from astp.lifecycle import (
@@ -24,6 +29,7 @@ from astp.lifecycle import (
     revoke_permit,
     verify_audit_chain,
 )
+from astp.method_strategy import choose_observation_method
 from astp.models import (
     ApprovalArtifact,
     Decision,
@@ -55,6 +61,7 @@ from astp.permits import (
 )
 from astp.planner import ObservationPlan, build_observation_plan
 from astp.planner_state import get_planner_state, initialize_planner_state
+from astp.policy_snapshot import capture_policy_snapshot
 from astp.prioritization import prioritize_registry
 from astp.program_catalog import (
     BugBountyWorkspace,
@@ -75,10 +82,13 @@ from astp.program_runtime import create_operational_attestation
 from astp.program_server import serve_program_intake
 from astp.reporting import render_markdown_report
 from astp.result_interpreter import interpret_observation
+from astp.resume_guard import evaluate_resume
 from astp.runtime_state import revoke_runtime_permit, runtime_permit_status
 from astp.scope_compiler import CompilationStatus, compile_scope_file
 from astp.security_graph import build_security_graph
 from astp.session_budget import SessionBudget
+from astp.session_ledger import get_session_counters, initialize_session_ledger
+from astp.session_report import summarize_session_execution
 from astp.surface_mapper import build_surface_map
 from astp.target_discovery import discover_targets_from_evidence
 from astp.target_registry import (
@@ -89,13 +99,13 @@ from astp.target_registry import (
 )
 from astp.test_dsl import SecurityTestDefinition
 from astp.web_posture import analyze_http_posture
-from astp.work_queue import build_fair_work_queue
+from astp.work_queue import WorkQueue, build_fair_work_queue
 
 app = typer.Typer(
     help=(
         "ASTP policy-first security testing platform. "
-        "M4 adds permit brokering, durable planning, bounded surface analysis, "
-        "and proof guardrails."
+        "M5 adds bounded autonomous observation, policy-drift stops, durable budgets, "
+        "and resumable evidence-driven sessions."
     )
 )
 console = Console()
@@ -1726,6 +1736,305 @@ def analyze_web_posture_command(
     console.print("Confirmed vulnerabilities: 0")
     console.print("Network execution: NOT PERFORMED")
     console.print(f"Written to: {output}")
+
+
+@app.command("init-session-ledger")
+def init_session_ledger_command(
+    session_id: Annotated[str, typer.Argument(help="Session identifier")],
+    ledger_db: Annotated[
+        Path, typer.Option("--ledger-db", help="Durable autonomy session ledger")
+    ] = Path(".astp")
+    / "session-ledger.db",
+) -> None:
+    """Initialize an atomic session budget ledger; no network action is performed."""
+    counters = initialize_session_ledger(ledger_db, session_id)
+    console.print(f"Session ledger initialized: {counters.session_id}")
+    console.print(f"Actions reserved: {counters.actions_reserved}")
+    console.print(f"Requests reserved: {counters.requests_reserved}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("session-ledger-status")
+def session_ledger_status_command(
+    session_id: Annotated[str, typer.Argument(help="Session identifier")],
+    ledger_db: Annotated[
+        Path, typer.Option("--ledger-db", help="Durable autonomy session ledger")
+    ] = Path(".astp")
+    / "session-ledger.db",
+) -> None:
+    """Show durable autonomy counters."""
+    try:
+        counters = get_session_counters(ledger_db, session_id)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    console.print(f"Session: {counters.session_id}")
+    console.print(f"Actions reserved: {counters.actions_reserved}")
+    console.print(f"Requests reserved: {counters.requests_reserved}")
+    console.print(f"Completed: {counters.completed}")
+    console.print(f"Errors: {counters.errors}")
+
+
+@app.command("snapshot-policy")
+def snapshot_policy_command(
+    engagement_path: Annotated[Path, typer.Argument(help="Engagement YAML")],
+    test_path: Annotated[Path, typer.Argument(help="Test definition YAML")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Policy snapshot YAML")],
+) -> None:
+    """Capture a policy digest for later drift detection."""
+    engagement = load_model(engagement_path, Engagement)
+    test = load_model(test_path, TestDefinition)
+    snapshot = capture_policy_snapshot(engagement, test)
+    dump_yaml(snapshot, output)
+    console.print(f"Policy snapshot: {snapshot.digest}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("build-frontier")
+def build_frontier_command(
+    registry_path: Annotated[Path, typer.Argument(help="Target registry YAML")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Crawl frontier YAML")],
+    max_depth: Annotated[int, typer.Option("--max-depth", help="Maximum discovery depth")] = 3,
+) -> None:
+    """Build a bounded crawl frontier from discovered targets without requesting them."""
+    registry = load_model(registry_path, TargetRegistry)
+    try:
+        frontier = build_frontier(registry, max_depth=max_depth)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    dump_yaml(frontier, output)
+    console.print(f"Frontier items: {len(frontier.items)}")
+    console.print(f"Maximum depth: {frontier.max_depth}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("choose-observation-method")
+def choose_observation_method_command(
+    body_required: Annotated[
+        bool, typer.Option("--body-required", help="Require response body evidence")
+    ] = False,
+) -> None:
+    """Choose HEAD-first or GET when body evidence is explicitly required."""
+    choice = choose_observation_method(body_required=body_required)
+    console.print(f"Method: {choice.method}")
+    console.print(f"Reason: {choice.reason.value}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("feedback-evidence")
+def feedback_evidence_command(
+    evidence_path: Annotated[Path, typer.Argument(help="HTTP observation evidence JSON")],
+    engagement_path: Annotated[Path, typer.Argument(help="Engagement YAML")],
+    registry_path: Annotated[Path, typer.Argument(help="Target registry YAML")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Updated registry YAML")],
+    include_links: Annotated[bool, typer.Option("--links/--no-links")] = True,
+    max_candidates: Annotated[int, typer.Option("--max-candidates")] = 50,
+) -> None:
+    """Feed stored evidence back into the target registry; no network action is performed."""
+    evidence = HttpObservationEvidence.model_validate_json(
+        evidence_path.read_text(encoding="utf-8")
+    )
+    engagement = load_model(engagement_path, Engagement)
+    registry = load_model(registry_path, TargetRegistry)
+    result = apply_evidence_feedback(
+        evidence,
+        engagement,
+        registry,
+        include_links=include_links,
+        max_candidates=max_candidates,
+    )
+    dump_yaml(result.registry, output)
+    console.print(f"Candidates: {len(result.discovered.candidates)}")
+    console.print(f"Registry entries added: {result.added_entries}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("verify-execution-trace")
+def verify_execution_trace_command(
+    trace_path: Annotated[Path, typer.Argument(help="Hash-linked execution trace JSONL")],
+) -> None:
+    """Verify the hash-linked autonomous execution trace."""
+    try:
+        valid = verify_execution_trace(trace_path)
+    except (OSError, ValueError) as exc:
+        console.print(f"Execution trace valid: NO\n{exc}")
+        raise typer.Exit(code=9) from exc
+    console.print(f"Execution trace valid: {'YES' if valid else 'NO'}")
+    if not valid:
+        raise typer.Exit(code=9)
+
+
+@app.command("run-observation-session")
+def run_observation_session_command(
+    queue_path: Annotated[Path, typer.Argument(help="Authorizable work queue YAML")],
+    engagement_path: Annotated[Path, typer.Argument(help="Current engagement YAML")],
+    test_path: Annotated[Path, typer.Argument(help="Observation test YAML")],
+    attestation_path: Annotated[
+        Path, typer.Option("--program-status-attestation", help="Fresh program status attestation")
+    ],
+    execute: Annotated[
+        bool, typer.Option("--execute", help="Explicitly enable bounded GET/HEAD execution")
+    ] = False,
+    semantic_clear: Annotated[
+        list[str] | None,
+        typer.Option("--semantic-clear", help="Reviewed semantic exclusion clear; repeatable"),
+    ] = None,
+    requested_rps: Annotated[float | None, typer.Option("--rps")] = None,
+    max_actions: Annotated[int, typer.Option("--max-actions")] = 3,
+    max_requests: Annotated[int, typer.Option("--max-requests")] = 3,
+    max_errors: Annotated[int, typer.Option("--max-errors")] = 1,
+    max_actions_per_origin: Annotated[int, typer.Option("--max-actions-per-origin")] = 3,
+    ttl_seconds: Annotated[int, typer.Option("--ttl-seconds")] = 120,
+    session_id: Annotated[str, typer.Option("--session-id")] = "observation-session",
+    ledger_db: Annotated[Path, typer.Option("--ledger-db")] = Path(".astp") / "session-ledger.db",
+    trace_path: Annotated[Path, typer.Option("--trace")] = Path(".astp") / "execution-trace.jsonl",
+    evidence_dir: Annotated[Path, typer.Option("--evidence-dir")] = Path(".astp") / "evidence",
+    manifest_path: Annotated[Path, typer.Option("--manifest")] = Path(".astp")
+    / "evidence-manifest.jsonl",
+    audit_path: Annotated[Path, typer.Option("--audit")] = DEFAULT_AUDIT_PATH,
+    runtime_db_path: Annotated[Path, typer.Option("--runtime-db")] = DEFAULT_RUNTIME_DB_PATH,
+    rate_state_path: Annotated[Path, typer.Option("--rate-state")] = Path(".astp")
+    / "rate-state.json",
+    timeout_seconds: Annotated[float, typer.Option("--timeout")] = DEFAULT_TIMEOUT_SECONDS,
+    max_body_bytes: Annotated[int, typer.Option("--max-body-bytes")] = DEFAULT_MAX_BODY_BYTES,
+) -> None:
+    """Run a bounded sequential observation session with one fresh permit per request."""
+    if not execute:
+        raise typer.BadParameter(
+            "execution is disabled by default; pass --execute only for an authorized engagement"
+        )
+    queue = load_model(queue_path, WorkQueue)
+    engagement = load_model(engagement_path, Engagement)
+    test = load_model(test_path, TestDefinition)
+    attestation = load_model(attestation_path, ProgramOperationalAttestation)
+    active_key_id, keys = _permit_keyring()
+    signing_key = keys[active_key_id]
+    snapshot = capture_policy_snapshot(engagement, test)
+    initialize_session_ledger(ledger_db, session_id)
+    append_trace_event(trace_path, "session.started", message=session_id)
+
+    def executor(item):
+        receipt = broker_queue_item_permit(
+            item,
+            engagement,
+            test,
+            signing_key,
+            key_id=active_key_id,
+            ttl_seconds=ttl_seconds,
+            operational_attestation=attestation,
+            semantic_exclusion_clears=set(semantic_clear or []),
+            requested_rps=requested_rps,
+        )
+        append_trace_event(
+            trace_path,
+            "permit.issued",
+            queue_id=item.queue_id,
+            permit_id=receipt.permit.payload.permit_id,
+        )
+        evidence_path = evidence_dir / f"{session_id}-{item.queue_id}.json"
+        result = observe_http(
+            receipt.permit,
+            engagement,
+            test,
+            keys,
+            target=item.target,
+            method=item.method,
+            identity=None,
+            requested_rps=requested_rps,
+            state_path=DEFAULT_STATE_PATH,
+            audit_path=audit_path,
+            evidence_path=evidence_path,
+            manifest_path=manifest_path,
+            rate_state_path=rate_state_path,
+            runtime_db_path=runtime_db_path,
+            timeout_seconds=timeout_seconds,
+            max_body_bytes=max_body_bytes,
+        )
+        append_trace_event(
+            trace_path,
+            "evidence.recorded",
+            queue_id=item.queue_id,
+            permit_id=receipt.permit.payload.permit_id,
+            evidence_id=result.evidence.evidence_id,
+        )
+        return receipt.permit.payload.permit_id, result.evidence.evidence_id
+
+    result = run_controlled_queue(
+        queue,
+        engagement,
+        test,
+        attestation,
+        snapshot,
+        ledger_db,
+        session_id,
+        executor,
+        max_actions=max_actions,
+        max_requests=max_requests,
+        max_errors=max_errors,
+        max_actions_per_origin=max_actions_per_origin,
+        breaker=FailureCircuitBreaker(max_consecutive_failures=max(1, max_errors)),
+    )
+    append_trace_event(trace_path, "session.finished", message=result.stop_reason)
+    console.print(f"Session: {result.session_id}")
+    console.print(f"Completed actions: {sum(1 for row in result.outcomes if row.completed)}")
+    console.print(f"Failed actions: {sum(1 for row in result.outcomes if not row.completed)}")
+    console.print(f"Stop reason: {result.stop_reason or 'queue exhausted'}")
+    console.print("Network execution: bounded permit-gated GET/HEAD")
+    console.print(f"Execution trace: {trace_path}")
+
+
+@app.command("session-report")
+def session_report_command(
+    session_id: Annotated[str, typer.Argument(help="Session identifier")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Session summary YAML")],
+    ledger_db: Annotated[
+        Path, typer.Option("--ledger-db", help="Durable autonomy session ledger")
+    ] = Path(".astp")
+    / "session-ledger.db",
+    trace_path: Annotated[Path, typer.Option("--trace", help="Hash-linked execution trace")] = Path(
+        ".astp"
+    )
+    / "execution-trace.jsonl",
+) -> None:
+    """Summarize durable session counters and trace events without network access."""
+    try:
+        counters = get_session_counters(ledger_db, session_id)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    summary = summarize_session_execution(counters, trace_path)
+    dump_yaml(summary, output)
+    console.print(f"Completed: {summary.completed}")
+    console.print(f"Errors: {summary.errors}")
+    console.print(f"Permits issued: {summary.permits_issued}")
+    console.print(f"Evidence records: {summary.evidence_records}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("resume-session-check")
+def resume_session_check_command(
+    queue_path: Annotated[Path, typer.Argument(help="Work queue YAML")],
+    state_db: Annotated[
+        Path, typer.Option("--state-db", help="Durable planner state SQLite database")
+    ] = Path(".astp")
+    / "planner.db",
+) -> None:
+    """Determine which queue items may be safely re-planned after interruption."""
+    queue = load_model(queue_path, WorkQueue)
+    entries = []
+    for item in queue.items:
+        try:
+            entries.append(get_planner_state(state_db, item.queue_id))
+        except ValueError:
+            continue
+    result = evaluate_resume(entries)
+    console.print(f"Resume allowed: {'YES' if result.allowed else 'NO'}")
+    console.print(f"Resumable: {', '.join(result.resumable_queue_ids) or 'none'}")
+    console.print(f"Blocked: {', '.join(result.blocked_queue_ids) or 'none'}")
+    console.print(result.reason)
+    console.print("Network execution: NOT PERFORMED")
 
 
 @app.command("evaluate-test")

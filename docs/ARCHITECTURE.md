@@ -197,6 +197,17 @@ Evidence/Registry -> Security Graph -> Hypothesis Graph -> Planner -> Policy -> 
 
 A hypothesis is neither a finding nor authorization.
 
+## Evidence-driven iteration boundary (M5.9–M6.8)
+
+Completed evidence may update only its engagement's registry. Newly discovered candidates pass deterministic safety and depth admission before the planner evaluates current policy. Durable action identities suppress repeats across sessions. A HEAD result may propose a GET only when declared proof needs body content; the proposal must still receive a fresh permit.
+
+Safe-web catalog entries, verification plans, finding retests, and fair scheduling are control-plane descriptions. Container isolation contracts prohibit signing-key delivery and require permit verification for network-capable workers.
+
+```text
+Evidence -> session feedback -> safe/depth admission -> planner
+       -> duplicate guard -> policy -> fresh permit -> isolated worker
+```
+
 ## Proof and reporting boundary (M3.5–M3.6)
 
 Findings use explicit proof states:
