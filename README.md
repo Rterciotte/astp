@@ -349,3 +349,15 @@ new target-network execution path.
 ## M9.5-M11.0
 
 ASTP now includes offline DNS/TLS evidence derivation, static JavaScript analysis, reviewed verification brokering, durable worker job/receipt state, assessment resume/quarantine controls, risk fusion, publication integrity, readiness, and explicit closure gates.
+
+## M11.1-M12.6 — Multi-capability execution boundary
+
+ASTP now has an exact capability-action model and a second signed binding layer for
+non-HTTP network observations. DNS and TLS observations can be executed only when an
+existing policy-issued execution permit is still valid, a capability grant binds that
+permit to the exact action, and the operator explicitly opts in to the single action.
+The underlying execution permit is consumed exactly once before network I/O.
+
+The current safe autonomous ceiling remains observational: HTTP GET/HEAD, DNS lookup,
+and TLS handshake. Exploit payloads, brute force, credential attacks, state-changing
+methods, and intrusive validation remain outside autonomous execution.

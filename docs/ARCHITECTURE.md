@@ -253,3 +253,27 @@ not carry signing keys, arbitrary mounts, or arbitrary network authority.
 ## M9.5-M11.0 integrity and closure layer
 
 Stored transport evidence can be normalized into DNS/TLS provenance without new network access. Verification work must be reviewed before it becomes an authorization candidate. Worker jobs and result receipts are durably bound to action/permit identifiers. Assessment checkpoints, quarantine, session journals, finalization, publication, and closure all preserve explicit integrity gates.
+
+## M11.1-M12.6: exact multi-capability execution
+
+The execution chain for bounded DNS/TLS observation is now:
+
+```text
+Planner
+  -> Policy authorization
+  -> Signed execution permit
+  -> Exact CapabilityAction
+  -> Signed CapabilityGrant
+  -> One-time permit consumption
+  -> Capability worker
+  -> Typed evidence
+  -> Evidence manifest
+```
+
+`CapabilityGrant` is an additional exact-action binding, not a replacement for the
+policy permit. A grant cannot extend the permit lifetime or target and a replayed permit
+is rejected before a second network operation occurs.
+
+The safe assessment profile exposes an explicit autonomous ceiling. It currently permits
+only non-state-changing observation capabilities and requires a fresh permit for every
+network action.

@@ -11,6 +11,11 @@ from rich.table import Table
 from astp.adapter_registry import builtin_adapter_registry, ensure_adapter_compatible
 from astp.artifact_planner import plan_javascript_artifacts
 from astp.assessment import assess_evidence, load_evidence_directory
+from astp.assessment_cycle import plan_safe_surface_observations
+from astp.assessment_execution import (
+    build_assessment_execution_plan,
+    write_assessment_execution_plan,
+)
 from astp.assessment_manifest import (
     AssessmentManifest,
     build_assessment_manifest,
@@ -20,7 +25,10 @@ from astp.assessment_resume import evaluate_assessment_resume
 from astp.authorization import AuthorizationRequest, authorize_test
 from astp.autonomy_session import prepare_autonomy_session
 from astp.browser_intake import capture_to_text, load_capture
+from astp.capability_action import CapabilityAction, CapabilityOperation
+from astp.capability_dispatcher import dispatch_capability_observation
 from astp.capability_evidence import derive_network_capability_evidence
+from astp.capability_grant import SignedCapabilityGrant, issue_capability_grant
 from astp.circuit_breaker import FailureCircuitBreaker
 from astp.closure_gate import evaluate_closure
 from astp.confidence import fuse_normalized_signals
@@ -28,6 +36,7 @@ from astp.controlled_loop import run_controlled_queue
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_quarantine import quarantine_evidence
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
+from astp.execution_intent import build_execution_intent
 from astp.execution_trace import append_trace_event, verify_execution_trace
 from astp.feedback import apply_evidence_feedback
 from astp.field_validation import validate_assessment_recovery
@@ -71,6 +80,7 @@ from astp.observation import (
     verify_observation_evidence,
 )
 from astp.operator_review import ReviewDecision, record_operator_review
+from astp.pentest_readiness import current_pentest_readiness
 from astp.permit_broker import broker_queue_item_permit
 from astp.permits import (
     DEFAULT_PERMIT_TTL_SECONDS,
@@ -112,6 +122,7 @@ from astp.resume_guard import evaluate_resume
 from astp.review_package import build_review_package
 from astp.risk_context import AssetImportance, Exposure, RiskContext, score_finding_context
 from astp.runtime_state import revoke_runtime_permit, runtime_permit_status
+from astp.safe_assessment_profile import SafeAssessmentProfile
 from astp.scope_compiler import CompilationStatus, compile_scope_file
 from astp.security_graph import build_security_graph
 from astp.session_budget import SessionBudget
@@ -2679,6 +2690,163 @@ def evaluate_test_command(
 
     for reason in result.reasons:
         console.print(f"- {reason}")
+
+
+@app.command("prepare-capability-action")
+def prepare_capability_action_command(
+    capability_id: Annotated[str, typer.Option("--capability", help="Capability contract id")],
+    operation: Annotated[
+        CapabilityOperation, typer.Option("--operation", help="Exact bounded operation")
+    ],
+    target: Annotated[str, typer.Option("--target", help="Exact host or URL target")],
+    output: Annotated[Path, typer.Option("--output", help="Write action YAML here")],
+    port: Annotated[
+        int | None, typer.Option("--port", help="Explicit network port when required")
+    ] = None,
+) -> None:
+    """Prepare an exact capability action. No network execution occurs."""
+    action = CapabilityAction(
+        capability_id=capability_id,
+        operation=operation,
+        target=target,
+        port=port,
+    )
+    dump_yaml(action, output)
+    console.print(f"Action ID: {action.action_id()}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("issue-capability-grant")
+def issue_capability_grant_command(
+    permit_path: Annotated[Path, typer.Argument(help="Signed execution permit YAML")],
+    engagement_path: Annotated[Path, typer.Argument(help="Current engagement YAML")],
+    test_path: Annotated[Path, typer.Argument(help="Current test definition YAML")],
+    action_path: Annotated[Path, typer.Argument(help="Exact capability action YAML")],
+    output: Annotated[
+        Path, typer.Option("--output", help="Write signed capability grant YAML here")
+    ],
+) -> None:
+    """Bind a verified execution permit to one exact capability action."""
+    permit = load_model(permit_path, SignedExecutionPermit)
+    engagement = load_model(engagement_path, Engagement)
+    test = load_model(test_path, TestDefinition)
+    action = load_model(action_path, CapabilityAction)
+    _, keys = _permit_keyring()
+    try:
+        grant = issue_capability_grant(permit, action, engagement, test, keys)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    dump_yaml(grant, output)
+    console.print(f"Capability grant: ISSUED for action {grant.payload.action_id}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("execute-capability")
+def execute_capability_command(
+    grant_path: Annotated[Path, typer.Argument(help="Signed capability grant YAML")],
+    permit_path: Annotated[Path, typer.Argument(help="Signed execution permit YAML")],
+    engagement_path: Annotated[Path, typer.Argument(help="Current engagement YAML")],
+    test_path: Annotated[Path, typer.Argument(help="Current test definition YAML")],
+    action_path: Annotated[Path, typer.Argument(help="Exact capability action YAML")],
+    output: Annotated[Path, typer.Option("--output", help="Write typed evidence JSON here")],
+    manifest: Annotated[Path, typer.Option("--manifest", help="Evidence manifest JSONL")] = Path(
+        ".astp"
+    )
+    / "evidence-manifest.jsonl",
+    state: Annotated[
+        Path, typer.Option("--state", help="Permit lifecycle state file")
+    ] = DEFAULT_STATE_PATH,
+    execute: Annotated[
+        bool,
+        typer.Option("--execute", help="Explicitly allow this one permit-gated network action"),
+    ] = False,
+) -> None:
+    """Execute one bounded DNS/TLS action only with an exact signed grant."""
+    if not execute:
+        console.print("Execution blocked: pass --execute for this exact permit-gated action.")
+        console.print("Network execution: NOT PERFORMED")
+        raise typer.Exit(code=2)
+    grant = load_model(grant_path, SignedCapabilityGrant)
+    permit = load_model(permit_path, SignedExecutionPermit)
+    engagement = load_model(engagement_path, Engagement)
+    test = load_model(test_path, TestDefinition)
+    action = load_model(action_path, CapabilityAction)
+    _, keys = _permit_keyring()
+    try:
+        evidence = dispatch_capability_observation(
+            grant,
+            permit,
+            action,
+            engagement,
+            test,
+            keys,
+            state_path=state,
+            evidence_path=output,
+            manifest_path=manifest,
+        )
+    except (ValueError, RuntimeError) as exc:
+        console.print(f"Capability observation completed: [bold]NO[/bold]\n{exc}")
+        raise typer.Exit(code=6) from exc
+    console.print("Capability observation completed: YES")
+    console.print(f"Evidence ID: {evidence.evidence_id}")
+    console.print("Network execution: PERFORMED (single exact permitted action)")
+
+
+@app.command("prepare-safe-assessment-run")
+def prepare_safe_assessment_run_command(
+    engagement_id: Annotated[str, typer.Option("--engagement-id")],
+    action_paths: Annotated[
+        list[Path], typer.Option("--action", help="Capability action YAML; repeatable")
+    ],
+    output: Annotated[Path, typer.Option("--output")],
+    max_network_actions: Annotated[int, typer.Option("--max-network-actions")] = 20,
+    max_errors: Annotated[int, typer.Option("--max-errors")] = 3,
+) -> None:
+    """Prepare a bounded multi-capability assessment plan; does not execute it."""
+    intents = [
+        build_execution_intent(engagement_id, load_model(path, CapabilityAction))
+        for path in action_paths
+    ]
+    plan = build_assessment_execution_plan(
+        engagement_id,
+        intents,
+        max_network_actions=max_network_actions,
+        max_errors=max_errors,
+        execution_enabled=False,
+    )
+    write_assessment_execution_plan(plan, output)
+    console.print(f"Prepared intents: {len(intents)}")
+    console.print("Execution enabled: NO")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("show-safe-assessment-profile")
+def show_safe_assessment_profile_command() -> None:
+    """Show the autonomous ceiling for the current end-to-end safe mode."""
+    profile = SafeAssessmentProfile()
+    console.print_json(profile.model_dump_json())
+
+
+@app.command("plan-safe-surface")
+def plan_safe_surface_command(
+    target: Annotated[str, typer.Argument(help="Initial HTTP(S) target")],
+    output: Annotated[Path, typer.Option("--output", help="Write planned actions YAML here")],
+) -> None:
+    """Plan DNS/TLS/HTTP surface observations without executing them."""
+    plan = plan_safe_surface_observations(target)
+    dump_yaml(plan, output)
+    console.print(f"Planned actions: {len(plan.actions)}")
+    console.print("Fresh permit required per action: YES")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("pentest-readiness")
+def pentest_readiness_command() -> None:
+    """Report whether ASTP can yet run a complete pentest/bug-hunt workflow."""
+    readiness = current_pentest_readiness()
+    console.print_json(readiness.model_dump_json())
 
 
 if __name__ == "__main__":
