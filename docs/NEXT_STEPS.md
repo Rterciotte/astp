@@ -1,23 +1,23 @@
 # ASTP Next Steps
 
-The M12.7-M14.4 block closes the authenticated HTTP observation blocker. The complete pentest/bug-hunt readiness flag remains false.
+The M14.5-M16.4 block closes the autonomous two-identity differential executor and the safe verification execution bridge. Full pentest/bug-hunt readiness remains false.
 
-## Next execution blockers
+## Remaining execution blockers
 
-1. M14.5 — isolated browser runtime with permit-bound navigation and evidence capture.
-2. M14.6 — browser session secret handoff without exposing credentials to the control plane.
-3. M14.7 — executable two-identity authorization differential runner.
-4. M14.8 — vulnerability verifier action compiler.
-5. M14.9 — safe verification executor for supported verifier classes.
-6. M15.0 — permit-gated external adapter worker protocol.
-7. M15.1 — bounded Nmap discovery adapter.
-8. M15.2 — bounded Nuclei safe-template adapter.
-9. M15.3 — ZAP baseline/passive adapter.
-10. M15.4 — adapter evidence normalization and correlation.
-11. M15.5 — browser/API evidence feedback into the adaptive planner.
-12. M15.6 — automated retest executor through fresh policy/permit evaluation.
-13. M15.7 — operator-controlled state-changing verification workflow.
-14. M15.8 — end-to-end assessment coordinator with safe resume and recovery.
-15. M15.9 — full-pentest readiness acceptance suite.
+1. M16.5 — bundled isolated browser worker with permit consumption before navigation.
+2. M16.6 — browser evidence store integration and screenshot/DOM provenance.
+3. M16.7 — permit-consumed external adapter worker protocol.
+4. M16.8 — bounded Nmap runtime adapter.
+5. M16.9 — bounded Nuclei runtime adapter with template policy.
+6. M17.0 — ZAP passive/baseline runtime adapter.
+7. M17.1 — broad vulnerability-specific verifier registry and proof criteria.
+8. M17.2 — verifier action compiler from finding candidates.
+9. M17.3 — evidence-driven verification scheduler with safe resume.
+10. M17.4 — browser/API evidence feedback into the planner.
+11. M17.5 — executable retest loop with fresh policy, attestation, and permits.
+12. M17.6 — operator-controlled state-changing worker path with exact-action approval consumption.
+13. M17.7 — end-to-end assessment coordinator across all ready capabilities.
+14. M17.8 — field recovery, interruption, and policy-drift validation.
+15. M17.9 — full-pentest readiness acceptance suite.
 
-`full_pentest_ready` must remain false until the acceptance suite demonstrates broad active verification, browser execution, external adapters, retests, and operator-gated high-risk workflows without bypassing policy or permits.
+`full_pentest_ready` must remain false until the acceptance suite demonstrates broad vulnerability verification, bundled browser execution, permit-consumed external adapters, executable retests, and operator-gated high-risk workflows without bypassing policy or permits.

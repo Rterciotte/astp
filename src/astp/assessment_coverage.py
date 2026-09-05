@@ -35,10 +35,10 @@ def current_assessment_coverage() -> AssessmentCoverage:
         dns_tls=True,
         fingerprinting=True,
         authenticated_http=True,
-        authorization_differential=False,
+        authorization_differential=True,
         browser_dynamic=False,
         external_adapters=False,
-        active_verification=False,
+        active_verification=True,
         reporting=True,
         retest=True,
     )

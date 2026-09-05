@@ -301,3 +301,13 @@ Redacted evidence
 ```
 
 Authorization differential tests now have a first-class plan requiring two distinct owned/permitted identities and a fresh permit per request. Browser and external scanner capabilities remain non-runtime-ready contracts until isolated workers are implemented. High-risk approvals bind to one exact action but never enable autonomous intrusive execution.
+
+## M14.5-M16.4 operational verification bridge
+
+The authorization workflow now supports two distinct owned identities with a fresh execution permit per request. Captured HTTP evidence is compared deterministically; equivalent successful responses are only a signal and never a verified authorization vulnerability without explicit foreign-object context. Even then, the initial verifier ceiling is `LIKELY`.
+
+Safe verification execution is restricted to existing observation capabilities (`GET`, `HEAD`, DNS, and TLS) and must pass through an exact capability grant plus execution permit. Verification results are durable and retests remain human-resolved after new evidence is collected.
+
+Browser and external adapter runtimes are deliberately separate from their contracts. Runtime discovery may report optional Playwright or adapter binaries as installed, but installation alone is not authority to execute. Redirects in browser observations require a new authorized action. External adapter jobs accept only named allowlisted modes and produce hash-bound receipts; arbitrary arguments are not accepted.
+
+State-changing verification remains operator-controlled. An exact-action approval can permit an operator workflow, but `autonomous_execution_allowed` remains false.

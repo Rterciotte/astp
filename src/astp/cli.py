@@ -31,6 +31,7 @@ from astp.authorization import AuthorizationRequest, authorize_test
 from astp.authorization_differential import build_authorization_differential_plan
 from astp.autonomy_session import prepare_autonomy_session
 from astp.browser_intake import capture_to_text, load_capture
+from astp.browser_runtime import browser_runtime_status
 from astp.browser_worker_contract import BrowserWorkerContract
 from astp.capability_action import CapabilityAction, CapabilityOperation
 from astp.capability_dispatcher import dispatch_capability_observation
@@ -40,6 +41,7 @@ from astp.circuit_breaker import FailureCircuitBreaker
 from astp.closure_gate import evaluate_closure
 from astp.confidence import fuse_normalized_signals
 from astp.controlled_loop import run_controlled_queue
+from astp.differential_analysis import compare_authorization_evidence
 from astp.end_to_end_plan import build_end_to_end_assessment_plan
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_quarantine import quarantine_evidence
@@ -47,6 +49,7 @@ from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
 from astp.execution_intent import build_execution_intent
 from astp.execution_trace import append_trace_event, verify_execution_trace
 from astp.external_adapter_contracts import builtin_external_adapter_contracts
+from astp.external_adapter_runtime import adapter_runtime_available
 from astp.feedback import apply_evidence_feedback
 from astp.field_validation import validate_assessment_recovery
 from astp.finding_repository import set_retest_state, upsert_finding
@@ -3018,6 +3021,39 @@ def build_retest_request_command(
 def pentest_completion_command() -> None:
     """State explicitly whether the full bug-hunt/pentest loop is complete."""
     console.print_json(evaluate_pentest_completion().model_dump_json())
+
+
+@app.command("browser-runtime-status")
+def browser_runtime_status_command() -> None:
+    """Show whether the optional bounded browser runtime is locally available."""
+    console.print_json(browser_runtime_status().model_dump_json())
+
+
+@app.command("external-adapter-runtime-status")
+def external_adapter_runtime_status_command() -> None:
+    """Show local binary availability for bounded external adapter contracts."""
+    payload = []
+    for contract in builtin_external_adapter_contracts():
+        item = contract.model_dump(mode="json")
+        item["runtime_available"] = adapter_runtime_available(contract)
+        payload.append(item)
+    console.print_json(json.dumps(payload))
+
+
+@app.command("compare-authorization-evidence")
+def compare_authorization_evidence_command(
+    baseline_path: Annotated[Path, typer.Argument(help="Baseline HTTP evidence JSON")],
+    comparison_path: Annotated[Path, typer.Argument(help="Comparison HTTP evidence JSON")],
+    output: Annotated[Path | None, typer.Option("--output")] = None,
+) -> None:
+    """Compare two already-captured authorization observations; performs no network I/O."""
+    baseline = load_model(baseline_path, HttpObservationEvidence)
+    comparison = load_model(comparison_path, HttpObservationEvidence)
+    result = compare_authorization_evidence(baseline, comparison)
+    if output is not None:
+        dump_yaml(result, output)
+    console.print_json(result.model_dump_json())
+    console.print("Network execution: NOT PERFORMED")
 
 
 if __name__ == "__main__":

@@ -52,6 +52,6 @@ def observe_authenticated_http(
         manifest_path=manifest_path,
         rate_state_path=rate_state_path,
         runtime_db_path=runtime_db_path,
-        sensitivity=SensitivityLabel.RESTRICTED,
+        sensitivity=SensitivityLabel.SENSITIVE,
         transport=wrapped,
     )

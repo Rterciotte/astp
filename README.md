@@ -373,3 +373,7 @@ astp pentest-completion
 ```
 
 The safe and authenticated observation loops are end-to-end, but full pentest readiness remains false until isolated browser execution, broad vulnerability-specific verification, permit-gated external tool workers, and operator-gated high-risk workflows are complete.
+
+## M14.5-M16.4 — operational verification bridge
+
+ASTP now has an executable, read-only two-identity authorization differential path, a safe verification dispatcher contract with durable results and retest outcomes, runtime probes for browser and external adapters, and an explicit operator-only gate for state-changing actions. Browser and external tool execution remain capability-gated and are not considered bundled/ready until their isolated runtimes are available and permit consumption is enforced at the worker boundary.
