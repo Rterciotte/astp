@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from astp.adapter_registry import builtin_adapter_registry, ensure_adapter_compatible
+from astp.assessment import assess_evidence, load_evidence_directory
 from astp.authorization import AuthorizationRequest, authorize_test
 from astp.autonomy_session import prepare_autonomy_session
 from astp.browser_intake import capture_to_text, load_capture
@@ -18,8 +19,11 @@ from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
 from astp.execution_trace import append_trace_event, verify_execution_trace
 from astp.feedback import apply_evidence_feedback
+from astp.field_validation import validate_assessment_recovery
+from astp.finding_repository import set_retest_state, upsert_finding
 from astp.findings import FindingCandidate, FindingSet, correlate_findings
 from astp.frontier import build_frontier
+from astp.http_fingerprint import fingerprint_http
 from astp.hypothesis import build_observation_hypotheses
 from astp.io import dump_yaml, load_model, load_yaml
 from astp.lifecycle import (
@@ -80,6 +84,7 @@ from astp.program_intake import (
 from astp.program_models import BugBountyProgram
 from astp.program_runtime import create_operational_attestation
 from astp.program_server import serve_program_intake
+from astp.protocol_analyzers import analyze_protocol_posture
 from astp.reporting import render_markdown_report
 from astp.result_interpreter import interpret_observation
 from astp.resume_guard import evaluate_resume
@@ -2035,6 +2040,140 @@ def resume_session_check_command(
     console.print(f"Blocked: {', '.join(result.blocked_queue_ids) or 'none'}")
     console.print(result.reason)
     console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("fingerprint-http")
+def fingerprint_http_command(
+    evidence_path: Annotated[Path, typer.Argument(help="HTTP observation evidence JSON")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write fingerprint YAML")],
+) -> None:
+    """Build an evidence-backed HTTP technology fingerprint without network access."""
+    evidence = HttpObservationEvidence.model_validate_json(
+        evidence_path.read_text(encoding="utf-8")
+    )
+    result = fingerprint_http(evidence)
+    dump_yaml(result, output)
+    console.print(f"Fingerprint observations: {len(result.observations)}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("analyze-protocol")
+def analyze_protocol_command(
+    evidence_path: Annotated[Path, typer.Argument(help="HTTP observation evidence JSON")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write analyzer result YAML")],
+) -> None:
+    """Analyze headers, cookies, CORS, and HTTPS posture from stored evidence only."""
+    evidence = HttpObservationEvidence.model_validate_json(
+        evidence_path.read_text(encoding="utf-8")
+    )
+    result = analyze_protocol_posture(evidence)
+    dump_yaml(result, output)
+    console.print(f"Analyzer signals: {len(result.signals)}")
+    console.print("Confirmed vulnerabilities: 0")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("assess")
+def assess_command(
+    engagement_path: Annotated[Path, typer.Argument(help="Current engagement YAML")],
+    test_path: Annotated[Path, typer.Argument(help="Observation test YAML")],
+    registry_path: Annotated[Path, typer.Argument(help="Target registry YAML")],
+    evidence_dir: Annotated[
+        Path, typer.Option("--evidence-dir", help="Stored HTTP evidence directory")
+    ],
+    report_path: Annotated[
+        Path, typer.Option("--output", "-o", help="Write Markdown assessment report")
+    ],
+    result_path: Annotated[
+        Path | None, typer.Option("--result", help="Optional structured assessment YAML")
+    ] = None,
+    session_id: Annotated[str, typer.Option("--session-id")] = "assessment",
+    program_status_attestation: Annotated[
+        Path | None,
+        typer.Option("--program-status-attestation", help="Optional status context for replanning"),
+    ] = None,
+    semantic_clear: Annotated[
+        list[str] | None,
+        typer.Option("--semantic-clear", help="Reviewed semantic exclusion clear; repeatable"),
+    ] = None,
+    requested_rps: Annotated[float | None, typer.Option("--rps")] = None,
+) -> None:
+    """Run the offline fingerprint-to-report assessment pipeline on stored evidence."""
+    engagement = load_model(engagement_path, Engagement)
+    test = load_model(test_path, TestDefinition)
+    registry = load_model(registry_path, TargetRegistry)
+    attestation = (
+        load_model(program_status_attestation, ProgramOperationalAttestation)
+        if program_status_attestation is not None
+        else None
+    )
+    evidence_rows = load_evidence_directory(evidence_dir)
+    excluded_terms = set(engagement.program.excluded_finding_types) if engagement.program else set()
+    result = assess_evidence(
+        session_id,
+        evidence_rows,
+        registry,
+        engagement,
+        test,
+        operational_attestation=attestation,
+        semantic_exclusion_clears=set(semantic_clear or []),
+        requested_rps=requested_rps,
+        excluded_finding_terms=excluded_terms,
+    )
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(result.report_markdown, encoding="utf-8")
+    if result_path is not None:
+        dump_yaml(result, result_path)
+    console.print(f"Evidence processed: {len(evidence_rows)}")
+    console.print(f"Invalid evidence excluded: {len(result.invalid_evidence_ids)}")
+    console.print(
+        f"Fingerprint observations: {sum(len(x.observations) for x in result.fingerprints)}"
+    )
+    console.print(f"Normalized signals: {len(result.signals)}")
+    console.print(f"Finding candidates: {len(result.candidates.candidates)}")
+    console.print(f"Correlated findings: {len(result.findings.findings)}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Report: {report_path}")
+
+
+@app.command("persist-findings")
+def persist_findings_command(
+    findings_path: Annotated[Path, typer.Argument(help="FindingSet YAML")],
+    repository_db: Annotated[
+        Path, typer.Option("--repository-db", help="Finding repository SQLite")
+    ],
+    request_retest: Annotated[
+        bool, typer.Option("--request-retest", help="Mark stored findings for explicit retest")
+    ] = False,
+) -> None:
+    """Persist finding state and optional retest intent without executing a retest."""
+    findings = load_model(findings_path, FindingSet)
+    for finding in findings.findings:
+        upsert_finding(repository_db, finding)
+        if request_retest:
+            set_retest_state(repository_db, finding.id, required=True)
+    console.print(f"Findings persisted: {len(findings.findings)}")
+    console.print(f"Retest requested: {'YES' if request_retest else 'NO'}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("validate-assessment-recovery")
+def validate_assessment_recovery_command(
+    result_path: Annotated[Path, typer.Argument(help="Structured AssessmentResult YAML")],
+) -> None:
+    """Validate offline field/recovery invariants for a completed assessment result."""
+    from astp.assessment import AssessmentResult
+
+    result = load_model(result_path, AssessmentResult)
+    validation = validate_assessment_recovery(result)
+    for check in validation.checks:
+        console.print(f"{check.name}: {'PASS' if check.passed else 'FAIL'} — {check.detail}")
+    console.print(f"Overall: {'PASS' if validation.passed else 'FAIL'}")
+    console.print("Network execution: NOT PERFORMED")
+    if not validation.passed:
+        raise typer.Exit(code=10)
 
 
 @app.command("evaluate-test")

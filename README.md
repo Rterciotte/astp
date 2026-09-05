@@ -321,3 +321,18 @@ ASTP now includes its first bounded multi-action observation loop. It remains GE
 ASTP can feed completed observations into a session-bound registry, re-plan only deterministically safe candidates, enforce discovery depth, and suppress duplicate actions durably. HEAD observations escalate to GET only when a declared evidence requirement needs a body, and the follow-up still requires a fresh permit.
 
 The block also defines a non-state-changing web posture catalog, proof-specific verification plans, finding retest lifecycle, fair multi-program scheduling, and strict isolation contracts for future container workers. None of these control-plane objects authorizes or performs network execution.
+
+## Offline assessment pipeline (M6.9–M7.9)
+
+ASTP can now turn stored, integrity-checked HTTP evidence into a technology fingerprint, conservative protocol/posture signals, eligible finding candidates, correlated findings, and a Markdown assessment report without performing additional network requests.
+
+```powershell
+astp assess `
+  .\engagements\smartfit.yaml `
+  .\examples\test-observation.yaml `
+  .\.astp\smartfit-target-registry.yaml `
+  --evidence-dir .\.astp\evidence `
+  --output .\reports\smartfit.md
+```
+
+This command is offline. Any future target-side action identified by the assessment still requires current policy authorization and a fresh execution permit.

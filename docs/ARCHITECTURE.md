@@ -219,3 +219,19 @@ SUSPECTED -> LIKELY -> VERIFIED -> IMPACT_CONFIRMED
 Correlation deduplicates signals without promoting beyond the strongest supplied evidence state.
 Reporting consumes correlated findings and emits a retest checklist. Retest entries are plans only;
 each future retest must pass current policy and receive a fresh signed permit.
+
+## M6.9–M7.9 assessment pipeline
+
+The assessment layer consumes integrity-checked evidence and cannot bypass execution policy:
+
+```text
+permit-gated evidence
+  -> fingerprint + protocol analyzers
+  -> normalized signals
+  -> finding-candidate eligibility gate
+  -> proof-verifier registry
+  -> durable finding/retest state
+  -> assessment report
+```
+
+Evidence-driven replanning remains separate from execution. A newly discovered target or verification need is only a candidate action until it passes current policy and receives a fresh permit for a compatible worker.
