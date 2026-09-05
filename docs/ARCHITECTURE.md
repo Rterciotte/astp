@@ -277,3 +277,27 @@ is rejected before a second network operation occurs.
 The safe assessment profile exposes an explicit autonomous ceiling. It currently permits
 only non-state-changing observation capabilities and requires a fresh permit for every
 network action.
+
+## M12.7-M14.4: authenticated execution boundary
+
+Authenticated HTTP observation reuses the existing policy/permit/lifecycle/worker path. An `AuthSessionProfile` stores only `SecretReference` objects and exact allowed origins. Secret material is resolved at the transport boundary and is never serialized into plans or evidence.
+
+```text
+Engagement / Scope
+       ↓
+Policy authorization
+       ↓
+Signed execution permit
+       ↓
+AuthSessionProfile (references only)
+       ↓
+Runtime secret resolution
+       ↓
+Origin-bound authenticated transport
+       ↓
+HTTP observation worker
+       ↓
+Redacted evidence
+```
+
+Authorization differential tests now have a first-class plan requiring two distinct owned/permitted identities and a fresh permit per request. Browser and external scanner capabilities remain non-runtime-ready contracts until isolated workers are implemented. High-risk approvals bind to one exact action but never enable autonomous intrusive execution.

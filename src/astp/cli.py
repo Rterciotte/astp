@@ -9,8 +9,11 @@ from rich.console import Console
 from rich.table import Table
 
 from astp.adapter_registry import builtin_adapter_registry, ensure_adapter_compatible
+from astp.approval_workflow import ApprovalDecision, record_high_risk_approval
 from astp.artifact_planner import plan_javascript_artifacts
 from astp.assessment import assess_evidence, load_evidence_directory
+from astp.assessment_completion import evaluate_pentest_completion
+from astp.assessment_coverage import current_assessment_coverage
 from astp.assessment_cycle import plan_safe_surface_observations
 from astp.assessment_execution import (
     build_assessment_execution_plan,
@@ -22,9 +25,13 @@ from astp.assessment_manifest import (
     verify_assessment_manifest,
 )
 from astp.assessment_resume import evaluate_assessment_resume
+from astp.auth_session import AuthSessionProfile
+from astp.authenticated_observation import observe_authenticated_http
 from astp.authorization import AuthorizationRequest, authorize_test
+from astp.authorization_differential import build_authorization_differential_plan
 from astp.autonomy_session import prepare_autonomy_session
 from astp.browser_intake import capture_to_text, load_capture
+from astp.browser_worker_contract import BrowserWorkerContract
 from astp.capability_action import CapabilityAction, CapabilityOperation
 from astp.capability_dispatcher import dispatch_capability_observation
 from astp.capability_evidence import derive_network_capability_evidence
@@ -33,11 +40,13 @@ from astp.circuit_breaker import FailureCircuitBreaker
 from astp.closure_gate import evaluate_closure
 from astp.confidence import fuse_normalized_signals
 from astp.controlled_loop import run_controlled_queue
+from astp.end_to_end_plan import build_end_to_end_assessment_plan
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_quarantine import quarantine_evidence
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
 from astp.execution_intent import build_execution_intent
 from astp.execution_trace import append_trace_event, verify_execution_trace
+from astp.external_adapter_contracts import builtin_external_adapter_contracts
 from astp.feedback import apply_evidence_feedback
 from astp.field_validation import validate_assessment_recovery
 from astp.finding_repository import set_retest_state, upsert_finding
@@ -119,6 +128,7 @@ from astp.report_finalization import ReportFinalization, finalize_report
 from astp.reporting import render_markdown_report
 from astp.result_interpreter import interpret_observation
 from astp.resume_guard import evaluate_resume
+from astp.retest_scheduler import build_retest_request
 from astp.review_package import build_review_package
 from astp.risk_context import AssetImportance, Exposure, RiskContext, score_finding_context
 from astp.runtime_state import revoke_runtime_permit, runtime_permit_status
@@ -138,7 +148,11 @@ from astp.target_registry import (
     save_registry,
 )
 from astp.test_dsl import SecurityTestDefinition
-from astp.verification_broker import broker_reviewed_verification
+from astp.verification_broker import (
+    VerificationAuthorizationCandidate,
+    broker_reviewed_verification,
+)
+from astp.verification_execution import prepare_verification_execution
 from astp.verification_queue import list_verification_queue
 from astp.verification_review import (
     VerificationReview,
@@ -2847,6 +2861,163 @@ def pentest_readiness_command() -> None:
     """Report whether ASTP can yet run a complete pentest/bug-hunt workflow."""
     readiness = current_pentest_readiness()
     console.print_json(readiness.model_dump_json())
+
+
+@app.command("observe-authenticated-http")
+def observe_authenticated_http_command(
+    permit_path: Annotated[Path, typer.Argument(help="Signed execution permit YAML")],
+    engagement_path: Annotated[Path, typer.Argument(help="Current engagement YAML")],
+    test_path: Annotated[Path, typer.Argument(help="Current test definition YAML")],
+    auth_session_path: Annotated[Path, typer.Argument(help="Origin-bound auth session YAML")],
+    target: Annotated[str, typer.Option("--target", help="Exact HTTP(S) target URL")],
+    http_method: Annotated[str, typer.Option("--http-method")] = "GET",
+    requested_rps: Annotated[float | None, typer.Option("--rps")] = None,
+    state_path: Annotated[Path, typer.Option("--state")] = DEFAULT_STATE_PATH,
+    audit_path: Annotated[Path, typer.Option("--audit")] = DEFAULT_AUDIT_PATH,
+    evidence_path: Annotated[Path | None, typer.Option("--evidence")] = None,
+    manifest_path: Annotated[Path, typer.Option("--manifest")] = Path(".astp")
+    / "evidence-manifest.jsonl",
+    rate_state_path: Annotated[Path, typer.Option("--rate-state")] = Path(".astp")
+    / "rate-state.json",
+    runtime_db_path: Annotated[Path, typer.Option("--runtime-db")] = DEFAULT_RUNTIME_DB_PATH,
+) -> None:
+    """Perform one permit-gated authenticated GET/HEAD with origin-bound secret injection."""
+    permit = load_model(permit_path, SignedExecutionPermit)
+    engagement = load_model(engagement_path, Engagement)
+    test = load_model(test_path, TestDefinition)
+    session = load_model(auth_session_path, AuthSessionProfile)
+    _, keys = _permit_keyring()
+    output = evidence_path or (
+        Path(".astp") / "evidence" / f"authenticated-{permit.payload.permit_id}.json"
+    )
+    try:
+        result = observe_authenticated_http(
+            permit,
+            engagement,
+            test,
+            keys,
+            session,
+            target=target,
+            method=http_method,
+            requested_rps=requested_rps,
+            state_path=state_path,
+            audit_path=audit_path,
+            evidence_path=output,
+            manifest_path=manifest_path,
+            rate_state_path=rate_state_path,
+            runtime_db_path=runtime_db_path,
+        )
+    except (ObservationError, ValueError) as exc:
+        console.print(f"Authenticated observation completed: [bold]NO[/bold]\n{exc}")
+        raise typer.Exit(code=6) from exc
+    console.print("Authenticated observation completed: YES")
+    console.print(f"Evidence ID: {result.evidence.evidence_id}")
+    console.print("Request credentials persisted in evidence: NO")
+    console.print("Permit consumed: YES")
+    console.print("Network execution: authenticated observation-only GET/HEAD")
+
+
+@app.command("plan-authorization-differential")
+def plan_authorization_differential_command(
+    target: Annotated[str, typer.Argument(help="Exact resource URL")],
+    baseline_identity: Annotated[str, typer.Option("--baseline-identity")],
+    comparison_identity: Annotated[str, typer.Option("--comparison-identity")],
+    output: Annotated[Path, typer.Option("--output")],
+) -> None:
+    """Prepare a two-identity authorization comparison; does not execute it."""
+    plan = build_authorization_differential_plan(target, baseline_identity, comparison_identity)
+    dump_yaml(plan, output)
+    console.print(f"Differential plan: {plan.id}")
+    console.print("Fresh permit per request: YES")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("show-browser-worker-contract")
+def show_browser_worker_contract_command() -> None:
+    """Show the bounded browser worker contract and current runtime status."""
+    console.print_json(BrowserWorkerContract().model_dump_json())
+
+
+@app.command("show-external-adapter-contracts")
+def show_external_adapter_contracts_command() -> None:
+    """Show permit-first contracts for future external tool workers."""
+    payload = [item.model_dump(mode="json") for item in builtin_external_adapter_contracts()]
+    console.print_json(json.dumps(payload))
+
+
+@app.command("prepare-verification-execution")
+def prepare_verification_execution_command(
+    candidate_path: Annotated[Path, typer.Argument()],
+    action_path: Annotated[Path, typer.Argument()],
+    output: Annotated[Path, typer.Option("--output")],
+) -> None:
+    """Bind an approved verification candidate to one exact capability action."""
+    candidate = load_model(candidate_path, VerificationAuthorizationCandidate)
+    action = load_model(action_path, CapabilityAction)
+    envelope = prepare_verification_execution(candidate, action)
+    dump_yaml(envelope, output)
+    console.print(f"Verification envelope: {envelope.id}")
+    console.print("Policy authorization still required: YES")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("record-high-risk-approval")
+def record_high_risk_approval_command(
+    action_id: Annotated[str, typer.Option("--action-id")],
+    operator: Annotated[str, typer.Option("--operator")],
+    decision: Annotated[ApprovalDecision, typer.Option("--decision")],
+    output: Annotated[Path, typer.Option("--output")],
+) -> None:
+    """Record an exact-action human review without enabling autonomous execution."""
+    approval = record_high_risk_approval(action_id, operator, decision)
+    dump_yaml(approval, output)
+    console.print(f"Approval: {approval.id}")
+    console.print("Autonomous high-risk execution: NO")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("assessment-coverage")
+def assessment_coverage_command() -> None:
+    """Show current assessment coverage dimensions."""
+    coverage = current_assessment_coverage()
+    payload = coverage.model_dump(mode="json")
+    payload["completed_dimensions"] = coverage.completed_dimensions
+    payload["total_dimensions"] = coverage.total_dimensions
+    console.print_json(json.dumps(payload))
+
+
+@app.command("prepare-end-to-end-assessment")
+def prepare_end_to_end_assessment_command(
+    engagement_id: Annotated[str, typer.Option("--engagement-id")],
+    target: Annotated[str, typer.Option("--target")],
+    output: Annotated[Path, typer.Option("--output")],
+    auth_session_path: Annotated[Path | None, typer.Option("--auth-session")] = None,
+) -> None:
+    """Prepare the current maximum end-to-end assessment plan without execution."""
+    session = load_model(auth_session_path, AuthSessionProfile) if auth_session_path else None
+    plan = build_end_to_end_assessment_plan(engagement_id, target, auth_session=session)
+    dump_yaml(plan, output)
+    console.print(f"Assessment plan: {plan.id}")
+    console.print(f"Unresolved capabilities: {len(plan.unresolved_capabilities)}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("build-retest-request")
+def build_retest_request_command(
+    finding_id: Annotated[str, typer.Argument()],
+    output: Annotated[Path, typer.Option("--output")],
+) -> None:
+    """Create a retest request that requires current policy and a fresh permit."""
+    request = build_retest_request(finding_id)
+    dump_yaml(request, output)
+    console.print(f"Retest request: {request.id}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("pentest-completion")
+def pentest_completion_command() -> None:
+    """State explicitly whether the full bug-hunt/pentest loop is complete."""
+    console.print_json(evaluate_pentest_completion().model_dump_json())
 
 
 if __name__ == "__main__":

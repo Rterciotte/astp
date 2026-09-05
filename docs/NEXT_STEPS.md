@@ -1,21 +1,23 @@
-# Next steps after M11.0
+# ASTP Next Steps
 
-M9.5-M11.0 closes the reviewed verification, worker receipt, recovery, quarantine, publication, and assessment closure control layers.
+The M12.7-M14.4 block closes the authenticated HTTP observation blocker. The complete pentest/bug-hunt readiness flag remains false.
 
-The next block should focus on generic non-HTTP action permits, real isolated DNS/TLS workers, static JavaScript artifact ingestion through the permit path, durable verification execution, stronger vulnerability-specific proof verifiers, and resumable multi-capability assessment execution.
+## Next execution blockers
 
-State-changing, intrusive, credential-attack, and exploit adapters remain outside autonomous execution until separate policy, approval, evidence, and field-test contracts exist.
+1. M14.5 — isolated browser runtime with permit-bound navigation and evidence capture.
+2. M14.6 — browser session secret handoff without exposing credentials to the control plane.
+3. M14.7 — executable two-identity authorization differential runner.
+4. M14.8 — vulnerability verifier action compiler.
+5. M14.9 — safe verification executor for supported verifier classes.
+6. M15.0 — permit-gated external adapter worker protocol.
+7. M15.1 — bounded Nmap discovery adapter.
+8. M15.2 — bounded Nuclei safe-template adapter.
+9. M15.3 — ZAP baseline/passive adapter.
+10. M15.4 — adapter evidence normalization and correlation.
+11. M15.5 — browser/API evidence feedback into the adaptive planner.
+12. M15.6 — automated retest executor through fresh policy/permit evaluation.
+13. M15.7 — operator-controlled state-changing verification workflow.
+14. M15.8 — end-to-end assessment coordinator with safe resume and recovery.
+15. M15.9 — full-pentest readiness acceptance suite.
 
-## After M12.6
-
-The next closure work for a complete pentest/bug-hunt workflow is:
-
-- broad vulnerability-specific verification workers with proof-state criteria;
-- authenticated target-session execution through non-exportable secret references;
-- an isolated browser execution worker for dynamic web flows;
-- permit-gated adapters for selected external tools;
-- durable orchestration that issues a fresh permit for every planned verification action;
-- explicit approval execution paths for state-changing tests where program policy permits them;
-- end-to-end recovery tests from program intake through final report/closure.
-
-`astp pentest-readiness` is the canonical machine-readable checkpoint for this goal.
+`full_pentest_ready` must remain false until the acceptance suite demonstrates broad active verification, browser execution, external adapters, retests, and operator-gated high-risk workflows without bypassing policy or permits.

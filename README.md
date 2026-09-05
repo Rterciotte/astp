@@ -361,3 +361,15 @@ The underlying execution permit is consumed exactly once before network I/O.
 The current safe autonomous ceiling remains observational: HTTP GET/HEAD, DNS lookup,
 and TLS handshake. Exploit payloads, brute force, credential attacks, state-changing
 methods, and intrusive validation remain outside autonomous execution.
+
+## Authenticated assessment boundary (M12.7-M14.4)
+
+ASTP now supports origin-bound authenticated HTTP observation using runtime secret references. Credentials are injected only at the transport boundary and are not persisted in assessment plans or evidence. The same signed permit lifecycle remains mandatory.
+
+Current full pentest status can be inspected with:
+
+```powershell
+astp pentest-completion
+```
+
+The safe and authenticated observation loops are end-to-end, but full pentest readiness remains false until isolated browser execution, broad vulnerability-specific verification, permit-gated external tool workers, and operator-gated high-risk workflows are complete.
