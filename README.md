@@ -1,8 +1,3 @@
-# ASTP M32.5–M34.4 overlay
+# ASTP M34.5–M36.4 overlay
 
-Isolated runtime image locks, hardened container launch policy, authorized-lab qualification
-sessions, receipt-to-evidence bridging, and strict field-assessment acceptance.
-
-Incremental over M30.5–M32.4. The included harness is offline and performs no network or
-container execution. Real runtime qualification must be recorded separately from an explicitly
-authorized lab execution.
+Incremental overlay for ASTP 0.351.0. See `docs/OVERLAY_README_M34_5_M36_4.md`.

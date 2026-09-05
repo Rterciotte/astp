@@ -1,7 +1,3 @@
-# Next steps after M34.4
+# Next steps after M36.4
 
-M34.5+ should perform the first physical Docker qualification in a local/authorized lab: build the
-Playwright and security-tools images, replace placeholder digests with real immutable digests,
-exercise negative isolation probes, ingest real worker receipts, and run the bounded assessment
-cycle through report/review/closure. Production or third-party program targets remain outside that
-qualification until the lab gates pass.
+M36.5–M38.4 should execute the first real local-container qualification: build images, capture real digests, run isolation probes, use an owned/local lab target for permit-gated network tests, ingest receipts into evidence, and exercise a complete authorized assessment through report/review/closure. Readiness remains false until those observations exist.

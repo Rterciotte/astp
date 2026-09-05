@@ -1,6 +1,6 @@
 FROM mcr.microsoft.com/playwright/python:v1.55.0-noble
-RUN useradd --create-home --uid 10001 astp
-USER astp
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /worker
-COPY entrypoint.py /worker/entrypoint.py
-ENTRYPOINT ["python", "/worker/entrypoint.py"]
+COPY workers/playwright/worker.py /worker/astp_worker.py
+USER pwuser
+ENTRYPOINT ["python", "-I", "/worker/astp_worker.py"]
