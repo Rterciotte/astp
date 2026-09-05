@@ -1,12 +1,7 @@
-# ASTP next steps after M32.4
+# Next steps after M34.4
 
-1. M32.5 — build and run the isolated Playwright worker image locally.
-2. M32.6 — qualify permit-before-navigation and redirect reauthorization with recorded receipts.
-3. M32.7 — build the security-tools worker image with pinned Nmap/Nuclei/ZAP versions.
-4. M32.8 — qualify network-without-permit rejection and shell/key isolation.
-5. M32.9 — connect qualified worker receipts to the real Evidence Store in an authorized lab.
-6. M33.0 — execute safe active verifier families with fresh policy/permits.
-7. M33.1 — validate interruption/recovery and policy-drift stop behavior with real workers.
-8. M33.2 — run an authorized end-to-end lab assessment from intake through closure.
-9. M33.3 — close remaining verifier/runtime gaps found by that field run.
-10. M33.4 — evaluate v1/full-pentest acceptance and prepare release hardening.
+M34.5+ should perform the first physical Docker qualification in a local/authorized lab: build the
+Playwright and security-tools images, replace placeholder digests with real immutable digests,
+exercise negative isolation probes, ingest real worker receipts, and run the bounded assessment
+cycle through report/review/closure. Production or third-party program targets remain outside that
+qualification until the lab gates pass.

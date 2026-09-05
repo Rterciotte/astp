@@ -3504,5 +3504,33 @@ def v1_readiness_command() -> None:
     console.print_json(evaluate_v1_readiness().model_dump_json())
 
 
+@app.command("runtime-image-locks")
+def runtime_image_locks_command() -> None:
+    """Show digest-pinned runtime image lock candidates; no container is launched."""
+    from astp.runtime_image_lock import builtin_runtime_image_locks
+
+    payload = [item.model_dump(mode="json") for item in builtin_runtime_image_locks()]
+    console.print_json(json.dumps(payload))
+    console.print("Container execution: NOT PERFORMED")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("lab-rehearsal-plan")
+def lab_rehearsal_plan_command() -> None:
+    """Show the explicit-authorized-lab field rehearsal plan."""
+    from astp.lab_rehearsal import build_lab_rehearsal_plan
+
+    console.print_json(build_lab_rehearsal_plan().model_dump_json())
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("field-assessment-acceptance")
+def field_assessment_acceptance_command() -> None:
+    """Show strict field-assessment acceptance; defaults remain unqualified."""
+    from astp.field_assessment_acceptance import FieldAssessmentEvidence, evaluate_field_assessment
+
+    console.print_json(evaluate_field_assessment(FieldAssessmentEvidence()).model_dump_json())
+
+
 if __name__ == "__main__":
     app()

@@ -1,6 +1,8 @@
-# ASTP M30.5–M32.4 overlay
+# ASTP M32.5–M34.4 overlay
 
-Field qualification semantics, receipt provenance guards, active-verifier execution gates,
-adaptive cycle decisions, offline E2E rehearsal, and strict v1 readiness acceptance.
+Isolated runtime image locks, hardened container launch policy, authorized-lab qualification
+sessions, receipt-to-evidence bridging, and strict field-assessment acceptance.
 
-This overlay is incremental over M28.5–M30.4 and intentionally performs no network execution.
+Incremental over M30.5–M32.4. The included harness is offline and performs no network or
+container execution. Real runtime qualification must be recorded separately from an explicitly
+authorized lab execution.
