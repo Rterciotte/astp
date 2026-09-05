@@ -12,6 +12,7 @@ from astp.adapter_registry import builtin_adapter_registry, ensure_adapter_compa
 from astp.approval_workflow import ApprovalDecision, record_high_risk_approval
 from astp.artifact_planner import plan_javascript_artifacts
 from astp.assessment import assess_evidence, load_evidence_directory
+from astp.assessment_capabilities import current_capability_matrix
 from astp.assessment_completion import evaluate_pentest_completion
 from astp.assessment_coverage import current_assessment_coverage
 from astp.assessment_cycle import plan_safe_surface_observations
@@ -41,6 +42,7 @@ from astp.circuit_breaker import FailureCircuitBreaker
 from astp.closure_gate import evaluate_closure
 from astp.confidence import fuse_normalized_signals
 from astp.controlled_loop import run_controlled_queue
+from astp.coordinator import build_coordinator_plan
 from astp.differential_analysis import compare_authorization_evidence
 from astp.end_to_end_plan import build_end_to_end_assessment_plan
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
@@ -134,6 +136,7 @@ from astp.resume_guard import evaluate_resume
 from astp.retest_scheduler import build_retest_request
 from astp.review_package import build_review_package
 from astp.risk_context import AssetImportance, Exposure, RiskContext, score_finding_context
+from astp.runtime_isolation import default_runtime_isolation_policy
 from astp.runtime_state import revoke_runtime_permit, runtime_permit_status
 from astp.safe_assessment_profile import SafeAssessmentProfile
 from astp.scope_compiler import CompilationStatus, compile_scope_file
@@ -162,6 +165,7 @@ from astp.verification_review import (
     VerificationReviewDecision,
     review_verification_item,
 )
+from astp.verifier_catalog import builtin_verifier_catalog
 from astp.web_posture import analyze_http_posture
 from astp.work_queue import WorkQueue, build_fair_work_queue
 
@@ -3053,6 +3057,39 @@ def compare_authorization_evidence_command(
     if output is not None:
         dump_yaml(result, output)
     console.print_json(result.model_dump_json())
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("show-verifier-catalog")
+def show_verifier_catalog_command() -> None:
+    """Show built-in verifier families and their autonomous safety ceilings."""
+    console.print_json(
+        json.dumps([item.model_dump(mode="json") for item in builtin_verifier_catalog()])
+    )
+
+
+@app.command("show-capability-matrix")
+def show_capability_matrix_command() -> None:
+    """Show the currently implemented assessment capability matrix."""
+    console.print_json(current_capability_matrix().model_dump_json())
+
+
+@app.command("show-runtime-isolation")
+def show_runtime_isolation_command() -> None:
+    """Show the default worker isolation policy."""
+    console.print_json(default_runtime_isolation_policy().model_dump_json())
+
+
+@app.command("prepare-assessment-coordinator")
+def prepare_assessment_coordinator_command(
+    engagement_id: Annotated[str, typer.Option("--engagement-id")],
+    output: Annotated[Path | None, typer.Option("--output")] = None,
+) -> None:
+    """Prepare the bounded end-to-end coordinator; performs no network execution."""
+    plan = build_coordinator_plan(engagement_id)
+    if output is not None:
+        dump_yaml(plan, output)
+    console.print_json(plan.model_dump_json())
     console.print("Network execution: NOT PERFORMED")
 
 

@@ -36,6 +36,9 @@ def current_assessment_coverage() -> AssessmentCoverage:
         fingerprinting=True,
         authenticated_http=True,
         authorization_differential=True,
+        # M16.5-M18.4 adds permit-consumed boundaries, but these dimensions
+        # remain operationally incomplete until the isolated browser runtime and
+        # real permit-consumed tool runtimes are bundled and field-tested.
         browser_dynamic=False,
         external_adapters=False,
         active_verification=True,

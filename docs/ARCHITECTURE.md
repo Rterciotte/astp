@@ -311,3 +311,6 @@ Safe verification execution is restricted to existing observation capabilities (
 Browser and external adapter runtimes are deliberately separate from their contracts. Runtime discovery may report optional Playwright or adapter binaries as installed, but installation alone is not authority to execute. Redirects in browser observations require a new authorized action. External adapter jobs accept only named allowlisted modes and produce hash-bound receipts; arbitrary arguments are not accepted.
 
 State-changing verification remains operator-controlled. An exact-action approval can permit an operator workflow, but `autonomous_execution_allowed` remains false.
+
+## M16.5-M18.4 worker boundary
+Browser and external adapter work now has an explicit permit-consumption-before-I/O boundary. Worker isolation forbids signing keys, arbitrary mounts/network, secret export, and shell execution by default. The coordinator is planning/state only unless execution is explicitly enabled by a higher-level reviewed workflow.

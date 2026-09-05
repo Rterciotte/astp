@@ -21,3 +21,6 @@ The M14.5-M16.4 block closes the autonomous two-identity differential executor a
 15. M17.9 — full-pentest readiness acceptance suite.
 
 `full_pentest_ready` must remain false until the acceptance suite demonstrates broad vulnerability verification, bundled browser execution, permit-consumed external adapters, executable retests, and operator-gated high-risk workflows without bypassing policy or permits.
+
+## After M18.4
+Prioritize vulnerability-specific proof families, operator-gated state-changing execution, real isolated runtime packaging, and coordinator-driven recovery/replanning. `full_pentest_ready` must remain false until these are field-tested.
