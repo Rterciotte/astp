@@ -48,12 +48,15 @@ def compile_authorized_lab_run(
     lab: LocalQualificationLab,
     worker_request: WorkerRequest,
     consumption: PermitConsumptionProof,
+    qualification_probe: str | None = None,
 ) -> PhysicalDockerCommand:
     """Enable only the fixed lab network after exact permit consumption proof."""
     if worker_request.engagement_id != lab.engagement_id:
         raise ValueError("worker request is not bound to the qualification engagement")
-    if worker_request.target != lab.service_name:
-        raise ValueError("worker target is outside the fixed qualification lab")
+    if worker_request.target == lab.service_name:
+        pass
+    else:
+        lab.authorize_url(worker_request.target)
     if consumption.lifecycle_status.value != "consumed":
         raise ValueError("permit consumption proof is not consumed")
     if consumption.engagement_id != worker_request.engagement_id:
@@ -74,5 +77,10 @@ def compile_authorized_lab_run(
     )
     network_index = argv.index("none")
     argv[network_index] = lab.docker_network
-    argv[2:2] = ("--env", f"ASTP_ALLOWED_TARGET={lab.service_name}")
+    env_argv = ["--env", f"ASTP_ALLOWED_TARGET={lab.service_name}"]
+    if qualification_probe is not None:
+        if qualification_probe != "bounded-output-v1":
+            raise ValueError("unsupported physical qualification probe")
+        env_argv.extend(("--env", f"ASTP_QUALIFICATION_PROBE={qualification_probe}"))
+    argv[2:2] = tuple(env_argv)
     return PhysicalDockerCommand(argv=tuple(argv), network_capable=True)

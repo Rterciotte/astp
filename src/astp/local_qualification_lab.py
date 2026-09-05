@@ -12,7 +12,7 @@ class LocalQualificationLab(BaseModel):
     docker_network: str = "astp-qualification-net"
     service_name: str = "astp-qualification-lab"
     port: int = 8080
-    allowed_paths: tuple[str, ...] = Field(default=("/", "/health"))
+    allowed_paths: tuple[str, ...] = Field(default=("/", "/health", "/large"))
 
     def base_url(self) -> str:
         return f"http://{self.service_name}:{self.port}"

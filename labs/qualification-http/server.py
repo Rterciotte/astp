@@ -3,11 +3,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path not in {"/", "/health"}:
+        if self.path not in {"/", "/health", "/large"}:
             self.send_response(404)
             self.end_headers()
             return
-        payload = b"ASTP authorized local qualification lab\n"
+        payload = (
+            (b"A" * 400000)
+            if self.path == "/large"
+            else b"ASTP authorized local qualification lab\n"
+        )
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))

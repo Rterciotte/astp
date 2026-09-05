@@ -13,11 +13,11 @@ def _authorized_url(request):
     url = str(request.get("target", "")).strip()
     parsed = urlsplit(url)
     allowed = os.environ.get("ASTP_ALLOWED_TARGET", "").strip()
-    if request.get("operation") != "browser.observe":
+    if request.get("operation") != "browser.navigate":
         raise SystemExit("operation rejected")
     if parsed.scheme != "http" or parsed.hostname != allowed or parsed.port != 8080:
         raise SystemExit("target rejected")
-    if parsed.path not in {"/", "/health"} or parsed.query or parsed.fragment:
+    if parsed.path not in {"/", "/health", "/large"} or parsed.query or parsed.fragment:
         raise SystemExit("target rejected")
     return url
 
@@ -33,16 +33,17 @@ def main():
         html = page.content()
         browser.close()
     encoded = html.encode("utf-8", errors="replace")
+    limit = min(int(request.get("max_output_bytes", MAX_BYTES)), MAX_BYTES)
     print(
         json.dumps(
             {
                 "accepted": True,
-                "operation": "browser.observe",
+                "operation": "browser.navigate",
                 "target": url,
                 "status": response.status if response else None,
                 "title": title,
-                "dom": encoded[:MAX_BYTES].decode("utf-8", errors="replace"),
-                "output_truncated": len(encoded) > MAX_BYTES,
+                "dom": encoded[:limit].decode("utf-8", errors="replace"),
+                "output_truncated": len(encoded) > limit,
             }
         )
     )

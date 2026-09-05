@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $Out = Join-Path $Root ".astp\qualification\images"
+$Python = Join-Path $Root ".venv\Scripts\python.exe"
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 
 $items = @(
@@ -40,8 +41,19 @@ try {
         }
         $path = Join-Path $Out "$($item.Name).json"
         $record | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 $path
+
+        & $Python -m astp.physical_probe_evaluator record `
+            --root $Root `
+            --runtime $item.Name `
+            --probe image-digest `
+            --passed `
+            --source-ref $path `
+            --detail "image_id=$imageId" *> $null
+        if ($LASTEXITCODE -ne 0) { throw "Could not persist image-digest probe for $($item.RuntimeId)" }
+
         Write-Host "Image ID: $imageId"
         Write-Host "Provenance: $path"
+        Write-Host "PASS: immutable image digest recorded as qualification evidence"
         Write-Host ""
     }
 }
