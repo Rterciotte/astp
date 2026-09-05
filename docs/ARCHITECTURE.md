@@ -338,3 +338,14 @@ Full-pentest acceptance is a separate terminal gate and remains false until runt
 ## Runtime enablement candidate (M28.5-M30.4)
 
 The runtime boundary is now explicit: typed request -> policy/permit -> permit consumption -> bounded browser/tool I/O -> receipt -> Evidence Store -> coordinator. Browser redirects require a new authorization. Runtime bundling does not close readiness; field qualification remains a separate gate.
+
+## M30.5–M32.4: field qualification and E2E rehearsal
+
+Runtime installation, executable worker boundaries, and operational field qualification are
+separate states. Worker receipts are accepted into assessment feedback only after engagement,
+action, artifact digest, and permit-before-I/O checks pass. Active verifiers remain policy- and
+permit-gated, and state-changing verifiers additionally require exact operator approval.
+
+The offline end-to-end rehearsal covers intake through closure but never authorizes network
+execution. Full v1 readiness remains gated on physical runtime field qualification, broad active
+verification qualification, and an authorized end-to-end field test.

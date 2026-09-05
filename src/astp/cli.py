@@ -3439,10 +3439,6 @@ def full_pentest_acceptance_command() -> None:
     console.print_json(result.model_dump_json())
 
 
-if __name__ == "__main__":
-    app()
-
-
 @app.command("runtime-candidate-status")
 def runtime_candidate_status_command() -> None:
     """Show bundled runtime candidates without claiming field qualification."""
@@ -3467,3 +3463,46 @@ def assessment_candidate_status_command() -> None:
     console.print(
         json.dumps(current_autonomous_assessment_candidate().model_dump(mode="json"), indent=2)
     )
+
+
+@app.command("runtime-field-probes")
+def runtime_field_probes_command() -> None:
+    """Probe local runtime executables without claiming operational readiness."""
+    from astp.runtime_probe import builtin_runtime_probes
+
+    console.print_json(
+        json.dumps([item.model_dump(mode="json") for item in builtin_runtime_probes()])
+    )
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("show-active-verifiers")
+def show_active_verifiers_command() -> None:
+    """Show bounded active-verifier definitions and proof ceilings."""
+    from astp.active_verifier_registry import builtin_active_verifiers
+
+    console.print_json(
+        json.dumps([item.model_dump(mode="json") for item in builtin_active_verifiers()])
+    )
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("e2e-rehearsal")
+def e2e_rehearsal_command() -> None:
+    """Run the offline end-to-end assessment rehearsal; no network is authorized."""
+    from astp.end_to_end_rehearsal import build_offline_end_to_end_rehearsal
+
+    console.print_json(build_offline_end_to_end_rehearsal().model_dump_json())
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("v1-readiness")
+def v1_readiness_command() -> None:
+    """Show strict v1 readiness; field qualification is false until recorded."""
+    from astp.v1_readiness import evaluate_v1_readiness
+
+    console.print_json(evaluate_v1_readiness().model_dump_json())
+
+
+if __name__ == "__main__":
+    app()

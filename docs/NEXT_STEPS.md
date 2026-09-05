@@ -1,13 +1,12 @@
-# Next steps
+# ASTP next steps after M32.4
 
-After M28.5-M30.4, the remaining acceptance work is operational rather than architectural:
-
-1. Build the Playwright worker image and record an immutable digest.
-2. Build the security-tools worker image with pinned Nmap/Nuclei/ZAP versions and record an immutable digest.
-3. Run negative qualification tests proving no network before permit consumption, no arbitrary shell, no signing-key visibility, and bounded output.
-4. Field-qualify browser and external-tool workers in an authorized lab/program context.
-5. Expand vulnerability-specific active verifiers and prove their ceilings with evidence-backed fixtures and authorized field tests.
-6. Connect accepted worker evidence to the adaptive coordinator in a real assessment run.
-7. Exercise interruption, resume, policy drift, stale attestation, and error-budget recovery.
-8. Run one authorized end-to-end assessment from intake through reviewed report/closure.
-9. Only then allow the strict acceptance gate to return full_pentest_ready=true.
+1. M32.5 — build and run the isolated Playwright worker image locally.
+2. M32.6 — qualify permit-before-navigation and redirect reauthorization with recorded receipts.
+3. M32.7 — build the security-tools worker image with pinned Nmap/Nuclei/ZAP versions.
+4. M32.8 — qualify network-without-permit rejection and shell/key isolation.
+5. M32.9 — connect qualified worker receipts to the real Evidence Store in an authorized lab.
+6. M33.0 — execute safe active verifier families with fresh policy/permits.
+7. M33.1 — validate interruption/recovery and policy-drift stop behavior with real workers.
+8. M33.2 — run an authorized end-to-end lab assessment from intake through closure.
+9. M33.3 — close remaining verifier/runtime gaps found by that field run.
+10. M33.4 — evaluate v1/full-pentest acceptance and prepare release hardening.
