@@ -3363,5 +3363,81 @@ def runtime_progress_command() -> None:
     console.print_json(current_runtime_progress().model_dump_json())
 
 
+@app.command("runtime-qualification-bundle-template")
+def runtime_qualification_bundle_template_command(
+    runtime_id: Annotated[str, typer.Argument()],
+) -> None:
+    """Print the assertions required for a runtime field-qualification bundle."""
+    from astp.runtime_qualification_bundle import (
+        RuntimeQualificationAssertion,
+        RuntimeQualificationBundle,
+    )
+
+    assertions = tuple(
+        RuntimeQualificationAssertion(name=name, passed=False, evidence_ref="")
+        for name in (
+            "permit-before-io",
+            "network-without-permit-rejected",
+            "shell-rejected",
+            "signing-keys-absent",
+            "bounded-output",
+            "field-test-completed",
+        )
+    )
+    result = RuntimeQualificationBundle(
+        runtime_id=runtime_id,
+        artifact_digest="sha256:REPLACE_WITH_REAL_DIGEST",
+        field_test_name="REPLACE_WITH_AUTHORIZED_FIELD_TEST",
+        assertions=assertions,
+    )
+    console.print_json(result.model_dump_json())
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("evaluate-adaptive-loop")
+def evaluate_adaptive_loop_command(
+    new_signals: Annotated[int, typer.Option("--new-signals")] = 0,
+    pending_verification: Annotated[int, typer.Option("--pending-verification")] = 0,
+    errors: Annotated[int, typer.Option("--errors")] = 0,
+    error_budget: Annotated[int, typer.Option("--error-budget")] = 1,
+    action_budget_remaining: Annotated[int, typer.Option("--action-budget-remaining")] = 1,
+    policy_drift: Annotated[bool, typer.Option("--policy-drift")] = False,
+    attestation_fresh: Annotated[
+        bool, typer.Option("--attestation-fresh/--attestation-stale")
+    ] = True,
+) -> None:
+    """Evaluate the coordinator feedback loop offline; never authorizes network execution."""
+    from astp.coordinator_loop import CoordinatorLoopInput, evaluate_coordinator_loop
+
+    result = evaluate_coordinator_loop(
+        CoordinatorLoopInput(
+            new_signals=new_signals,
+            pending_verification=pending_verification,
+            errors=errors,
+            error_budget=error_budget,
+            action_budget_remaining=action_budget_remaining,
+            policy_drift=policy_drift,
+            attestation_fresh=attestation_fresh,
+        )
+    )
+    console.print_json(result.model_dump_json())
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("full-pentest-acceptance")
+def full_pentest_acceptance_command() -> None:
+    """Show the strict acceptance gate; default state remains incomplete until field qualification."""
+    from astp.completion_acceptance import evaluate_full_pentest_acceptance
+
+    result = evaluate_full_pentest_acceptance(
+        current_runtime_progress(),
+        broad_active_verification_complete=False,
+        adaptive_loop_field_tested=False,
+        state_change_operator_path_field_tested=False,
+        authorized_end_to_end_field_tested=False,
+    )
+    console.print_json(result.model_dump_json())
+
+
 if __name__ == "__main__":
     app()

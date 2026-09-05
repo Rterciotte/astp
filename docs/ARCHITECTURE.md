@@ -326,3 +326,11 @@ ASTP now distinguishes an immutable runtime artifact, a launch envelope, a bound
 ## Executable worker bridge (M24.5-M26.4)
 
 External tool execution is compiled from typed worker requests into fixed executable/argv pairs. Arbitrary CLI arguments and shell invocation are rejected. Permit consumption occurs before the injected worker executor or browser driver is called. Worker receipts are hash-normalized before entering downstream evidence processing. Runtime qualification remains a separate gate from code availability.
+
+## M26.5-M28.4 — qualification and adaptive coordinator closure
+
+The worker boundary now distinguishes executable code from field-qualified runtime evidence. Qualification bundles are exact-runtime-ID and artifact-digest bound and require negative-test evidence for permit-before-I/O, no-network-without-permit, shell rejection, signing-key isolation, bounded output, and an explicit field test.
+
+Worker receipts may enter the Evidence Store only after permit consumption has been recorded. The adaptive coordinator may CONTINUE, REPLAN, or STOP, but never grants itself network authority; every network action still returns through policy and a fresh exact-action permit.
+
+Full-pentest acceptance is a separate terminal gate and remains false until runtime qualification, broad active verification, adaptive-loop field validation, operator-gated state-changing validation, and a complete authorized end-to-end field test are all satisfied.

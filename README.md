@@ -388,3 +388,7 @@ ASTP now derives conservative verifier signals from stored HTTP evidence, can pr
 ### M24.5-M26.4 executable worker bridge
 
 ASTP now has fixed-argument compilers for bounded Nmap/Nuclei/ZAP modes, shell-free bounded subprocess primitives, permit-before-I/O browser/tool worker bridges, hash-bound worker receipt evidence, and runtime qualification gates. These primitives do not by themselves make the physical runtimes field-ready.
+
+### M26.5-M28.4
+
+ASTP now includes runtime qualification bundles, a shell-free worker supervisor plan, worker-receipt registration into the hash-linked Evidence Store, bounded verification scheduling, and an adaptive CONTINUE/REPLAN/STOP coordinator loop. These controls remain policy-first and do not grant the coordinator direct network authority.
