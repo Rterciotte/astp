@@ -36,3 +36,12 @@ ASTP now derives conservative verifier signals from stored HTTP evidence, can pr
 - Run negative qualification tests proving no target I/O before permit consumption, no shell, no signing keys, and bounded output.
 - Field-qualify the browser and tool runtimes against an explicitly authorized lab/program target before marking either runtime operational.
 - Connect qualified worker receipts to the coordinator evidence gate and adaptive replan loop.
+
+## After M24.5-M26.4
+
+- Build the actual Playwright and security-tools OCI images and record immutable digests.
+- Add an isolated worker supervisor that consumes signed execution permits before container network enablement.
+- Run negative runtime qualification tests in Linux/Docker/WSL2: no permit -> no target I/O, no shell, no signing-key visibility, bounded output.
+- Field-qualify browser and tool runtimes on an explicitly authorized lab/program target.
+- Connect qualified worker receipt evidence to coordinator replan/recovery.
+- Expand vulnerability-specific active verifiers beyond posture/header families while preserving proof ceilings.

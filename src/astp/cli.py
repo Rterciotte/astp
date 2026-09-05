@@ -144,6 +144,7 @@ from astp.retest_scheduler import build_retest_request
 from astp.review_package import build_review_package
 from astp.risk_context import AssetImportance, Exposure, RiskContext, score_finding_context
 from astp.runtime_isolation import default_runtime_isolation_policy
+from astp.runtime_progress import current_runtime_progress
 from astp.runtime_qualification import (
     RuntimeQualificationEvidence,
     qualification_template,
@@ -185,6 +186,8 @@ from astp.verifier_depth import verify_stored_http_evidence
 from astp.verifier_readiness import current_verifier_family_readiness
 from astp.web_posture import analyze_http_posture
 from astp.work_queue import WorkQueue, build_fair_work_queue
+from astp.worker_command import compile_worker_command
+from astp.worker_protocol import WorkerRequest
 from astp.worker_runtime_manifest import builtin_worker_runtime_manifests
 
 app = typer.Typer(
@@ -3331,6 +3334,33 @@ def completion_readiness_command() -> None:
         current_verifier_family_readiness(),
     )
     console.print_json(result.model_dump_json())
+
+
+@app.command("compile-worker-command")
+def compile_worker_command_command(
+    request_path: Annotated[Path, typer.Argument()],
+) -> None:
+    """Compile an allowlisted external-tool worker request into fixed argv; no process is started."""
+    request = load_model(request_path, WorkerRequest)
+    command = compile_worker_command(request)
+    console.print_json(
+        json.dumps(
+            {
+                "executable": command.executable,
+                "argv": list(command.argv),
+                "target": command.target,
+                "network_operation": command.network_operation,
+            }
+        )
+    )
+    console.print("Process execution: NOT PERFORMED")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("runtime-progress")
+def runtime_progress_command() -> None:
+    """Show physical runtime qualification progress without treating worker code as field-ready."""
+    console.print_json(current_runtime_progress().model_dump_json())
 
 
 if __name__ == "__main__":

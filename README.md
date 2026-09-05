@@ -384,3 +384,7 @@ Adds permit-consumed browser/external worker boundaries, verifier/proof catalogs
 ## M18.5-M20.4 — Verification depth and coordinator gates
 
 ASTP now derives conservative verifier signals from stored HTTP evidence, can propose bounded follow-up actions without bypassing policy, enforces sequential coordinator stage prerequisites, and distinguishes worker boundaries from real bundled/field-tested runtimes. Full pentest readiness remains false until broad active verification and physical browser/tool runtimes close.
+
+### M24.5-M26.4 executable worker bridge
+
+ASTP now has fixed-argument compilers for bounded Nmap/Nuclei/ZAP modes, shell-free bounded subprocess primitives, permit-before-I/O browser/tool worker bridges, hash-bound worker receipt evidence, and runtime qualification gates. These primitives do not by themselves make the physical runtimes field-ready.

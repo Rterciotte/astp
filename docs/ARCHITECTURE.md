@@ -322,3 +322,7 @@ ASTP now derives conservative verifier signals from stored HTTP evidence, can pr
 ## M22.5-M24.4 — isolated runtime packaging boundary
 
 ASTP now distinguishes an immutable runtime artifact, a launch envelope, a bounded worker protocol, and field qualification. A build blueprint or available binary does not make a runtime operational. Network-capable workers remain subordinate to exact-action permits, and coordinator feedback never grants network authority by itself.
+
+## Executable worker bridge (M24.5-M26.4)
+
+External tool execution is compiled from typed worker requests into fixed executable/argv pairs. Arbitrary CLI arguments and shell invocation are rejected. Permit consumption occurs before the injected worker executor or browser driver is called. Worker receipts are hash-normalized before entering downstream evidence processing. Runtime qualification remains a separate gate from code availability.
