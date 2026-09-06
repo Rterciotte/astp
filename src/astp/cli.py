@@ -25,6 +25,7 @@ from astp.browser_intake import capture_to_text, load_capture
 from astp.bug_bounty_acceptance import evaluate_bug_bounty_v1_acceptance
 from astp.circuit_breaker import FailureCircuitBreaker
 from astp.controlled_loop import run_controlled_queue
+from astp.ctf_acceptance import run_ctf_acceptance
 from astp.ctf_analysis import CtfAnalysisResult, analyze_ctf_challenge
 from astp.ctf_mode import ChallengeDefinition, inventory_challenge
 from astp.ctf_network import ensure_ctf_http_target_authorized
@@ -2557,6 +2558,30 @@ def ctf_verify_flags_command(
     console.print(f"Solve trace events: {len(result.solve_trace)}")
     console.print("Network execution: NOT PERFORMED")
     console.print(f"Written to: {output}")
+
+
+@app.command("ctf-acceptance")
+def ctf_acceptance_command(
+    suite_path: Annotated[Path, typer.Argument(help="Local CTF acceptance suite YAML")],
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Write CTF acceptance result YAML")
+    ],
+) -> None:
+    """Run the local-only CTF acceptance suite and report reproducibility metrics."""
+    try:
+        result = run_ctf_acceptance(suite_path)
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    dump_yaml(result, output)
+    console.print(f"CTF acceptance: {'PASS' if result.accepted else 'FAIL'}")
+    console.print(f"Cases: {result.metrics.passed_cases}/{result.metrics.total_cases} passed")
+    console.print(f"Solve rate: {result.metrics.solve_rate:.1%}")
+    console.print("Trace reproducibility: " f"{result.metrics.trace_reproducibility_rate:.1%}")
+    console.print(f"False-positive flags: {result.metrics.false_positive_flags}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+    if not result.accepted:
+        raise typer.Exit(code=1)
 
 
 @app.command("ctf-observe-http")

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from astp.ctf_categories import expanded_adapters
 from astp.ctf_mode import ChallengeDefinition, CtfArtifactRecord, inventory_challenge
 
 
@@ -165,6 +166,15 @@ def analyze_ctf_challenge(challenge: ChallengeDefinition, base_dir: Path) -> Ctf
             continue
         data = (base_dir / relative).read_bytes()
         classification = _classify_bytes(relative, record, data)
+        extra = expanded_adapters(classification.kind, challenge.category)
+        if extra:
+            classification = classification.model_copy(
+                update={
+                    "eligible_adapters": tuple(
+                        dict.fromkeys((*classification.eligible_adapters, *extra))
+                    )
+                }
+            )
         classifications.append(classification)
         adapter = classification.eligible_adapters[0] if classification.eligible_adapters else None
         digest = hashlib.sha256(

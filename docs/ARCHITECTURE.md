@@ -434,3 +434,10 @@ ChallengeDefinition
 ```
 
 The network branch deliberately reuses `observe_http` instead of introducing a CTF-specific transport bypass. Consequently permit signature/policy binding, single-use lifecycle, target rate limits, bounded body capture, redaction, evidence registration, and audit semantics remain shared with the Bug Bounty path.
+
+
+## M48.5–M48.6 CTF category and acceptance boundary
+
+Category expansion remains built-in and capability-scoped. `ctf_categories.py` adds bounded encoding-layer decoding, static web route hints, image metadata, PCAP inventory, and PE/ELF metadata. These adapters receive bytes and return structured text; they do not spawn a shell, invoke external tools, or contact a network. Existing printable-string and structured JSON/ZIP adapters remain available.
+
+`ctf_acceptance.py` is a local-only qualification harness. Each declared challenge is analyzed, solved, and flag-verified twice. The harness records solve rate, candidate/false-flag counts, elapsed time, hypothesis count, adapter count, and a SHA-256 of the deterministic solve trace. Challenge paths are confined to the suite directory and automation-prohibited cases fail closed. Network-capable challenge definitions may be represented, but the acceptance harness never executes their endpoint branch.

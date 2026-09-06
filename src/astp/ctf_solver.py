@@ -11,6 +11,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from astp.ctf_analysis import CtfAnalysisResult, CtfArtifactKind
+from astp.ctf_categories import run_category_adapter
 from astp.ctf_mode import ChallengeDefinition
 
 MAX_LOCAL_ARTIFACT_BYTES = 4 * 1024 * 1024
@@ -112,7 +113,7 @@ def _run_adapter(adapter_id: str, data: bytes) -> str:
             return "\n".join(
                 f"{entry.filename}\t{entry.file_size}\t{entry.CRC}" for entry in entries
             )
-    raise ValueError(f"unsupported isolated CTF adapter: {adapter_id}")
+    return run_category_adapter(adapter_id, data).rendered
 
 
 def run_local_ctf_solvers(
@@ -181,7 +182,13 @@ def run_local_ctf_solvers(
                     adapter_id=adapter_id,
                     artifact_sha256=classification.sha256,
                 )
-                if candidate not in candidates:
+                duplicate = any(
+                    existing.value == candidate.value
+                    and existing.artifact_path == candidate.artifact_path
+                    and existing.artifact_sha256 == candidate.artifact_sha256
+                    for existing in candidates
+                )
+                if not duplicate:
                     candidates.append(candidate)
                     sequence += 1
                     trace.append(
