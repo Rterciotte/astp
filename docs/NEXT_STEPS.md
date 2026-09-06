@@ -1,6 +1,6 @@
 # ASTP completion plan
 
-Current repository line: M47.8 completion push.
+Current repository line: M48.0 acceptance gate implementation.
 
 ASTP's core policy-first pentest engine is broad and already field-proven for bounded HTTP observation. M46.8–M46.9 close the immediate JavaScript artifact-consumer gap, M47.0 replaces the temporary overlay README with an operator guide, and M47.1 begins CTF mode with rules/artifact intake.
 
@@ -14,11 +14,15 @@ The unified stored-evidence assessment, generalized offline evidence consumers, 
 
 Multi-program isolation/fair planning, permit-gated authenticated observation through secret references, and the active-verifier planning integration are now exposed through the main CLI. See `docs/release/M47.6.md` through `M47.8.md`.
 
-### M47.9 — Recovery, resume, and crash acceptance
-Exercise interruption at each important boundary: before permit, after permit, after consumption, during worker failure, after evidence write, and during report assembly. Prove fail-closed resume behavior.
+### M47.9 — COMPLETE
 
-### M48.0 — Bug bounty v1 acceptance
-Run a complete authorized assessment from program intake through final report using the unified workflow. Require clean audit/evidence verification and document the field acceptance in `docs/release/`.
+Recovery acceptance now exercises the important interruption boundaries, rejects tampered checkpoints, requires replanning on policy drift, and forbids blind network replay. See `docs/release/M47.9.md`.
+
+### M48.0 — ACCEPTANCE GATE READY
+
+The complete Bug Bounty v1 chain can now be verified offline with `bug-bounty-v1-acceptance`. The gate requires reviewed-program provenance, engagement/registry binding, stored evidence, a non-empty valid evidence manifest, a valid audit chain, a valid final package, matching network/permit accounting, and at least one recorded authorized field action.
+
+M48.0 is **not field-accepted merely because the command exists**. Run the gate against a real authorized assessment and record the PASS result before declaring Bug Bounty v1 field acceptance. See `docs/release/M48.0.md`.
 
 ### M48.1 — CTF artifact classifier and hypothesis graph
 Classify local challenge artifacts and create category-specific hypotheses. No unrestricted shell and no implicit network.
@@ -43,4 +47,4 @@ Consolidate CLI UX, configuration, installation, migration notes, security model
 
 ## Priority
 
-The shortest path to a useful release is now M47.9 through M48.0. CTF expansion can proceed after bug bounty v1 acceptance without blocking the primary pentest workflow.
+The Bug Bounty v1 implementation path is now at its final field-acceptance gate. After one real `bug-bounty-v1-acceptance` PASS, the remaining implementation focus is M48.1–M48.6 CTF expansion and M49.0 release-candidate consolidation.

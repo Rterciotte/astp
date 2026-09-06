@@ -22,6 +22,7 @@ from astp.authenticated_observation import observe_authenticated_http
 from astp.authorization import AuthorizationRequest, authorize_test
 from astp.autonomy_session import prepare_autonomy_session
 from astp.browser_intake import capture_to_text, load_capture
+from astp.bug_bounty_acceptance import evaluate_bug_bounty_v1_acceptance
 from astp.circuit_breaker import FailureCircuitBreaker
 from astp.controlled_loop import run_controlled_queue
 from astp.ctf_mode import ChallengeDefinition, inventory_challenge
@@ -95,6 +96,7 @@ from astp.program_intake import (
 from astp.program_models import BugBountyProgram
 from astp.program_runtime import create_operational_attestation
 from astp.program_server import serve_program_intake
+from astp.recovery_acceptance import run_recovery_acceptance
 from astp.reporting import render_markdown_report
 from astp.result_interpreter import interpret_observation
 from astp.resume_guard import evaluate_resume
@@ -2378,6 +2380,73 @@ def observe_authenticated_http_command(
     console.print("Permit consumed: YES")
     console.print("Network execution: one permit-gated authenticated GET/HEAD")
     console.print(f"Evidence: {result.evidence_path}")
+
+
+@app.command("recovery-acceptance")
+def recovery_acceptance_command(
+    engagement_path: Annotated[Path, typer.Argument(help="Current engagement YAML")],
+    test_path: Annotated[Path, typer.Argument(help="Current security test definition YAML")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write recovery acceptance YAML")],
+    session_id: Annotated[
+        str, typer.Option("--session-id", help="Synthetic local acceptance session identifier")
+    ] = "recovery-acceptance",
+) -> None:
+    """Exercise fail-closed interruption/resume invariants without making requests."""
+    engagement = load_model(engagement_path, Engagement)
+    test = load_model(test_path, TestDefinition)
+    report = run_recovery_acceptance(engagement, test, session_id=session_id)
+    dump_yaml(report, output)
+    console.print(f"Recovery acceptance: {'PASS' if report.accepted else 'FAIL'}")
+    console.print(f"Checkpoint integrity enforced: {report.checkpoint_integrity_enforced}")
+    console.print(f"Policy drift requires replan: {report.policy_drift_requires_replan}")
+    console.print(f"Tampered checkpoint rejected: {report.tampered_checkpoint_rejected}")
+    console.print(f"Crash boundaries exercised: {len(report.scenarios)}")
+    console.print("Automatic network replay: NO")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+    if not report.accepted:
+        raise typer.Exit(code=2)
+
+
+@app.command("bug-bounty-v1-acceptance")
+def bug_bounty_v1_acceptance_command(
+    program_path: Annotated[Path, typer.Argument(help="Reviewed BugBountyProgram YAML")],
+    engagement_path: Annotated[Path, typer.Argument(help="Compiled engagement YAML")],
+    registry_path: Annotated[Path, typer.Argument(help="Target registry YAML")],
+    evidence_directory: Annotated[Path, typer.Argument(help="Stored evidence directory")],
+    evidence_manifest_path: Annotated[Path, typer.Argument(help="Evidence manifest JSONL")],
+    audit_path: Annotated[Path, typer.Argument(help="Authorization/audit JSONL")],
+    assessment_bundle_directory: Annotated[
+        Path, typer.Argument(help="Final assessment package directory")
+    ],
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Write Bug Bounty v1 acceptance YAML")
+    ],
+) -> None:
+    """Verify the complete stored Bug Bounty v1 assessment chain offline."""
+    program = load_model(program_path, BugBountyProgram)
+    engagement = load_model(engagement_path, Engagement)
+    registry = load_model(registry_path, TargetRegistry)
+    report = evaluate_bug_bounty_v1_acceptance(
+        program=program,
+        engagement=engagement,
+        registry=registry,
+        evidence_directory=evidence_directory,
+        evidence_manifest_path=evidence_manifest_path,
+        audit_path=audit_path,
+        assessment_bundle_directory=assessment_bundle_directory,
+    )
+    dump_yaml(report, output)
+    console.print(f"Bug Bounty v1 acceptance: {'PASS' if report.accepted else 'FAIL'}")
+    for check in report.checks:
+        console.print(f"- {'PASS' if check.passed else 'FAIL'} {check.name}: {check.detail}")
+    console.print(f"Evidence records: {report.evidence_records}")
+    console.print(f"Target registry records: {report.target_records}")
+    console.print(f"Network/permit accounting: {report.network_actions}/{report.permits_consumed}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+    if not report.accepted:
+        raise typer.Exit(code=2)
 
 
 @app.command("ctf-intake")

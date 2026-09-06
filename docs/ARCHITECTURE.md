@@ -401,3 +401,11 @@ The main CLI now exposes three previously fragmented operational boundaries:
 - verifier planning consumes stored evidence and emits reviewable proposals while leaving execution disabled. State-changing verifier families require explicit operator approval in addition to policy and permit gates.
 
 These integrations do not turn discovery or verifier proposals into authorization. Network execution remains behind the existing capability/policy/permit runtime.
+
+## M47.9–M48.0 completion gates
+
+ASTP now treats recovery and product acceptance as explicit offline gates.
+
+Recovery never turns an interruption into permission. A crash before/after permit issuance, after permit consumption, or during worker failure returns to a fail-closed state; a future network retry must be planned again and must receive a fresh permit. Evidence already durably written may be verified and analyzed offline, and report assembly may be repeated offline.
+
+Bug Bounty v1 acceptance validates one chain across reviewed program provenance, compiled engagement, target registry, evidence, evidence manifest, authorization audit, and final assessment bundle. The acceptance command performs no network requests and requires recorded authorized field execution plus one-to-one network-action/permit accounting before returning PASS.

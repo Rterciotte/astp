@@ -512,7 +512,29 @@ python -m astp.cli finalize-assessment `
     --permits-consumed 1
 ```
 
-## Step 13 — Session status, interruption, and resume
+## Step 13 — Verify the whole Bug Bounty v1 assessment
+
+### `bug-bounty-v1-acceptance`
+
+Use this after you have a reviewed program, compiled engagement, populated target registry, stored evidence, evidence manifest, audit log, and final assessment package. It checks that they belong to one coherent assessment chain.
+
+The command is offline. It does not contact the target. For a real Bug Bounty v1 field acceptance, it requires at least one recorded authorized network action and matching permit consumption.
+
+```powershell
+python -m astp.cli bug-bounty-v1-acceptance `
+    .\programs\your-program.yaml `
+    .\engagement.yaml `
+    .\.astp\your-assessment\target-registry.yaml `
+    .\.astp\your-assessment\evidence `
+    .\.astp\your-assessment\evidence-manifest.jsonl `
+    .\.astp\your-assessment\audit.jsonl `
+    .\.astp\your-assessment\final-package `
+    --output .\.astp\your-assessment\bug-bounty-v1-acceptance.yaml
+```
+
+A `PASS` means the stored chain is internally consistent. It does not make a new security claim and it does not replace the rules of the bug bounty program.
+
+## Step 14 — Session status, interruption, and recovery
 
 ### `init-session-ledger`
 Creates the durable request/action budget ledger.
@@ -529,7 +551,20 @@ Summarizes counters and trace events without network access.
 ### `resume-session-check`
 Determines which interrupted queue items may safely return to planning.
 
-## Step 14 — Adapter and autonomy diagnostics
+### `recovery-acceptance`
+
+Runs ASTP's local recovery acceptance matrix. It checks checkpoint integrity, policy-drift behavior, tamper rejection, and the important interruption boundaries. It never replays a request and performs no network activity.
+
+```powershell
+python -m astp.cli recovery-acceptance `
+    .\engagement.yaml `
+    .\test.yaml `
+    --output .\recovery-acceptance.yaml
+```
+
+For beginners, the important rule is simple: **after a crash or interruption, ASTP does not assume it may retry a network action**. A retry returns to planning and needs a fresh permit.
+
+## Step 15 — Adapter and autonomy diagnostics
 
 ### `show-adapters`
 Lists registered execution adapters and their safety contracts.
@@ -658,11 +693,13 @@ For convenience, every command currently exposed by `python -m astp.cli` is list
 | `correlate-findings` | Deduplicates finding candidates without proof inflation. |
 | `render-report` | Renders evidence-oriented Markdown report. |
 | `finalize-assessment` | Builds and verifies a portable final assessment package; offline. |
+| `bug-bounty-v1-acceptance` | Checks the complete stored bug bounty assessment chain and field-action accounting; offline. |
 | `init-session-ledger` | Creates durable session budget ledger. |
 | `session-ledger-status` | Shows session counters. |
 | `snapshot-policy` | Captures policy digest for drift checks. |
 | `session-report` | Summarizes a session; offline. |
 | `resume-session-check` | Checks safe resumption after interruption. |
+| `recovery-acceptance` | Exercises fail-closed recovery rules and crash boundaries; offline. |
 | `show-adapters` | Lists adapters and safety contracts. |
 | `check-adapter` | Checks test/adapter compatibility; offline. |
 | `prepare-autonomy-session` | Prepares bounded autonomy; no execution. |
