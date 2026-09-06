@@ -367,3 +367,26 @@ permit-gated HTTP evidence + optional .body.bin
 CTF implementation begins with rule intake rather than solver execution. `ChallengeDefinition` records whether AI and automation are allowed, local artifacts, optional authorized endpoints, flag format, and network policy. `ctf-intake` inventories only local challenge files and records blockers. It does not run a solver or contact endpoints.
 
 Future CTF solvers must reuse the normal capability, isolation, evidence, budget, and permit boundaries. A challenge's declared endpoint is scope input; it is not by itself a worker execution permit.
+
+
+## M47.2–M47.5 operator-facing completion pipeline
+
+ASTP now exposes a consolidated offline path after evidence collection:
+
+```text
+verified stored HTTP evidence
+        ↓
+consume-evidence
+        ↓
+normalized signals + non-authorizing discovered candidates
+        ↓
+synthesize-findings / assess-stored-evidence
+        ↓
+evidence-backed correlated findings + report
+        ↓
+finalize-assessment
+        ↓
+hash-verified portable assessment package
+```
+
+HTML, JavaScript, JSON/API, redirects, headers, and persisted response bodies are consumed without network execution. Any URL or route discovered by these consumers remains a candidate only and must return to scope evaluation, planning, and fresh permit issuance before a worker may contact it.

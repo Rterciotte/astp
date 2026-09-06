@@ -376,6 +376,20 @@ These commands are offline integrity operations.
 
 ## Step 9 — Analyze what was already collected
 
+If you want ASTP to summarize all stored HTTP/body evidence in one offline pass, start with:
+
+### `consume-evidence`
+
+Reads a directory of stored evidence, verifies what it can, recognizes HTML/JavaScript/JSON responses, and lists useful clues such as links, API paths, redirects, and JavaScript route hints. **It never requests the discovered targets.**
+
+```powershell
+python -m astp.cli consume-evidence `
+    .\.astp\your-assessment\evidence `
+    --output .\.astp\your-assessment\evidence-consumers.yaml
+```
+
+You can also inspect individual evidence records with the commands below.
+
 ### `interpret-observation`
 
 Turns stored HTTP evidence into conservative signals. It makes no request.
@@ -417,17 +431,62 @@ Builds a provenance graph from targets and evidence.
 ### `build-hypotheses`
 Creates conservative hypotheses from the graph. A hypothesis is not a finding and is not authorization.
 
-## Step 11 — Findings and reporting
+## Step 11 — Turn evidence into findings and an assessment
+
+For most users, the easiest path is the consolidated offline command:
+
+### `assess-stored-evidence`
+
+Runs ASTP's stored-evidence assessment pipeline in one step: integrity checking, technology fingerprinting, signal normalization, conservative finding candidates, correlation, and a Markdown report. It performs no network request.
+
+```powershell
+python -m astp.cli assess-stored-evidence `
+    .\.astp\your-assessment\evidence `
+    .\.astp\your-assessment\target-registry.yaml `
+    .\engagement.yaml `
+    .\test.yaml `
+    --session-id my-assessment-01 `
+    --output-dir .\.astp\your-assessment\analysis
+```
+
+If you prefer to work stage by stage:
+
+### `synthesize-findings`
+
+Reads the output from `consume-evidence` and creates only evidence-eligible correlated findings. Informational clues are not promoted into vulnerabilities.
+
+```powershell
+python -m astp.cli synthesize-findings `
+    .\.astp\your-assessment\evidence-consumers.yaml `
+    --output .\.astp\your-assessment\findings.yaml
+```
 
 ### `correlate-findings`
-Deduplicates evidence-backed finding candidates without increasing their proof level.
+Deduplicates a manually prepared list of evidence-backed finding candidates without increasing their proof level.
 
 ### `render-report`
 Creates a Markdown security report and retest checklist from correlated findings.
 
 A retest item is only a plan. When you actually retest it, current policy and a fresh permit are required again.
 
-## Step 12 — Session status, interruption, and resume
+## Step 12 — Finalize a portable assessment package
+
+### `finalize-assessment`
+
+Packages the report, findings, and evidence manifest, records SHA-256 hashes, checks that the declared number of network actions matches consumed permits, and immediately verifies the package. It is an offline finalization step.
+
+```powershell
+python -m astp.cli finalize-assessment `
+    .\.astp\your-assessment\analysis\findings.yaml `
+    .\engagement.yaml `
+    .\.astp\your-assessment\analysis\report.md `
+    .\.astp\your-assessment\evidence-manifest.jsonl `
+    --output-dir .\.astp\your-assessment\final-package `
+    --network-actions 1 `
+    --permits-consumed 1
+```
+
+## Step 13 — Session status, interruption, and resume
 
 ### `init-session-ledger`
 Creates the durable request/action budget ledger.
@@ -444,7 +503,7 @@ Summarizes counters and trace events without network access.
 ### `resume-session-check`
 Determines which interrupted queue items may safely return to planning.
 
-## Step 13 — Adapter and autonomy diagnostics
+## Step 14 — Adapter and autonomy diagnostics
 
 ### `show-adapters`
 Lists registered execution adapters and their safety contracts.
@@ -558,14 +617,18 @@ For convenience, every command currently exposed by `python -m astp.cli` is list
 | `verify-execution-trace` | Verifies session execution trace. |
 | `export-evidence-bundle` | Exports portable verified evidence. |
 | `verify-evidence-bundle` | Verifies exported bundle. |
+| `consume-evidence` | Consumes stored HTML/JS/JSON/redirect evidence and lists non-authorizing clues; offline. |
 | `interpret-observation` | Interprets stored evidence; offline. |
 | `analyze-web-posture` | Reviews captured HTTP headers; offline. |
 | `analyze-javascript` | Reviews a local JS/body artifact; offline. |
 | `feedback-evidence` | Returns stored evidence to discovery/planning; offline. |
 | `build-security-graph` | Builds target/evidence graph; offline. |
 | `build-hypotheses` | Builds conservative hypotheses; offline. |
+| `assess-stored-evidence` | Runs the consolidated stored-evidence assessment and report pipeline; offline. |
+| `synthesize-findings` | Turns eligible normalized signals into conservative findings; offline. |
 | `correlate-findings` | Deduplicates finding candidates without proof inflation. |
 | `render-report` | Renders evidence-oriented Markdown report. |
+| `finalize-assessment` | Builds and verifies a portable final assessment package; offline. |
 | `init-session-ledger` | Creates durable session budget ledger. |
 | `session-ledger-status` | Shows session counters. |
 | `snapshot-policy` | Captures policy digest for drift checks. |
@@ -623,6 +686,6 @@ A tool result does not automatically move a finding forward. The required eviden
 
 ASTP already contains a large policy-first pentest engine and has completed a real bounded bug-bounty HTTP field observation with permit consumption, exact response-body persistence, SHA-256 verification, and manifest registration.
 
-The current completion push focuses on integrating the many existing engine components into fewer operator-facing workflows, broadening evidence consumers and verifier coverage, completing end-to-end finding/report orchestration, and then expanding the newly started CTF mode from intake into isolated solver families.
+The current completion push has now integrated stored-evidence consumption, conservative finding synthesis, consolidated offline assessment, and final package verification into the main CLI. The next work focuses on multi-program orchestration, authenticated observations, active verifier integration, crash/recovery acceptance, and then bug-bounty v1 acceptance before deeper CTF solver expansion.
 
 The authoritative forward plan is `docs/NEXT_STEPS.md`. Milestone-specific change notes are kept in `docs/release/`.

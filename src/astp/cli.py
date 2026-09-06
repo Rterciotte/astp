@@ -11,6 +11,13 @@ from rich.console import Console
 from rich.table import Table
 
 from astp.adapter_registry import builtin_adapter_registry, ensure_adapter_compatible
+from astp.assessment import load_evidence_directory
+from astp.assessment_workflow import (
+    finalize_assessment_package,
+    run_stored_assessment,
+    synthesize_consumer_findings,
+)
+from astp.assessment_bundle import verify_assessment_bundle
 from astp.authorization import AuthorizationRequest, authorize_test
 from astp.autonomy_session import prepare_autonomy_session
 from astp.browser_intake import capture_to_text, load_capture
@@ -18,6 +25,7 @@ from astp.circuit_breaker import FailureCircuitBreaker
 from astp.controlled_loop import run_controlled_queue
 from astp.ctf_mode import ChallengeDefinition, inventory_challenge
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
+from astp.evidence_consumers import EvidenceConsumerSummary, consume_evidence_directory
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
 from astp.execution_trace import append_trace_event, verify_execution_trace
 from astp.feedback import apply_evidence_feedback
@@ -2130,6 +2138,136 @@ def analyze_javascript_command(
     console.print("Confirmed vulnerabilities: 0")
     console.print("Network execution: NOT PERFORMED")
     console.print(f"Written to: {output}")
+
+
+@app.command("consume-evidence")
+def consume_evidence_command(
+    evidence_directory: Annotated[
+        Path, typer.Argument(help="Directory containing HTTP evidence JSON")
+    ],
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Write offline consumer summary YAML")
+    ],
+) -> None:
+    """Consume stored HTTP/body evidence offline and discover non-authorizing clues."""
+    summary = consume_evidence_directory(evidence_directory)
+    dump_yaml(summary, output)
+    candidate_count = sum(len(row.discovered_candidates) for row in summary.records)
+    console.print(f"Evidence records: {len(summary.records)}")
+    console.print(f"Invalid evidence records: {len(summary.invalid_evidence_ids)}")
+    console.print(f"Discovered candidates: {candidate_count}")
+    console.print("Candidates require normal scope/policy review before any network action.")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("synthesize-findings")
+def synthesize_findings_command(
+    consumer_summary_path: Annotated[Path, typer.Argument(help="Evidence consumer summary YAML")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write correlated findings YAML")],
+) -> None:
+    """Turn eligible normalized signals into conservative correlated findings offline."""
+    summary = load_model(consumer_summary_path, EvidenceConsumerSummary)
+    findings = synthesize_consumer_findings(summary)
+    dump_yaml(findings, output)
+    console.print(f"Correlated findings: {len(findings.findings)}")
+    console.print("Proof states are never increased beyond evidence-backed signal state.")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("assess-stored-evidence")
+def assess_stored_evidence_command(
+    evidence_directory: Annotated[
+        Path, typer.Argument(help="Directory containing stored HTTP evidence")
+    ],
+    registry_path: Annotated[Path, typer.Argument(help="Target registry YAML")],
+    engagement_path: Annotated[Path, typer.Argument(help="Current engagement YAML")],
+    test_path: Annotated[Path, typer.Argument(help="Security test definition YAML")],
+    output_directory: Annotated[
+        Path, typer.Option("--output-dir", help="Assessment output directory")
+    ],
+    session_id: Annotated[str, typer.Option("--session-id", help="Assessment/session identifier")],
+    operational_attestation: Annotated[
+        Path | None,
+        typer.Option("--program-status-attestation", help="Optional operational attestation YAML"),
+    ] = None,
+    semantic_clear: Annotated[
+        list[str] | None,
+        typer.Option("--semantic-clear", help="Reviewed semantic exclusion clear; repeatable"),
+    ] = None,
+    requested_rps: Annotated[
+        float | None, typer.Option("--rps", help="Planning rate request")
+    ] = None,
+    excluded_finding_term: Annotated[
+        list[str] | None,
+        typer.Option("--exclude-finding-term", help="Suppress candidate terms; repeatable"),
+    ] = None,
+) -> None:
+    """Run the main offline assessment pipeline over already-collected evidence."""
+    registry = load_model(registry_path, TargetRegistry)
+    engagement = load_model(engagement_path, Engagement)
+    test = load_model(test_path, TestDefinition)
+    attestation = (
+        load_model(operational_attestation, ProgramOperationalAttestation)
+        if operational_attestation is not None
+        else None
+    )
+    result = run_stored_assessment(
+        session_id=session_id,
+        evidence_directory=evidence_directory,
+        registry=registry,
+        engagement=engagement,
+        test=test,
+        output_directory=output_directory,
+        operational_attestation=attestation,
+        semantic_exclusion_clears=set(semantic_clear or []),
+        requested_rps=requested_rps,
+        excluded_finding_terms=set(excluded_finding_term or []),
+    )
+    console.print(f"Evidence records: {result.evidence_records}")
+    console.print(f"Invalid evidence records: {result.invalid_evidence_records}")
+    console.print(f"Normalized signals: {result.normalized_signals}")
+    console.print(f"Finding candidates: {result.finding_candidates}")
+    console.print(f"Correlated findings: {result.correlated_findings}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Report: {result.report_path}")
+    console.print(f"Assessment result: {result.assessment_result_path}")
+
+
+@app.command("finalize-assessment")
+def finalize_assessment_command(
+    findings_path: Annotated[Path, typer.Argument(help="Correlated findings YAML")],
+    engagement_path: Annotated[Path, typer.Argument(help="Current engagement YAML")],
+    report_path: Annotated[Path, typer.Argument(help="Markdown report to package")],
+    evidence_manifest_path: Annotated[Path, typer.Argument(help="Evidence manifest JSONL")],
+    output_directory: Annotated[
+        Path, typer.Option("--output-dir", help="Final assessment bundle directory")
+    ],
+    network_actions: Annotated[int, typer.Option("--network-actions", min=0)] = 0,
+    permits_consumed: Annotated[int, typer.Option("--permits-consumed", min=0)] = 0,
+) -> None:
+    """Build and immediately verify a portable final assessment package."""
+    findings = load_model(findings_path, FindingSet)
+    engagement = load_model(engagement_path, Engagement)
+    manifest = finalize_assessment_package(
+        engagement_id=engagement.id,
+        report_path=report_path,
+        findings=findings,
+        evidence_manifest_path=evidence_manifest_path,
+        output_directory=output_directory,
+        network_actions=network_actions,
+        permits_consumed=permits_consumed,
+    )
+    valid, blockers = verify_assessment_bundle(output_directory)
+    console.print(f"Assessment complete: {'YES' if manifest.assessment_complete else 'NO'}")
+    console.print(f"Bundle integrity: {'VALID' if valid else 'INVALID'}")
+    for blocker in blockers:
+        console.print(f"Blocker: {blocker}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Bundle: {output_directory}")
+    if not valid:
+        raise typer.Exit(code=2)
 
 
 @app.command("ctf-intake")
