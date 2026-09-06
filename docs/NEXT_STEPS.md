@@ -1,9 +1,9 @@
-# Next steps
+# ASTP next steps
 
-M44.5-M46.4 closes the strict ASTP v1 technical readiness gate. Apply the overlay, run the normal validation, then run `qualification-status.ps1 -Runtime all` and `full-pentest-readiness.ps1`.
+Current version: 0.461.0
 
-If the evaluator returns `full_pentest_ready=false`, its blocking requirements are authoritative; do not manually override them. If it returns true, ASTP may be treated as technically ready for one explicitly authorized engagement under a current compiled policy, fresh runtime attestation, bounded budgets, and permit-gated execution.
+The strict v1 engine has achieved `FULL_PENTEST_READY: TRUE` from persisted physical qualification evidence. M46.5 adds the unified program pre-flight that must return `EXECUTION_ELIGIBLE: TRUE` before any real bug-bounty assessment begins.
 
-After the readiness gate is physically satisfied, the next major feature should be Bug Bounty Portfolio Orchestration: platform/catalog connectors, current policy snapshots, conservative scope compilation, per-program execution eligibility, isolated engagement state/evidence, bounded unattended scheduling, completion/stop semantics, and one operator-reviewable report package per program.
+Immediate next action: run the live Smart Fit pre-flight. If it passes, execute the first bounded Smart Fit assessment with state-changing actions disabled and generate the real evidence-backed report. If it blocks, resolve only the explicit blocker; do not bypass the gate.
 
-Discovered never means authorized. Authorization never means every action is permitted. Every network action must still pass policy and consume a fresh execution permit.
+After the first real program field assessment, generalize this same pre-flight into the Bug Bounty Portfolio Orchestrator so each discovered program independently passes refresh, policy drift, online/offline, scope, readiness, and budget gates before entering the execution queue.

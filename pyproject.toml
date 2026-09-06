@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "astp"
-version = "0.451.0"
+version = "0.462.1"
 description = "Policy-first foundation for an autonomous security testing platform"
 readme = "README.md"
 requires-python = ">=3.12"

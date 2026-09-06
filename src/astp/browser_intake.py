@@ -6,9 +6,22 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+
+class BrowserOperationalSignal(BaseModel):
+    kind: Literal[
+        "explicit_status",
+        "blocking_banner",
+        "submission_control",
+        "published_marker",
+    ]
+    status: Literal["online", "offline"] | None = None
+    evidence: str
+    visible: bool = True
+    enabled: bool | None = None
 
 
 class BrowserCapture(BaseModel):
@@ -18,6 +31,9 @@ class BrowserCapture(BaseModel):
     text: str
     tables: list[list[list[str]]] = Field(default_factory=list)
     links: list[dict[str, str]] = Field(default_factory=list)
+    operational_status_hint: Literal["online", "offline"] | None = None
+    operational_status_evidence: str | None = None
+    operational_signals: list[BrowserOperationalSignal] = Field(default_factory=list)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @field_validator("url")

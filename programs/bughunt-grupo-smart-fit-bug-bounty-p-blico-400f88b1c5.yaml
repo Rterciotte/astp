@@ -13,7 +13,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
     section: 1.1. EXCLUSÃO DE ENDPOINTS / ATIVOS
     source_text: https://universidade.smartfit.com.br/
-    captured_at: '2026-09-04T16:11:21.157000Z'
+    captured_at: '2026-09-06T04:11:23.538000Z'
   label: null
 - effect: deny
   selector:
@@ -24,7 +24,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
     section: 1.1. EXCLUSÃO DE ENDPOINTS / ATIVOS
     source_text: https://universidad.smartfit.com/
-    captured_at: '2026-09-04T16:11:21.157000Z'
+    captured_at: '2026-09-06T04:11:23.538000Z'
   label: null
 - effect: allow
   selector:
@@ -35,7 +35,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
     section: Escopo
     source_text: '*.smartfit.com.br'
-    captured_at: '2026-09-04T16:11:21.157000Z'
+    captured_at: '2026-09-06T04:11:23.538000Z'
   label: null
 - effect: allow
   selector:
@@ -46,7 +46,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
     section: Escopo
     source_text: https://smartfit.com
-    captured_at: '2026-09-04T16:11:21.157000Z'
+    captured_at: '2026-09-06T04:11:23.538000Z'
   label: null
 - effect: allow
   selector:
@@ -57,7 +57,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
     section: Escopo
     source_text: https://apps.apple.com/br/app/smart-fit-app/id1308265270/
-    captured_at: '2026-09-04T16:11:21.157000Z'
+    captured_at: '2026-09-06T04:11:23.538000Z'
   label: null
 - effect: allow
   selector:
@@ -68,7 +68,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
     section: Escopo
     source_text: '*.smartfit.com'
-    captured_at: '2026-09-04T16:11:21.157000Z'
+    captured_at: '2026-09-06T04:11:23.538000Z'
   label: null
 - effect: allow
   selector:
@@ -79,7 +79,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
     section: Escopo
     source_text: https://play.google.com/store/apps/details?id=com.smartfitcoach.app/
-    captured_at: '2026-09-04T16:11:21.157000Z'
+    captured_at: '2026-09-06T04:11:23.538000Z'
   label: null
 constraints:
 - code: own_accounts_only
@@ -91,7 +91,7 @@ constraints:
     section: 2.x numbered rules
     source_text: 2.4. Interaja apenas com as contas que você possui ou com permissão
       explícita do titular da conta.
-    captured_at: '2026-09-04T16:11:21.157000Z'
+    captured_at: '2026-09-06T04:11:23.538000Z'
 - code: recommended_user_agent
   effect: info
   value: Bughunt - Security Research
@@ -102,7 +102,7 @@ constraints:
     source_text: '2,5. Recomendamos que os analistas usem o User Agent: Bughunt -
       Security Research. Isso facilitará o nosso controle interno caso algum incidente
       aconteça.'
-    captured_at: '2026-09-04T16:11:21.157000Z'
+    captured_at: '2026-09-06T04:11:23.538000Z'
 - code: program_must_be_online
   effect: restrict
   value: true
@@ -114,7 +114,7 @@ constraints:
       o programa estiver offline. Caso nossos analistas detectem que a falha foi encontrada
       durante o programa offline, poderá impactar diretamente na recompensa da vulnerabilidade
       reportada.
-    captured_at: '2026-09-04T16:11:21.157000Z'
+    captured_at: '2026-09-06T04:11:23.538000Z'
 - code: no_auth_bruteforce
   effect: restrict
   value: true
@@ -123,7 +123,7 @@ constraints:
     source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
     section: 5.x numbered rules
     source_text: 5.14. Ataques de brute-force em formulários de autenticação;
-    captured_at: '2026-09-04T16:11:21.157000Z'
+    captured_at: '2026-09-06T04:11:23.538000Z'
 - code: no_dos
   effect: restrict
   value: true
@@ -133,12 +133,12 @@ constraints:
     section: 5.x numbered rules
     source_text: 5.17. Qualquer atividade que possa levar à interrupção do nosso serviço
       (ex. DoS);
-    captured_at: '2026-09-04T16:11:21.157000Z'
+    captured_at: '2026-09-06T04:11:23.538000Z'
   - source_type: authenticated_browser
     source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
     section: 5.x numbered rules
     source_text: 5.32. Negação de serviço;
-    captured_at: '2026-09-04T16:11:21.157000Z'
+    captured_at: '2026-09-06T04:11:23.538000Z'
 - code: no_social_engineering
   effect: restrict
   value: true
@@ -147,7 +147,7 @@ constraints:
     source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
     section: 5.x numbered rules
     source_text: 5.20. Engenharia social (incluindo phishing) na nossa equipe ou terceiros;
-    captured_at: '2026-09-04T16:11:21.157000Z'
+    captured_at: '2026-09-06T04:11:23.538000Z'
 excluded_finding_types: []
 recommended_user_agent: Bughunt - Security Research
 reviewed_max_requests_per_second: 1.0
@@ -171,8 +171,8 @@ source:
   source_type: authenticated_browser
   source_url: https://admin.bughunt.com.br/program/detail?69a7231dbd62b9c07b984306
   title: Grupo Smart Fit - Bug Bounty Público
-  captured_at: '2026-09-04T16:11:21.157000Z'
-  content_sha256: a454876f0ab9ebcea2d14bc28b2d11801853b97f28cf5664f4518b0d550c9b29
+  captured_at: '2026-09-06T04:11:23.538000Z'
+  content_sha256: 2d887ea8b5a8bc97285d9aa548029dca381fe701e5e1c340a76b3f382cdb7185
 issues:
 - code: broad_asset_exclusion
   message: A broad excluded asset family cannot be converted to a complete host list

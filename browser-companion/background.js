@@ -37,6 +37,142 @@ async function captureTab(tabId) {
             context: cleanValue(container?.innerText).slice(0, 1200)
           };
         });
+
+      const isVisible = (node) => {
+        if (!node) return false;
+        const style = window.getComputedStyle(node);
+        if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) {
+          return false;
+        }
+        const rect = node.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      const isEnabled = (node) => {
+        if (!node) return false;
+        if (node.disabled === true) return false;
+        if (String(node.getAttribute("aria-disabled") || "").toLowerCase() === "true") return false;
+        if (String(node.className || "").toLowerCase().split(/\s+/).includes("disabled")) return false;
+        const style = window.getComputedStyle(node);
+        if (style.pointerEvents === "none") return false;
+        return true;
+      };
+      const describeNode = (node) => {
+        const identity = [
+          node.tagName.toLowerCase(),
+          node.id ? `#${node.id}` : "",
+          node.className && typeof node.className === "string"
+            ? `.${node.className.trim().replace(/\s+/g, ".")}`
+            : ""
+        ].join("");
+        const text = cleanValue(node.innerText || node.textContent).replace(/\s+/g, " ").slice(0, 240);
+        return `${identity}: ${text}`;
+      };
+
+      const operationalSignals = [];
+      const statusCandidates = [];
+      const statusSelectors = [
+        "[data-status]",
+        "[class*='status' i]",
+        "[class*='badge' i]",
+        "[aria-label*='status' i]"
+      ].join(",");
+      for (const node of document.querySelectorAll(statusSelectors)) {
+        if (!isVisible(node)) continue;
+        const text = cleanValue(node.innerText || node.textContent).replace(/\s+/g, " ");
+        if (!text || text.length > 120) continue;
+        const lowered = text.toLowerCase();
+        let status = null;
+        if (["online", "programa online", "program online"].includes(lowered)) {
+          status = "online";
+        } else if (["offline", "programa offline", "program offline"].includes(lowered)) {
+          status = "offline";
+        }
+        if (status) {
+          const evidence = describeNode(node);
+          statusCandidates.push({status, evidence});
+          operationalSignals.push({
+            kind: "explicit_status",
+            status,
+            evidence,
+            visible: true,
+            enabled: null
+          });
+        }
+      }
+      for (const row of document.querySelectorAll("tr")) {
+        const cells = [...row.cells].map((cell) => cleanValue(cell.innerText));
+        if (cells.length >= 2 && /^status$/i.test(cells[0])) {
+          const value = cells[1].toLowerCase();
+          if (value === "online" || value === "offline") {
+            const evidence = `table row: ${cells.slice(0, 2).join(" | ")}`;
+            statusCandidates.push({status: value, evidence});
+            operationalSignals.push({
+              kind: "explicit_status",
+              status: value,
+              evidence,
+              visible: true,
+              enabled: null
+            });
+          }
+        }
+      }
+
+      // Short, visible page-level banners are safe to interpret; long policy prose is not.
+      for (const node of document.querySelectorAll("[role='alert'], .alert, [class*='banner' i], [class*='notice' i]")) {
+        if (!isVisible(node)) continue;
+        const text = cleanValue(node.innerText || node.textContent).replace(/\s+/g, " ");
+        if (!text || text.length > 240) continue;
+        const lowered = text.toLowerCase();
+        if (/\b(programa|program)\b.*\b(offline|pausado|pausada|suspenso|suspensa|encerrado|encerrada)\b/.test(lowered)) {
+          operationalSignals.push({
+            kind: "blocking_banner",
+            status: "offline",
+            evidence: describeNode(node),
+            visible: true,
+            enabled: null
+          });
+        }
+      }
+
+      // BugHunt-specific operational affordance. This is captured as evidence; ASTP decides
+      // whether the combination is sufficient for an attestation.
+      const host = location.hostname.toLowerCase();
+      const isBugHuntProgramDetail = host.endsWith("bughunt.com.br") && /\/program\/detail/i.test(location.pathname);
+      if (isBugHuntProgramDetail) {
+        const controls = [...document.querySelectorAll("a, button, [role='button']")];
+        for (const node of controls) {
+          const text = cleanValue(node.innerText || node.textContent).replace(/\s+/g, " ");
+          if (!/^(submeter relat[oó]rio|submit report)$/i.test(text)) continue;
+          operationalSignals.push({
+            kind: "submission_control",
+            status: null,
+            evidence: describeNode(node),
+            visible: isVisible(node),
+            enabled: isVisible(node) && isEnabled(node)
+          });
+        }
+        const bodyText = cleanValue(document.body?.innerText);
+        const publishedMatch = bodyText.match(/Publicado h[áa]\s+[^\n]{1,80}/i);
+        if (publishedMatch) {
+          operationalSignals.push({
+            kind: "published_marker",
+            status: null,
+            evidence: publishedMatch[0].replace(/\s+/g, " ").slice(0, 160),
+            visible: true,
+            enabled: null
+          });
+        }
+      }
+
+      const explicitOffline = operationalSignals.find((item) => item.status === "offline");
+      const uniqueStatuses = [...new Set(statusCandidates.map((item) => item.status))];
+      const operationalStatusHint = explicitOffline
+        ? "offline"
+        : (uniqueStatuses.length === 1 ? uniqueStatuses[0] : null);
+      const operationalStatusEvidence = operationalStatusHint
+        ? operationalSignals.find((item) => item.status === operationalStatusHint)?.evidence || null
+        : null;
+
       return {
         schema_version: "1",
         url: location.href,
@@ -44,6 +180,9 @@ async function captureTab(tabId) {
         text: cleanValue(document.body?.innerText),
         tables,
         links,
+        operational_status_hint: operationalStatusHint,
+        operational_status_evidence: operationalStatusEvidence,
+        operational_signals: operationalSignals,
         captured_at: new Date().toISOString()
       };
     }
