@@ -10,7 +10,7 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $python = Join-Path $root ".venv\Scripts\python.exe"
 
 $oldRun = Join-Path $root `
-    ".astp\field-assessments\bughunt-grupo-smart-fit-bug-bounty-p-blico-400f88b1c5-20260906T131714Z"
+    ".astp\field-assessments\bughunt-grupo-smart-fit-bug-bounty-p-blico-400f88b1c5-20260906T153820Z"
 
 if (-not (Test-Path $python)) {
     throw "ASTP virtualenv Python not found: $python"
