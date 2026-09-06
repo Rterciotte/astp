@@ -1,6 +1,8 @@
 import json
 import os
 import secrets
+import shutil
+import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -14,6 +16,7 @@ from astp.autonomy_session import prepare_autonomy_session
 from astp.browser_intake import capture_to_text, load_capture
 from astp.circuit_breaker import FailureCircuitBreaker
 from astp.controlled_loop import run_controlled_queue
+from astp.ctf_mode import ChallengeDefinition, inventory_challenge
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
 from astp.execution_trace import append_trace_event, verify_execution_trace
@@ -22,6 +25,7 @@ from astp.findings import FindingCandidate, FindingSet, correlate_findings
 from astp.frontier import build_frontier
 from astp.hypothesis import build_observation_hypotheses
 from astp.io import dump_yaml, load_model, load_yaml
+from astp.js_static_analysis import analyze_javascript_file
 from astp.lifecycle import (
     append_audit_event,
     consume_execution_permit,
@@ -2073,6 +2077,108 @@ def resume_session_check_command(
     console.print(f"Resumable: {', '.join(result.resumable_queue_ids) or 'none'}")
     console.print(f"Blocked: {', '.join(result.blocked_queue_ids) or 'none'}")
     console.print(result.reason)
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("analyze-javascript")
+def analyze_javascript_command(
+    artifact_path: Annotated[
+        Path,
+        typer.Argument(help="Already-retrieved local JavaScript/body artifact"),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write offline JavaScript analysis YAML"),
+    ],
+    evidence_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--evidence",
+            help="Optional HTTP observation evidence JSON that binds this body artifact",
+        ),
+    ] = None,
+) -> None:
+    """Analyze a local JavaScript artifact offline; never retrieve discovered URLs."""
+    if not artifact_path.is_file():
+        raise typer.BadParameter(f"artifact does not exist: {artifact_path}")
+
+    result = analyze_javascript_file(artifact_path)
+    if evidence_path is not None:
+        evidence = load_model(evidence_path, HttpObservationEvidence)
+        body = evidence.body_artifact
+        if body is None or not body.persisted:
+            raise typer.BadParameter("evidence does not reference a persisted body artifact")
+        if body.sha256 != result.artifact_sha256:
+            raise typer.BadParameter("artifact SHA-256 does not match evidence body_artifact")
+        if body.size_bytes != result.artifact_size_bytes:
+            raise typer.BadParameter("artifact size does not match evidence body_artifact")
+        result = result.model_copy(
+            update={
+                "source_evidence_id": evidence.evidence_id,
+                "source_permit_id": evidence.permit_id,
+                "source_target": evidence.target,
+                "artifact_integrity_verified": True,
+            }
+        )
+
+    dump_yaml(result, output)
+    console.print(f"Artifact SHA-256: {result.artifact_sha256}")
+    console.print(f"Signals: {len(result.signals)}")
+    console.print(
+        f"Evidence binding: {'VERIFIED' if result.artifact_integrity_verified else 'NOT REQUESTED'}"
+    )
+    console.print("Confirmed vulnerabilities: 0")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("ctf-intake")
+def ctf_intake_command(
+    challenge_path: Annotated[
+        Path,
+        typer.Argument(help="CTF challenge definition YAML"),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write local CTF intake/inventory YAML"),
+    ],
+) -> None:
+    """Validate CTF rules and hash declared local artifacts; no solver or network runs."""
+    challenge = load_model(challenge_path, ChallengeDefinition)
+    result = inventory_challenge(challenge, challenge_path.parent)
+    dump_yaml(result, output)
+    console.print(f"Challenge: {challenge.id}")
+    autonomy = "YES" if result.autonomous_solving_allowed else "NO"
+    console.print(f"Autonomous solving allowed by rules: {autonomy}")
+    console.print(
+        f"Declared network use allowed: {'YES' if result.network_execution_allowed else 'NO'}"
+    )
+    console.print(f"Local artifacts inventoried: {len(result.artifacts)}")
+    for blocker in result.blockers:
+        console.print(f"- BLOCKER: {blocker}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("doctor")
+def doctor_command() -> None:
+    """Check the local ASTP setup without making any network request."""
+    checks = [
+        ("Python 3.12+", sys.version_info >= (3, 12), sys.version.split()[0]),
+        ("Git", shutil.which("git") is not None, shutil.which("git") or "not found"),
+        (
+            "Docker (optional workers)",
+            shutil.which("docker") is not None,
+            shutil.which("docker") or "not found",
+        ),
+    ]
+    table = Table(title="ASTP local setup")
+    table.add_column("Check")
+    table.add_column("Status")
+    table.add_column("Details")
+    for name, ok, details in checks:
+        table.add_row(name, "OK" if ok else "MISSING", details)
+    console.print(table)
     console.print("Network execution: NOT PERFORMED")
 
 

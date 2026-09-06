@@ -349,3 +349,21 @@ permit-gated, and state-changing verifiers additionally require exact operator a
 The offline end-to-end rehearsal covers intake through closure but never authorizes network
 execution. Full v1 readiness remains gated on physical runtime field qualification, broad active
 verification qualification, and an authorized end-to-end field test.
+
+## Offline JavaScript artifact analysis (M46.8–M46.9)
+
+Persisted HTTP body artifacts may be consumed by the first-class `analyze-javascript` CLI. The analyzer hashes the exact bytes and, when HTTP evidence is supplied, fails closed unless artifact size and SHA-256 match the evidence-bound `body_artifact` reference. Static routes, URLs, API hints, framework markers, source-map markers, and network-call markers remain non-authorizing signals. The analyzer performs no retrieval.
+
+```text
+permit-gated HTTP evidence + optional .body.bin
+    -> integrity/provenance verification
+    -> offline JavaScript static analysis
+    -> non-executable signals
+    -> normal discovery/policy/permit path for any future request
+```
+
+## CTF control-plane boundary (M47.1)
+
+CTF implementation begins with rule intake rather than solver execution. `ChallengeDefinition` records whether AI and automation are allowed, local artifacts, optional authorized endpoints, flag format, and network policy. `ctf-intake` inventories only local challenge files and records blockers. It does not run a solver or contact endpoints.
+
+Future CTF solvers must reuse the normal capability, isolation, evidence, budget, and permit boundaries. A challenge's declared endpoint is scope input; it is not by itself a worker execution permit.

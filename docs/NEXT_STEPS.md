@@ -1,9 +1,59 @@
-# ASTP next steps
+# ASTP completion plan
 
-Current version: 0.461.0
+Current repository line: M47.1 completion push.
 
-The strict v1 engine has achieved `FULL_PENTEST_READY: TRUE` from persisted physical qualification evidence. M46.5 adds the unified program pre-flight that must return `EXECUTION_ELIGIBLE: TRUE` before any real bug-bounty assessment begins.
+ASTP's core policy-first pentest engine is broad and already field-proven for bounded HTTP observation. M46.8–M46.9 close the immediate JavaScript artifact-consumer gap, M47.0 replaces the temporary overlay README with an operator guide, and M47.1 begins CTF mode with rules/artifact intake.
 
-Immediate next action: run the live Smart Fit pre-flight. If it passes, execute the first bounded Smart Fit assessment with state-changing actions disabled and generate the real evidence-backed report. If it blocks, resolve only the explicit blocker; do not bypass the gate.
+## Milestones to complete the intended ASTP product
 
-After the first real program field assessment, generalize this same pre-flight into the Bug Bounty Portfolio Orchestrator so each discovered program independently passes refresh, policy drift, online/offline, scope, readiness, and budget gates before entering the execution queue.
+### M47.2 — Unified assessment command
+Create one operator-facing command that prepares an assessment workspace, runs preflight/control-plane stages, prints the next safe action, and can stop before execution. Existing lower-level commands remain available.
+
+### M47.3 — Evidence consumer pipeline
+Generalize offline consumers for HTML, JavaScript, JSON/API responses, redirects, headers, and source-map metadata. Every derived target remains non-executable until replanned and repermitted.
+
+### M47.4 — Finding synthesis and proof workflow
+Connect normalized signals, verifier requirements, finding lifecycle, correlation, retest scheduling, and proof-state transitions into one evidence-backed workflow without proof inflation.
+
+### M47.5 — End-to-end report/package workflow
+Generate the assessment report, limitations, evidence index, manifest verification result, operator review package, retest checklist, and portable publication bundle from one assessment directory.
+
+### M47.6 — Bug bounty portfolio orchestrator
+Generalize program preflight across multiple programs with independent scope, policy digest, freshness, rate budget, queue fairness, evidence chain, and stop conditions.
+
+### M47.7 — Authenticated/browser observation integration
+Finish the operator-safe path for authorized authenticated observations while keeping browser sessions/secrets out of normal evidence and preserving exact action authorization.
+
+### M47.8 — Active verifier integration pass
+Expose the already-built verifier families through a coherent planner/dispatcher workflow, validate capability contracts, and ensure state-changing families remain explicitly operator-gated.
+
+### M47.9 — Recovery, resume, and crash acceptance
+Exercise interruption at each important boundary: before permit, after permit, after consumption, during worker failure, after evidence write, and during report assembly. Prove fail-closed resume behavior.
+
+### M48.0 — Bug bounty v1 acceptance
+Run a complete authorized assessment from program intake through final report using the unified workflow. Require clean audit/evidence verification and document the field acceptance in `docs/release/`.
+
+### M48.1 — CTF artifact classifier and hypothesis graph
+Classify local challenge artifacts and create category-specific hypotheses. No unrestricted shell and no implicit network.
+
+### M48.2 — CTF isolated solver adapters
+Add bounded local adapters for safe static/reversible operations first (encoding/crypto helpers, file metadata, strings, archive inspection, static binary metadata) with structured receipts.
+
+### M48.3 — CTF web/API permit path
+Allow challenge-network experiments only for explicitly declared endpoints, exact actions, bounded budgets, and permits. Competition rules remain a hard gate.
+
+### M48.4 — CTF flag candidate verification and solve trace
+Validate candidates against declared flag formats, bind candidates to evidence, and generate a reproducible hypothesis/action trace.
+
+### M48.5 — CTF category expansion
+Add reverse, forensics, crypto, web/API, and selected sandboxed pwn capabilities incrementally with per-family qualification suites.
+
+### M48.6 — CTF acceptance suite
+Evaluate on local synthetic and retired/public challenges where automation is permitted. Track solve rate, false flags, time, resource cost, and reproducibility.
+
+### M49.0 — ASTP 1.0 release candidate
+Consolidate CLI UX, configuration, installation, migration notes, security model, examples, release documentation, and full acceptance suites. Remove stale overlay-era documentation from the primary user path while preserving historical release records.
+
+## Priority
+
+The shortest path to a useful release is M47.2 through M48.0. CTF expansion can proceed after bug bounty v1 acceptance without blocking the primary pentest workflow.
