@@ -1,0 +1,1 @@
+const flag="FLAG{rc_web}";

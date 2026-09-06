@@ -1,0 +1,12 @@
+schema_version: '1'
+id: rc-osint
+title: RC osint smoke
+category: osint
+artifacts:
+- osint.txt
+authorized_endpoints: []
+flag_pattern: FLAG\{[A-Za-z0-9_-]+\}
+allow_ai: true
+allow_automation: true
+network_policy: disabled
+notes: Deterministic local ASTP 1.0 RC smoke case.

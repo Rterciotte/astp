@@ -1,3 +1,3 @@
-"""ASTP — Autonomous Security Testing Platform."""
+"""ASTP — Automated Security Testing Platform."""
 
-__version__ = "0.251.0"
+__version__ = "1.0.0rc1"

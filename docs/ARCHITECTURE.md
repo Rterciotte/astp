@@ -441,3 +441,20 @@ The network branch deliberately reuses `observe_http` instead of introducing a C
 Category expansion remains built-in and capability-scoped. `ctf_categories.py` adds bounded encoding-layer decoding, static web route hints, image metadata, PCAP inventory, and PE/ELF metadata. These adapters receive bytes and return structured text; they do not spawn a shell, invoke external tools, or contact a network. Existing printable-string and structured JSON/ZIP adapters remain available.
 
 `ctf_acceptance.py` is a local-only qualification harness. Each declared challenge is analyzed, solved, and flag-verified twice. The harness records solve rate, candidate/false-flag counts, elapsed time, hypothesis count, adapter count, and a SHA-256 of the deterministic solve trace. Challenge paths are confined to the suite directory and automation-prohibited cases fail closed. Network-capable challenge definitions may be represented, but the acceptance harness never executes their endpoint branch.
+
+## M49.0 release qualification layer
+
+ASTP 1.0 RC adds an offline qualification layer above the already implemented Bug Bounty and CTF pipelines. It does not introduce another execution path.
+
+```text
+M48.0 Bug Bounty acceptance YAML ─┐
+                                  ├─> release-readiness ─> M49.0 PASS/FAIL YAML
+M48.6 CTF acceptance YAML ────────┘           │
+                                              ├─ version consistency
+repository/docs/security model ───────────────┤
+                                              └─ SHA-256 qualification digests
+```
+
+`release-readiness` deserializes acceptance artifacts using their real schema models, verifies Bug Bounty action/permit accounting, requires deterministic CTF trace reproduction, checks the RC repository/documentation surface, and records qualification artifact hashes. The command is offline and cannot replay either assessment.
+
+This layer deliberately separates **implementation complete** from **release qualified**. A successful unit/regression suite is necessary but the RC gate also requires stored acceptance evidence from both operating modes.

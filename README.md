@@ -63,10 +63,11 @@ python -m pip install --upgrade pip
 pip install -e ".[dev]"
 ```
 
-Check the local setup without making a network request:
+Check the local setup and release metadata without making a network request:
 
 ```powershell
 python -m astp.cli doctor
+python -m astp.cli release-info
 ```
 
 Run the full project validation suite:
@@ -93,6 +94,14 @@ Checks the local Python/tool setup. It does not contact a target.
 
 ```powershell
 python -m astp.cli doctor
+```
+
+### `release-info`
+
+Shows the installed ASTP version, milestone, and release channel. It is offline.
+
+```powershell
+python -m astp.cli release-info
 ```
 
 ## Step 2 — Bring authorization into ASTP
@@ -640,6 +649,14 @@ python -m astp.cli ctf-acceptance .\ctf-suite.yaml --output .\ctf-acceptance.yam
 
 The result includes solve rate, false-positive flag count, average time, hypothesis count, and trace reproducibility overall and by category/difficulty.
 
+A deterministic eight-category RC smoke suite is included:
+
+```powershell
+python -m astp.cli ctf-acceptance `
+  .\examples\ctf\rc-suite\suite.yaml `
+  --output .\ctf-acceptance-m48.6.yaml
+```
+
 ### `ctf-observe-http`
 
 Performs exactly one bounded GET/HEAD only when all normal ASTP permit checks pass **and** the target exactly matches one of the challenge's declared endpoints. A declaration in `challenge.yaml` is not itself a permit.
@@ -658,7 +675,23 @@ python -m astp.cli ctf-observe-http `
 
 See `docs/CTF_MODE_ROADMAP.md` for the implemented category/acceptance model and the remaining 1.0 release work.
 
-# 4. Specialized field/preflight entry points
+
+# 4. ASTP 1.0 RC qualification
+
+M49.0 adds a final **offline** release gate. It consumes the already-generated Bug Bounty v1 and CTF acceptance reports; it does not repeat target requests.
+
+### `release-readiness`
+
+```powershell
+python -m astp.cli release-readiness `
+  .\bug-bounty-v1-acceptance-m48.0.yaml `
+  .\ctf-acceptance-m48.6.yaml `
+  --output .\astp-1.0rc1-readiness.yaml
+```
+
+A PASS requires synchronized `1.0.0rc1` version metadata, the required release/security documentation, valid M48.0 Bug Bounty acceptance with balanced network-action/permit accounting, and valid M48.6 CTF acceptance with 100% trace reproducibility. See `docs/RELEASE_CHECKLIST.md`.
+
+# 5. Specialized field/preflight entry points
 
 ASTP also contains specialized module entry points used by later field-validation milestones. They are intentionally separate from the beginner workflow and should normally be used with their release documentation or field scripts:
 
@@ -683,13 +716,15 @@ python -m <module-name> --help
 
 The repository's `scripts/field-tests/` and `scripts/programs/` directories contain controlled workflows built around these components.
 
-# 5. Complete main CLI command reference
+# 6. Complete main CLI command reference
 
 For convenience, every command currently exposed by `python -m astp.cli` is listed here. The recommended order is the workflow above; this alphabetical-style reference is for finding a command quickly.
 
 | Command | What it does in simple terms |
 |---|---|
 | `doctor` | Checks the local ASTP setup; offline. |
+| `release-info` | Shows ASTP version/milestone/channel; offline. |
+| `release-readiness` | Verifies stored Bug Bounty/CTF qualification evidence and RC metadata; offline. |
 | `browser-intake-server` | Receives authorized program information from the Browser Companion on loopback. |
 | `programs` | Shows synchronized bug bounty programs. |
 | `select-programs` | Chooses active programs. |
@@ -766,7 +801,7 @@ For exact options of any command:
 python -m astp.cli COMMAND --help
 ```
 
-# 6. Files and folders you will see
+# 7. Files and folders you will see
 
 - `.astp/` — local runtime state, evidence, manifests, ledgers, and assessment artifacts. Usually do not commit this folder.
 - `programs/` — normalized/reviewed bug bounty program definitions.
@@ -780,7 +815,7 @@ python -m astp.cli COMMAND --help
 - `labs/` — controlled local lab material.
 - `workers/` — worker/runtime support.
 
-# 7. How ASTP describes confidence
+# 8. How ASTP describes confidence
 
 ASTP avoids turning weak signals into strong claims. Findings progress through explicit proof states such as:
 
@@ -790,7 +825,7 @@ SUSPECTED → LIKELY → VERIFIED → IMPACT_CONFIRMED
 
 A tool result does not automatically move a finding forward. The required evidence must exist.
 
-# 8. Safety rules worth remembering
+# 9. Safety rules worth remembering
 
 1. **Authorization comes from the owner/program, not from ASTP.**
 2. **Discovery is not execution.** A URL found in HTML or JavaScript is only a candidate.
@@ -803,10 +838,10 @@ A tool result does not automatically move a finding forward. The required eviden
 9. **Signals are not automatically vulnerabilities.**
 10. **CTF/event rules override automation.** If AI or automation is prohibited, ASTP must not autonomously solve the challenge.
 
-# 9. Project status
+# 10. Project status
 
 ASTP already contains a large policy-first pentest engine and has completed a real bounded bug-bounty HTTP field observation with permit consumption, exact response-body persistence, SHA-256 verification, and manifest registration.
 
-Bug Bounty v1 has now passed its real authorized end-to-end acceptance. CTF mode also exposes bounded artifact analysis, isolated local adapters, exact permit-gated HTTP observation, and reproducible flag verification. CTF category expansion and its local acceptance harness are now implemented. The remaining milestone is ASTP 1.0 release-candidate consolidation.
+Bug Bounty v1 has now passed its real authorized end-to-end acceptance. CTF mode also exposes bounded artifact analysis, isolated local adapters, exact permit-gated HTTP observation, and reproducible flag verification. CTF category expansion and its local acceptance harness are implemented. M49.0 consolidates the product as ASTP `1.0.0rc1` and adds an executable offline release-readiness gate. The planned implementation roadmap is complete; promotion from RC to stable is now a qualification/soak decision rather than another feature milestone.
 
 The authoritative forward plan is `docs/NEXT_STEPS.md`. Milestone-specific change notes are kept in `docs/release/`.

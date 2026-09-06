@@ -101,6 +101,11 @@ from astp.program_models import BugBountyProgram
 from astp.program_runtime import create_operational_attestation
 from astp.program_server import serve_program_intake
 from astp.recovery_acceptance import run_recovery_acceptance
+from astp.release_readiness import (
+    evaluate_release_readiness,
+    release_info,
+    write_release_readiness,
+)
 from astp.reporting import render_markdown_report
 from astp.result_interpreter import interpret_observation
 from astp.resume_guard import evaluate_resume
@@ -2676,10 +2681,64 @@ def ctf_observe_http_command(
     console.print(f"Evidence: {result.evidence_path}")
 
 
+@app.command("release-info")
+def release_info_command() -> None:
+    """Show ASTP release metadata without performing network activity."""
+    info = release_info()
+    table = Table(title="ASTP release information")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Version", str(info["version"]))
+    table.add_row("Milestone", str(info["milestone"]))
+    table.add_row("Channel", str(info["release_channel"]))
+    table.add_row("Network execution", "NOT PERFORMED")
+    console.print(table)
+
+
+@app.command("release-readiness")
+def release_readiness_command(
+    bug_bounty_acceptance_path: Annotated[
+        Path,
+        typer.Argument(help="M48.0 Bug Bounty v1 acceptance YAML"),
+    ],
+    ctf_acceptance_path: Annotated[
+        Path,
+        typer.Argument(help="M48.6 CTF acceptance YAML"),
+    ],
+    output_path: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write M49.0 release-readiness YAML"),
+    ],
+    repo_root: Annotated[
+        Path,
+        typer.Option("--repo-root", help="ASTP repository root"),
+    ] = Path("."),
+) -> None:
+    """Verify ASTP 1.0 RC qualification evidence and repository metadata offline."""
+    try:
+        report = evaluate_release_readiness(
+            repo_root=repo_root,
+            bug_bounty_acceptance_path=bug_bounty_acceptance_path,
+            ctf_acceptance_path=ctf_acceptance_path,
+        )
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    write_release_readiness(report, output_path)
+    console.print(f"ASTP 1.0 RC readiness: {'PASS' if report.accepted else 'FAIL'}")
+    for item in report.checks:
+        console.print(f"- {'PASS' if item.passed else 'FAIL'} {item.name}: {item.detail}")
+    console.print(f"Qualification artifacts: {len(report.qualification_artifacts)}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output_path}")
+    if not report.accepted:
+        raise typer.Exit(code=7)
+
+
 @app.command("doctor")
 def doctor_command() -> None:
     """Check the local ASTP setup without making any network request."""
     checks = [
+        ("ASTP version", True, release_info()["version"]),
         ("Python 3.12+", sys.version_info >= (3, 12), sys.version.split()[0]),
         ("Git", shutil.which("git") is not None, shutil.which("git") or "not found"),
         (

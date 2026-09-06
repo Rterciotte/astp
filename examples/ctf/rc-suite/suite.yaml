@@ -1,0 +1,27 @@
+schema_version: '1'
+id: astp-1.0rc1-local-smoke
+cases:
+- challenge: 01-web/challenge.yaml
+  difficulty: rc-smoke
+  expected_solved: true
+- challenge: 02-api/challenge.yaml
+  difficulty: rc-smoke
+  expected_solved: true
+- challenge: 03-reverse/challenge.yaml
+  difficulty: rc-smoke
+  expected_solved: true
+- challenge: 04-pwn/challenge.yaml
+  difficulty: rc-smoke
+  expected_solved: true
+- challenge: 05-crypto/challenge.yaml
+  difficulty: rc-smoke
+  expected_solved: true
+- challenge: 06-forensics/challenge.yaml
+  difficulty: rc-smoke
+  expected_solved: true
+- challenge: 07-osint/challenge.yaml
+  difficulty: rc-smoke
+  expected_solved: true
+- challenge: 08-misc/challenge.yaml
+  difficulty: rc-smoke
+  expected_solved: true

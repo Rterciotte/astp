@@ -31,7 +31,6 @@ The built-in capability set now covers safe printable strings and JSON/ZIP struc
 
 Synthetic coverage exercises every declared CTF category. Retired/public corpora may be added later only where their rules/license allow automated use; the acceptance mechanism does not silently fetch or execute them.
 
-## Remaining
+## M49.0 — COMPLETE
 
-### M49.0 — ASTP 1.0 release candidate
-Consolidate Bug Bounty and CTF workflows into the final documented product surface, qualification evidence, examples, installation/configuration, and release checklist.
+The 1.0 RC consolidates Bug Bounty and CTF workflows into the final documented product surface, qualification evidence, examples, installation/configuration, security model, and release checklist. `release-readiness` consumes the stored M48.0 and M48.6 acceptance outputs and produces the final offline RC gate.

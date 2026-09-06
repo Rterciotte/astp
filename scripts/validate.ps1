@@ -91,6 +91,14 @@ if (-not $SkipCliSmoke) {
             # is not supported by the package layout.
             & $VenvPython -c "from astp.cli import app; assert app is not None"
         }
+        & $VenvPython -m astp.cli release-info *> $null
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+        & $VenvPython -m astp.cli release-readiness --help *> $null
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
     }
 }
 
