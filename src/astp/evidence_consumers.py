@@ -69,10 +69,14 @@ def _content_kind(evidence: HttpObservationEvidence) -> ContentKind:
     return ContentKind.OTHER
 
 
-def _body_artifact_path(evidence: HttpObservationEvidence, evidence_path: Path) -> Path | None:
+def _body_artifact_path(
+    evidence: HttpObservationEvidence,
+    evidence_path: Path,
+) -> Path | None:
     artifact = getattr(evidence, "body_artifact", None)
     if artifact is None or not artifact.persisted or not artifact.path:
         return None
+
     raw = Path(artifact.path)
     candidates = [raw]
     if not raw.is_absolute():
@@ -82,6 +86,7 @@ def _body_artifact_path(evidence: HttpObservationEvidence, evidence_path: Path) 
                 Path.cwd() / raw,
             ]
         )
+
     for candidate in candidates:
         if candidate.is_file():
             return candidate
@@ -89,7 +94,10 @@ def _body_artifact_path(evidence: HttpObservationEvidence, evidence_path: Path) 
 
 
 def _candidate(
-    target: str, evidence: HttpObservationEvidence, source_kind: str, confidence: float
+    target: str,
+    evidence: HttpObservationEvidence,
+    source_kind: str,
+    confidence: float,
 ) -> DiscoveredCandidate:
     return DiscoveredCandidate(
         target=target,
@@ -99,8 +107,24 @@ def _candidate(
     )
 
 
+def _collect_redirect_candidates(
+    evidence: HttpObservationEvidence,
+) -> list[DiscoveredCandidate]:
+    """Convert an already-observed redirect into a non-authorizing candidate."""
+    redirect = evidence.redirect
+    if redirect is None or not redirect.target:
+        return []
+
+    target = urljoin(evidence.target, redirect.target)
+    if urlsplit(target).scheme.lower() not in {"http", "https"}:
+        return []
+
+    return [_candidate(target, evidence, "redirect_location", 0.95)]
+
+
 def _collect_html_candidates(
-    text: str, evidence: HttpObservationEvidence
+    text: str,
+    evidence: HttpObservationEvidence,
 ) -> list[DiscoveredCandidate]:
     rows: dict[str, DiscoveredCandidate] = {}
     for value in _HTML_ATTR_RE.findall(text):
@@ -127,12 +151,14 @@ def _walk_json_strings(value: object) -> list[str]:
 
 
 def _collect_json_candidates(
-    text: str, evidence: HttpObservationEvidence
+    text: str,
+    evidence: HttpObservationEvidence,
 ) -> list[DiscoveredCandidate]:
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
         return []
+
     rows: dict[str, DiscoveredCandidate] = {}
     for value in _walk_json_strings(payload):
         candidate: str | None = None
@@ -152,6 +178,7 @@ def consume_http_evidence(evidence_path: Path) -> EvidenceConsumerRecord:
     valid = verify_observation_evidence(evidence)
     kind = _content_kind(evidence)
     limitations: list[str] = []
+
     if not valid:
         limitations.append(
             "Evidence integrity verification failed; derived signals are suppressed."
@@ -168,17 +195,16 @@ def consume_http_evidence(evidence_path: Path) -> EvidenceConsumerRecord:
     protocol = analyze_protocol_posture(evidence)
     posture = analyze_http_posture(evidence)
     normalized = normalize_signals(fingerprint, protocol, posture)
+
     discovered: list[DiscoveredCandidate] = []
     js_signals: list[JavascriptStaticSignal] = []
 
-    if evidence.redirect is not None and evidence.redirect.location:
-        target = urljoin(evidence.target, evidence.redirect.location)
-        if urlsplit(target).scheme.lower() in {"http", "https"}:
-            discovered.append(_candidate(target, evidence, "redirect_location", 0.95))
+    discovered.extend(_collect_redirect_candidates(evidence))
 
     body_path = _body_artifact_path(evidence, evidence_path)
     body_verified = False
     body = None
+
     if body_path is not None:
         data = body_path.read_bytes()
         artifact = evidence.body_artifact
@@ -198,7 +224,11 @@ def consume_http_evidence(evidence_path: Path) -> EvidenceConsumerRecord:
             analysis = analyze_javascript_bytes(body)
             js_signals = analysis.signals
             for signal in js_signals:
-                if signal.kind.value in {"api_hint", "route_hint", "absolute_url_hint"}:
+                if signal.kind.value in {
+                    "api_hint",
+                    "route_hint",
+                    "absolute_url_hint",
+                }:
                     target = urljoin(evidence.target, signal.value)
                     if urlsplit(target).scheme.lower() in {"http", "https"}:
                         discovered.append(
@@ -231,8 +261,10 @@ def consume_http_evidence(evidence_path: Path) -> EvidenceConsumerRecord:
 def consume_evidence_directory(path: Path) -> EvidenceConsumerSummary:
     records: list[EvidenceConsumerRecord] = []
     invalid: list[str] = []
+
     if not path.exists():
         return EvidenceConsumerSummary()
+
     for candidate in sorted(path.glob("*.json")):
         try:
             record = consume_http_evidence(candidate)
@@ -241,4 +273,8 @@ def consume_evidence_directory(path: Path) -> EvidenceConsumerSummary:
         records.append(record)
         if not record.valid_integrity:
             invalid.append(record.evidence_id)
-    return EvidenceConsumerSummary(records=records, invalid_evidence_ids=invalid)
+
+    return EvidenceConsumerSummary(
+        records=records,
+        invalid_evidence_ids=invalid,
+    )

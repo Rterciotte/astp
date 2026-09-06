@@ -63,6 +63,7 @@ from astp.models import (
     TestDefinition,
     evaluate_test,
 )
+from astp.nightly_campaign import NightlyCampaignSummary, run_nightly_campaign
 from astp.observation import (
     DEFAULT_MAX_BODY_BYTES,
     DEFAULT_TIMEOUT_SECONDS,
@@ -2743,6 +2744,80 @@ def ctf_observe_http_command(
     console.print("Permit consumed: YES")
     console.print("Network execution: one permit-gated CTF GET/HEAD")
     console.print(f"Evidence: {result.evidence_path}")
+
+
+@app.command("nightly-campaign")
+def nightly_campaign_command(
+    catalog: Annotated[
+        Path,
+        typer.Option("--catalog", help="Authenticated program catalog YAML"),
+    ] = Path(".astp")
+    / "program-catalog.yaml",
+    output_directory: Annotated[
+        Path,
+        typer.Option("--output-dir", help="Nightly campaign output root"),
+    ] = Path(".astp")
+    / "campaigns",
+    execute: Annotated[
+        bool,
+        typer.Option(
+            "--execute",
+            help="Explicitly enable bounded permit-gated GET observations",
+        ),
+    ] = False,
+    max_programs: Annotated[int, typer.Option("--max-programs", min=1)] = 20,
+    max_actions_per_program: Annotated[int, typer.Option("--max-actions-per-program", min=1)] = 10,
+    max_requests_per_program: Annotated[
+        int, typer.Option("--max-requests-per-program", min=1)
+    ] = 10,
+    max_errors_per_program: Annotated[int, typer.Option("--max-errors-per-program", min=1)] = 2,
+    max_rounds: Annotated[int, typer.Option("--max-rounds", min=1)] = 2,
+    max_link_candidates: Annotated[int, typer.Option("--max-link-candidates", min=1)] = 30,
+    persist_body: Annotated[
+        bool,
+        typer.Option("--persist-body/--no-persist-body"),
+    ] = True,
+) -> None:
+    """Run a bounded multi-program Bug Bounty campaign from synchronized authenticated rules."""
+    try:
+        summary: NightlyCampaignSummary = run_nightly_campaign(
+            catalog_path=catalog,
+            output_directory=output_directory,
+            execute=execute,
+            max_programs=max_programs,
+            max_actions_per_program=max_actions_per_program,
+            max_requests_per_program=max_requests_per_program,
+            max_errors_per_program=max_errors_per_program,
+            max_rounds=max_rounds,
+            max_link_candidates=max_link_candidates,
+            persist_body=persist_body,
+        )
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    table = Table(title=f"ASTP Nightly Campaign — {summary.campaign_id}")
+    table.add_column("Program")
+    table.add_column("Status")
+    table.add_column("Actions", justify="right")
+    table.add_column("Findings", justify="right")
+    table.add_column("Reason")
+    for row in summary.program_results:
+        table.add_row(
+            row.program_name,
+            row.status.upper(),
+            str(row.network_actions),
+            str(row.correlated_findings),
+            row.reason,
+        )
+    console.print(table)
+    console.print(f"Completed: {summary.completed}")
+    console.print(f"Blocked: {summary.blocked}")
+    console.print(f"Failed: {summary.failed}")
+    console.print(f"Network/permit accounting: {summary.network_actions}/{summary.permits_issued}")
+    console.print(
+        "Network execution: " + ("BOUNDED PERMIT-GATED GET" if execute else "NOT PERFORMED")
+    )
+    console.print(f"Campaign: {output_directory / summary.campaign_id / 'campaign.yaml'}")
 
 
 @app.command("release-info")

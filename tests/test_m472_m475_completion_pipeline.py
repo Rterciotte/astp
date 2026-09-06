@@ -3,13 +3,18 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
 from astp.assessment_bundle import verify_assessment_bundle
 from astp.assessment_workflow import finalize_assessment_package, synthesize_consumer_findings
 from astp.cli import app
-from astp.evidence_consumers import ContentKind, consume_http_evidence
+from astp.evidence_consumers import (
+    ContentKind,
+    _collect_redirect_candidates,
+    consume_http_evidence,
+)
 from astp.evidence_store import SensitivityLabel
 from astp.findings import FindingSet
 from astp.observation import BodyArtifactReference, HttpObservationEvidence, _canonical_json
@@ -17,7 +22,13 @@ from astp.observation import BodyArtifactReference, HttpObservationEvidence, _ca
 runner = CliRunner()
 
 
-def _write_evidence(tmp_path: Path, *, target: str, content_type: str, body: bytes) -> Path:
+def _write_evidence(
+    tmp_path: Path,
+    *,
+    target: str,
+    content_type: str,
+    body: bytes,
+) -> Path:
     body_path = tmp_path / "sample.body.bin"
     body_path.write_bytes(body)
     body_hash = hashlib.sha256(body).hexdigest()
@@ -48,11 +59,16 @@ def _write_evidence(tmp_path: Path, *, target: str, content_type: str, body: byt
         update={"evidence_hash": hashlib.sha256(_canonical_json(payload)).hexdigest()}
     )
     evidence_path = tmp_path / "sample.json"
-    evidence_path.write_text(row.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    evidence_path.write_text(
+        row.model_dump_json(indent=2) + "\n",
+        encoding="utf-8",
+    )
     return evidence_path
 
 
-def test_m473_javascript_consumer_is_offline_and_non_authorizing(tmp_path: Path) -> None:
+def test_m473_javascript_consumer_is_offline_and_non_authorizing(
+    tmp_path: Path,
+) -> None:
     evidence_path = _write_evidence(
         tmp_path,
         target="https://example.com/app.js",
@@ -69,7 +85,9 @@ def test_m473_javascript_consumer_is_offline_and_non_authorizing(tmp_path: Path)
     assert not any(row.network_authorized for row in result.discovered_candidates)
 
 
-def test_m473_html_consumer_extracts_routes_without_network(tmp_path: Path) -> None:
+def test_m473_html_consumer_extracts_routes_without_network(
+    tmp_path: Path,
+) -> None:
     evidence_path = _write_evidence(
         tmp_path,
         target="https://example.com/",
@@ -95,7 +113,26 @@ def test_m473_json_consumer_extracts_url_like_values(tmp_path: Path) -> None:
     assert "https://docs.example.com/help" in targets
 
 
-def test_m474_synthesis_does_not_promote_informational_posture(tmp_path: Path) -> None:
+def test_m473_redirect_consumer_uses_redirect_target_field() -> None:
+    evidence = SimpleNamespace(
+        evidence_id="redirect-evidence",
+        target="https://example.com/start",
+        redirect=SimpleNamespace(target="/next"),
+    )
+
+    candidates = _collect_redirect_candidates(evidence)
+
+    assert len(candidates) == 1
+    assert candidates[0].target == "https://example.com/next"
+    assert candidates[0].source_evidence_id == "redirect-evidence"
+    assert candidates[0].source_kind == "redirect_location"
+    assert candidates[0].requires_policy_review is True
+    assert candidates[0].network_authorized is False
+
+
+def test_m474_synthesis_does_not_promote_informational_posture(
+    tmp_path: Path,
+) -> None:
     evidence_path = _write_evidence(
         tmp_path,
         target="https://example.com/",
