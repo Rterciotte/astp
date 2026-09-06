@@ -53,9 +53,7 @@ class EvidenceConsumerSummary(BaseModel):
 
 
 _URL_RE = re.compile(r"https?://[^\"'`\s<>]+", re.IGNORECASE)
-_HTML_ATTR_RE = re.compile(
-    r"(?:href|src|action)\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE
-)
+_HTML_ATTR_RE = re.compile(r"(?:href|src|action)\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE)
 _PATH_RE = re.compile(r"^/(?!/)[A-Za-z0-9_./?=&%+~:@-]+$")
 
 
@@ -185,8 +183,7 @@ def consume_http_evidence(evidence_path: Path) -> EvidenceConsumerRecord:
         data = body_path.read_bytes()
         artifact = evidence.body_artifact
         body_verified = (
-            len(data) == artifact.size_bytes
-            and hashlib.sha256(data).hexdigest() == artifact.sha256
+            len(data) == artifact.size_bytes and hashlib.sha256(data).hexdigest() == artifact.sha256
         )
         if body_verified:
             body = data

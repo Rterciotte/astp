@@ -1,6 +1,6 @@
 # ASTP completion plan
 
-Current repository line: M47.5 completion push.
+Current repository line: M47.8 completion push.
 
 ASTP's core policy-first pentest engine is broad and already field-proven for bounded HTTP observation. M46.8–M46.9 close the immediate JavaScript artifact-consumer gap, M47.0 replaces the temporary overlay README with an operator guide, and M47.1 begins CTF mode with rules/artifact intake.
 
@@ -10,14 +10,9 @@ ASTP's core policy-first pentest engine is broad and already field-proven for bo
 
 The unified stored-evidence assessment, generalized offline evidence consumers, conservative finding synthesis, and final verified assessment packaging are now exposed through the main CLI. See `docs/release/M47.2.md` through `M47.5.md`.
 
-### M47.6 — Bug bounty portfolio orchestrator
-Generalize program preflight across multiple programs with independent scope, policy digest, freshness, rate budget, queue fairness, evidence chain, and stop conditions.
+### M47.6–M47.8 — COMPLETE
 
-### M47.7 — Authenticated/browser observation integration
-Finish the operator-safe path for authorized authenticated observations while keeping browser sessions/secrets out of normal evidence and preserving exact action authorization.
-
-### M47.8 — Active verifier integration pass
-Expose the already-built verifier families through a coherent planner/dispatcher workflow, validate capability contracts, and ensure state-changing families remain explicitly operator-gated.
+Multi-program isolation/fair planning, permit-gated authenticated observation through secret references, and the active-verifier planning integration are now exposed through the main CLI. See `docs/release/M47.6.md` through `M47.8.md`.
 
 ### M47.9 — Recovery, resume, and crash acceptance
 Exercise interruption at each important boundary: before permit, after permit, after consumption, during worker failure, after evidence write, and during report assembly. Prove fail-closed resume behavior.
@@ -48,4 +43,4 @@ Consolidate CLI UX, configuration, installation, migration notes, security model
 
 ## Priority
 
-The shortest path to a useful release is now M47.6 through M48.0. CTF expansion can proceed after bug bounty v1 acceptance without blocking the primary pentest workflow.
+The shortest path to a useful release is now M47.9 through M48.0. CTF expansion can proceed after bug bounty v1 acceptance without blocking the primary pentest workflow.

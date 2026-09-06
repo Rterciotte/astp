@@ -159,6 +159,15 @@ Turns the reviewed bug bounty program into an ASTP engagement that the policy en
 python -m astp.cli compile-program --help
 ```
 
+### `portfolio-plan`
+
+If you work with more than one reviewed bug bounty program, this creates a fair local portfolio plan. Each program keeps its own policy, rate and evidence namespace. The command does not make requests.
+
+```powershell
+python -m astp.cli portfolio-plan .\programs\program-a.yaml .\programs\program-b.yaml `
+    --output .\portfolio-plan.yaml
+```
+
 ### Path B: a manually prepared engagement
 
 ### `compile-scope`
@@ -342,6 +351,14 @@ By default ASTP keeps a redacted preview rather than the raw response body. If t
 
 The stored body becomes a manifest-registered `.body.bin` artifact.
 
+### `observe-authenticated-http`
+
+Use this only when the authorized test needs a logged-in identity. The session YAML stores **references** to secrets (for example an environment-variable name), not the password/token itself. The exact request still needs a fresh permit, and authenticated evidence is always marked sensitive.
+
+```powershell
+python -m astp.cli observe-authenticated-http --help
+```
+
 ### `run-observation-session`
 
 Runs a bounded sequential session with one fresh permit per request and durable budgets/stops.
@@ -418,6 +435,15 @@ python -m astp.javascript_static_cli .\path\artifact.js --output .\analysis.yaml
 ```
 
 Prefer `analyze-javascript` for new workflows because it can verify evidence binding.
+
+### `plan-verification`
+
+Looks at stored HTTP evidence and prepares conservative verifier proposals. It does not execute the proposals. Any active verification still goes through policy review and a fresh permit; state-changing verifier families remain operator-gated.
+
+```powershell
+python -m astp.cli plan-verification .\.astp\evidence `
+    --output .\verification-plan.yaml
+```
 
 ### `feedback-evidence`
 
@@ -586,6 +612,7 @@ For convenience, every command currently exposed by `python -m astp.cli` is list
 | `review-program` | Resolves explicit policy ambiguities. |
 | `attest-program-status` | Records fresh online/offline program status. |
 | `compile-program` | Converts a reviewed program to an engagement. |
+| `portfolio-plan` | Creates an isolated fair plan for multiple reviewed programs; offline. |
 | `compile-scope` | Compiles manually supplied scope rules. |
 | `show-engagement` | Validates/displays an engagement. |
 | `validate-test-dsl` | Validates a security test definition; offline. |
@@ -610,6 +637,7 @@ For convenience, every command currently exposed by `python -m astp.cli` is list
 | `runtime-permit-status` | Shows transactional runtime permit state. |
 | `revoke-runtime-permit` | Revokes transactional runtime permit. |
 | `observe-http` | Performs one permit-gated bounded GET/HEAD. |
+| `observe-authenticated-http` | Performs one permit-gated authenticated GET/HEAD using secret references; evidence is sensitive. |
 | `run-observation-session` | Runs bounded sequential permit-gated observations. |
 | `verify-evidence` | Verifies HTTP evidence integrity. |
 | `verify-evidence-manifest` | Verifies manifest chain and artifacts. |
@@ -621,6 +649,7 @@ For convenience, every command currently exposed by `python -m astp.cli` is list
 | `interpret-observation` | Interprets stored evidence; offline. |
 | `analyze-web-posture` | Reviews captured HTTP headers; offline. |
 | `analyze-javascript` | Reviews a local JS/body artifact; offline. |
+| `plan-verification` | Builds non-executing verifier proposals from stored evidence; offline. |
 | `feedback-evidence` | Returns stored evidence to discovery/planning; offline. |
 | `build-security-graph` | Builds target/evidence graph; offline. |
 | `build-hypotheses` | Builds conservative hypotheses; offline. |
@@ -686,6 +715,6 @@ A tool result does not automatically move a finding forward. The required eviden
 
 ASTP already contains a large policy-first pentest engine and has completed a real bounded bug-bounty HTTP field observation with permit consumption, exact response-body persistence, SHA-256 verification, and manifest registration.
 
-The current completion push has now integrated stored-evidence consumption, conservative finding synthesis, consolidated offline assessment, and final package verification into the main CLI. The next work focuses on multi-program orchestration, authenticated observations, active verifier integration, crash/recovery acceptance, and then bug-bounty v1 acceptance before deeper CTF solver expansion.
+The current completion push now also exposes isolated multi-program portfolio planning, permit-gated authenticated observation using secret references, and a unified non-executing active-verifier planning pass. The next work focuses on crash/recovery acceptance and the complete bug-bounty v1 acceptance run before deeper CTF solver expansion.
 
 The authoritative forward plan is `docs/NEXT_STEPS.md`. Milestone-specific change notes are kept in `docs/release/`.

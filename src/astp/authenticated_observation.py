@@ -7,7 +7,12 @@ from astp.auth_session import AuthSessionProfile, assert_session_target_allowed
 from astp.authenticated_transport import AuthenticatedObservationTransport
 from astp.evidence_store import SensitivityLabel
 from astp.models import Engagement, TestDefinition
-from astp.observation import ObservationResult, observe_http
+from astp.observation import (
+    DEFAULT_MAX_BODY_BYTES,
+    DEFAULT_TIMEOUT_SECONDS,
+    ObservationResult,
+    observe_http,
+)
 from astp.permits import SignedExecutionPermit
 from astp.secret_runtime import resolve_secret_reference
 from astp.transport import ObservationTransport, PinnedObservationTransport
@@ -30,6 +35,9 @@ def observe_authenticated_http(
     rate_state_path: Path,
     runtime_db_path: Path | None = None,
     transport: ObservationTransport | None = None,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
+    persist_body: bool = False,
 ) -> ObservationResult:
     assert_session_target_allowed(session, target)
     wrapped = AuthenticatedObservationTransport(
@@ -54,4 +62,7 @@ def observe_authenticated_http(
         runtime_db_path=runtime_db_path,
         sensitivity=SensitivityLabel.SENSITIVE,
         transport=wrapped,
+        timeout_seconds=timeout_seconds,
+        max_body_bytes=max_body_bytes,
+        persist_body=persist_body,
     )

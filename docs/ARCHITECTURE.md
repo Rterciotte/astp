@@ -390,3 +390,14 @@ hash-verified portable assessment package
 ```
 
 HTML, JavaScript, JSON/API, redirects, headers, and persisted response bodies are consumed without network execution. Any URL or route discovered by these consumers remains a candidate only and must return to scope evaluation, planning, and fresh permit issuance before a worker may contact it.
+
+
+## M47.6–M47.8 completion integration
+
+The main CLI now exposes three previously fragmented operational boundaries:
+
+- portfolio planning keeps program policy, reviewed rate and evidence namespaces independent and does not execute work;
+- authenticated HTTP observation resolves secret references only at the transport boundary, enforces session origin/identity binding, forces sensitive evidence, and still requires an exact fresh permit;
+- verifier planning consumes stored evidence and emits reviewable proposals while leaving execution disabled. State-changing verifier families require explicit operator approval in addition to policy and permit gates.
+
+These integrations do not turn discovery or verifier proposals into authorization. Network execution remains behind the existing capability/policy/permit runtime.

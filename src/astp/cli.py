@@ -11,13 +11,14 @@ from rich.console import Console
 from rich.table import Table
 
 from astp.adapter_registry import builtin_adapter_registry, ensure_adapter_compatible
-from astp.assessment import load_evidence_directory
+from astp.assessment_bundle import verify_assessment_bundle
 from astp.assessment_workflow import (
     finalize_assessment_package,
     run_stored_assessment,
     synthesize_consumer_findings,
 )
-from astp.assessment_bundle import verify_assessment_bundle
+from astp.auth_session import AuthSessionProfile
+from astp.authenticated_observation import observe_authenticated_http
 from astp.authorization import AuthorizationRequest, authorize_test
 from astp.autonomy_session import prepare_autonomy_session
 from astp.browser_intake import capture_to_text, load_capture
@@ -75,6 +76,7 @@ from astp.permits import (
 from astp.planner import ObservationPlan, build_observation_plan
 from astp.planner_state import get_planner_state, initialize_planner_state
 from astp.policy_snapshot import capture_policy_snapshot
+from astp.portfolio_orchestrator import build_portfolio_plan
 from astp.prioritization import prioritize_registry
 from astp.program_catalog import (
     BugBountyWorkspace,
@@ -111,6 +113,7 @@ from astp.target_registry import (
     save_registry,
 )
 from astp.test_dsl import SecurityTestDefinition
+from astp.verification_workflow import plan_verification_workflow
 from astp.web_posture import analyze_http_posture
 from astp.work_queue import WorkQueue, build_fair_work_queue
 
@@ -2268,6 +2271,113 @@ def finalize_assessment_command(
     console.print(f"Bundle: {output_directory}")
     if not valid:
         raise typer.Exit(code=2)
+
+
+@app.command("portfolio-plan")
+def portfolio_plan_command(
+    program_paths: Annotated[
+        list[Path], typer.Argument(help="Reviewed BugBountyProgram YAML files")
+    ],
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Write isolated portfolio plan YAML")
+    ],
+) -> None:
+    """Plan fair multi-program work without sharing policy, budgets, or evidence."""
+    programs = [load_model(path, BugBountyProgram) for path in program_paths]
+    try:
+        plan = build_portfolio_plan(programs)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    dump_yaml(plan, output)
+    console.print(f"Programs: {len(plan.programs)}")
+    console.print(f"Queue eligible: {len(plan.fair_queue_order)}")
+    console.print("Program policy/evidence isolation: YES")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("plan-verification")
+def plan_verification_command(
+    evidence_directory: Annotated[
+        Path, typer.Argument(help="Directory containing stored HTTP evidence")
+    ],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Write verifier workflow YAML")],
+) -> None:
+    """Plan verifier work from stored evidence; never execute proposed requests."""
+    workflow = plan_verification_workflow(evidence_directory)
+    dump_yaml(workflow, output)
+    console.print(f"Evidence records: {workflow.evidence_records}")
+    console.print(f"Verifier signals: {len(workflow.signals)}")
+    console.print(f"Proposals: {len(workflow.batch.proposals)}")
+    console.print(
+        f"State-changing verifier families gated: {len(workflow.state_changing_verifiers)}"
+    )
+    console.print("Fresh permit per proposed active action: YES")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("observe-authenticated-http")
+def observe_authenticated_http_command(
+    permit_path: Annotated[Path, typer.Argument(help="Signed execution permit YAML")],
+    engagement_path: Annotated[Path, typer.Argument(help="Current engagement YAML")],
+    test_path: Annotated[Path, typer.Argument(help="Current test definition YAML")],
+    session_path: Annotated[
+        Path, typer.Argument(help="AuthSessionProfile YAML containing secret references only")
+    ],
+    target: Annotated[str, typer.Option("--target", help="Exact authorized HTTP(S) target")],
+    http_method: Annotated[str, typer.Option("--http-method", help="GET or HEAD")] = "GET",
+    requested_rps: Annotated[float | None, typer.Option("--rps")] = None,
+    state_path: Annotated[Path, typer.Option("--state")] = DEFAULT_STATE_PATH,
+    audit_path: Annotated[Path, typer.Option("--audit")] = DEFAULT_AUDIT_PATH,
+    evidence_path: Annotated[Path, typer.Option("--evidence")] = Path(".astp")
+    / "evidence"
+    / "authenticated-observation.json",
+    manifest_path: Annotated[Path, typer.Option("--manifest")] = Path(".astp")
+    / "evidence-manifest.jsonl",
+    rate_state_path: Annotated[Path, typer.Option("--rate-state")] = Path(".astp")
+    / "rate-state.json",
+    runtime_db_path: Annotated[Path, typer.Option("--runtime-db")] = DEFAULT_RUNTIME_DB_PATH,
+    timeout_seconds: Annotated[float, typer.Option("--timeout")] = DEFAULT_TIMEOUT_SECONDS,
+    max_body_bytes: Annotated[int, typer.Option("--max-body-bytes")] = DEFAULT_MAX_BODY_BYTES,
+    persist_body: Annotated[bool, typer.Option("--persist-body/--no-persist-body")] = False,
+) -> None:
+    """Perform one permit-gated authenticated observation using secret references."""
+    permit = load_model(permit_path, SignedExecutionPermit)
+    engagement = load_model(engagement_path, Engagement)
+    test = load_model(test_path, TestDefinition)
+    session = load_model(session_path, AuthSessionProfile)
+    _, keys = _permit_keyring()
+    try:
+        result = observe_authenticated_http(
+            permit,
+            engagement,
+            test,
+            keys,
+            session,
+            target=target,
+            method=http_method,
+            requested_rps=requested_rps,
+            state_path=state_path,
+            audit_path=audit_path,
+            evidence_path=evidence_path,
+            manifest_path=manifest_path,
+            rate_state_path=rate_state_path,
+            runtime_db_path=runtime_db_path,
+            timeout_seconds=timeout_seconds,
+            max_body_bytes=max_body_bytes,
+            persist_body=persist_body,
+        )
+    except (ObservationError, ValueError) as exc:
+        console.print(f"Authenticated observation completed: [bold]NO[/bold]\n{exc}")
+        raise typer.Exit(code=6) from exc
+    console.print(f"Status: {result.evidence.status_code}")
+    console.print(f"Evidence ID: {result.evidence.evidence_id}")
+    console.print(f"Identity: {session.identity}")
+    console.print("Raw credentials written to evidence: NO")
+    console.print("Permit consumed: YES")
+    console.print("Network execution: one permit-gated authenticated GET/HEAD")
+    console.print(f"Evidence: {result.evidence_path}")
 
 
 @app.command("ctf-intake")

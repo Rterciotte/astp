@@ -63,8 +63,7 @@ def test_m473_javascript_consumer_is_offline_and_non_authorizing(tmp_path: Path)
     assert result.content_kind is ContentKind.JAVASCRIPT
     assert result.body_artifact_verified is True
     assert any(
-        row.target == "https://example.com/api/profile"
-        for row in result.discovered_candidates
+        row.target == "https://example.com/api/profile" for row in result.discovered_candidates
     )
     assert all(row.requires_policy_review for row in result.discovered_candidates)
     assert not any(row.network_authorized for row in result.discovered_candidates)
