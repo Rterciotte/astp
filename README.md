@@ -676,7 +676,7 @@ python -m astp.cli ctf-observe-http `
 See `docs/CTF_MODE_ROADMAP.md` for the implemented category/acceptance model and the remaining 1.0 release work.
 
 
-# 4. ASTP 1.0 RC qualification
+# 4. ASTP 1.0 stable qualification
 
 M49.0 adds a final **offline** release gate. It consumes the already-generated Bug Bounty v1 and CTF acceptance reports; it does not repeat target requests.
 
@@ -686,10 +686,10 @@ M49.0 adds a final **offline** release gate. It consumes the already-generated B
 python -m astp.cli release-readiness `
   .\bug-bounty-v1-acceptance-m48.0.yaml `
   .\ctf-acceptance-m48.6.yaml `
-  --output .\astp-1.0rc1-readiness.yaml
+  --output .\astp-1.0-readiness.yaml
 ```
 
-A PASS requires synchronized `1.0.0rc1` version metadata, the required release/security documentation, valid M48.0 Bug Bounty acceptance with balanced network-action/permit accounting, and valid M48.6 CTF acceptance with 100% trace reproducibility. See `docs/RELEASE_CHECKLIST.md`.
+A PASS requires synchronized `1.0.0` version metadata, the required release/security documentation, valid M48.0 Bug Bounty acceptance with balanced network-action/permit accounting, and valid M48.6 CTF acceptance with 100% trace reproducibility. See `docs/RELEASE_CHECKLIST.md`.
 
 # 5. Specialized field/preflight entry points
 
@@ -842,6 +842,6 @@ A tool result does not automatically move a finding forward. The required eviden
 
 ASTP already contains a large policy-first pentest engine and has completed a real bounded bug-bounty HTTP field observation with permit consumption, exact response-body persistence, SHA-256 verification, and manifest registration.
 
-Bug Bounty v1 has now passed its real authorized end-to-end acceptance. CTF mode also exposes bounded artifact analysis, isolated local adapters, exact permit-gated HTTP observation, and reproducible flag verification. CTF category expansion and its local acceptance harness are implemented. M49.0 consolidates the product as ASTP `1.0.0rc1` and adds an executable offline release-readiness gate. The planned implementation roadmap is complete; promotion from RC to stable is now a qualification/soak decision rather than another feature milestone.
+Bug Bounty v1 has now passed its real authorized end-to-end acceptance. CTF mode also exposes bounded artifact analysis, isolated local adapters, exact permit-gated HTTP observation, and reproducible flag verification. CTF category expansion and its local acceptance harness are implemented. M49.0 qualified the ASTP 1.0 release-candidate line; M50.0 promotes it to ASTP `1.0.0` stable and adds an executable offline release-readiness gate. The planned implementation roadmap is complete; the qualified ASTP 1.0 line is now stable; future feature expansion belongs to a separately scoped post-1.0 roadmap.
 
 The authoritative forward plan is `docs/NEXT_STEPS.md`. Milestone-specific change notes are kept in `docs/release/`.

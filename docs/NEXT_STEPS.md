@@ -1,27 +1,22 @@
 # ASTP completion plan
 
-Current repository line: M49.0 ASTP 1.0 release candidate.
+Current release line: M50.0 / ASTP 1.0 stable.
 
-Bug Bounty v1 has passed real authorized end-to-end field acceptance. CTF mode has bounded category-aware local solving, exact permit-gated HTTP observation, flag verification, solve traces, and local acceptance/reproducibility coverage. M49.0 consolidates both lines into `1.0.0rc1`.
+Bug Bounty v1 has passed real authorized end-to-end field acceptance. CTF mode has bounded category-aware local solving, exact permit-gated HTTP observation, flag verification, reproducible solve traces, and local acceptance coverage.
 
 ## Completed
 
-- M47.2–M47.5: stored-evidence assessment, findings, reporting, final packaging.
-- M47.6–M47.8: portfolio, authenticated observation, verifier integration.
+- M47.2-M47.5: stored-evidence assessment, findings, reporting and final packaging.
+- M47.6-M47.8: portfolio, authenticated observation and verifier integration.
 - M47.9: fail-closed recovery/resume/crash acceptance.
-- M48.0: Bug Bounty v1 real field acceptance — PASS.
-- M48.1–M48.4: CTF classifier, hypotheses, isolated solvers, permit path, flag verification/trace.
-- M48.5: bounded CTF category expansion.
-- M48.6: local CTF acceptance suite and trace reproducibility.
-- M49.0: ASTP 1.0 RC version metadata, release readiness gate, security model, release checklist, and RC example qualification suite.
+- M48.0: Bug Bounty v1 real field acceptance.
+- M48.1-M48.6: bounded CTF analysis, solving, observation, flag verification and acceptance.
+- M49.0: ASTP 1.0 release-candidate qualification.
+- RC hardening: expected-input CLI handling and release-evidence consistency validation.
+- M50.0: ASTP `1.0.0` stable promotion.
 
-## After the RC
+## After 1.0
 
-M49.0 is the final implementation milestone in this roadmap. Work after this point is release qualification and maintenance rather than another planned feature block:
+The ASTP 1.0 implementation roadmap is complete.
 
-1. run the full local regression suite;
-2. run the deterministic CTF RC suite;
-3. use the already generated real M48.0 Bug Bounty acceptance artifact;
-4. run `release-readiness` and retain the PASS YAML;
-5. tag/publish `1.0.0rc1` only after the operator reviews staged files and qualification evidence;
-6. promote to stable `1.0.0` only after RC soak/feedback and any resulting fixes.
+Future functionality belongs to maintenance or a separately scoped 1.1 roadmap. Stable maintenance must preserve policy, permit, evidence-integrity and replay-resistance invariants and must not silently expand active execution capability.

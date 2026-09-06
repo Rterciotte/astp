@@ -458,3 +458,11 @@ repository/docs/security model ───────────────┤
 `release-readiness` deserializes acceptance artifacts using their real schema models, verifies Bug Bounty action/permit accounting, requires deterministic CTF trace reproduction, checks the RC repository/documentation surface, and records qualification artifact hashes. The command is offline and cannot replay either assessment.
 
 This layer deliberately separates **implementation complete** from **release qualified**. A successful unit/regression suite is necessary but the RC gate also requires stored acceptance evidence from both operating modes.
+
+## M50.0 stable release boundary
+
+ASTP 1.0 stable is a promotion of the qualified RC line rather than a new execution-capability milestone.
+
+The stable release retains the M49.0 qualification model and its underlying M48.0 Bug Bounty and M48.6 CTF acceptance evidence.
+
+No release operation grants target authority, replays historical traffic, or bypasses the policy -> fresh permit -> bounded worker -> evidence chain.

@@ -34,3 +34,9 @@ Synthetic coverage exercises every declared CTF category. Retired/public corpora
 ## M49.0 — COMPLETE
 
 The 1.0 RC consolidates Bug Bounty and CTF workflows into the final documented product surface, qualification evidence, examples, installation/configuration, security model, and release checklist. `release-readiness` consumes the stored M48.0 and M48.6 acceptance outputs and produces the final offline RC gate.
+
+## M50.0 — STABLE
+
+ASTP 1.0 stable retains the bounded M48.6 CTF capability and the M49.0 qualification model.
+
+Stable promotion introduces no new CTF execution path. Local acceptance remains offline, while network-capable challenge observations continue to require declared challenge scope, normal ASTP policy and a fresh exact permit.

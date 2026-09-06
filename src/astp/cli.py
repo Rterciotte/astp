@@ -2771,14 +2771,14 @@ def release_readiness_command(
     ],
     output_path: Annotated[
         Path,
-        typer.Option("--output", "-o", help="Write M49.0 release-readiness YAML"),
+        typer.Option("--output", "-o", help="Write M50.0 release-readiness YAML"),
     ],
     repo_root: Annotated[
         Path,
         typer.Option("--repo-root", help="ASTP repository root"),
     ] = Path("."),
 ) -> None:
-    """Verify ASTP 1.0 RC qualification evidence and repository metadata offline."""
+    """Verify ASTP 1.0 stable qualification evidence and repository metadata offline."""
     try:
         report = evaluate_release_readiness(
             repo_root=repo_root,
@@ -2788,7 +2788,7 @@ def release_readiness_command(
     except (OSError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     write_release_readiness(report, output_path)
-    console.print(f"ASTP 1.0 RC readiness: {'PASS' if report.accepted else 'FAIL'}")
+    console.print(f"ASTP 1.0 stable readiness: {'PASS' if report.accepted else 'FAIL'}")
     for item in report.checks:
         console.print(f"- {'PASS' if item.passed else 'FAIL'} {item.name}: {item.detail}")
     console.print(f"Qualification artifacts: {len(report.qualification_artifacts)}")

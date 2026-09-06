@@ -92,9 +92,9 @@ def _ctf_report(
 
 def test_release_version_metadata_is_synchronized() -> None:
     info = release_info()
-    assert __version__ == RELEASE_VERSION == "1.0.0rc2"
-    assert info["version"] == "1.0.0rc2"
-    assert info["milestone"] == "M49.0"
+    assert __version__ == RELEASE_VERSION == "1.0.0"
+    assert info["version"] == "1.0.0"
+    assert info["milestone"] == "M50.0"
     assert info["network_performed"] is False
 
 

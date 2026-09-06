@@ -12,9 +12,9 @@ from astp import __version__
 from astp.bug_bounty_acceptance import BugBountyV1Acceptance
 from astp.ctf_acceptance import CtfAcceptanceResult
 
-RELEASE_MILESTONE = "M49.0"
-RELEASE_CHANNEL = "rc"
-RELEASE_VERSION = "1.0.0rc2"
+RELEASE_MILESTONE = "M50.0"
+RELEASE_CHANNEL = "stable"
+RELEASE_VERSION = "1.0.0"
 
 BUG_BOUNTY_REQUIRED_CHECKS = frozenset(
     {
@@ -173,7 +173,7 @@ def evaluate_release_readiness(
         repo_root / "docs" / "SECURITY_MODEL.md",
         repo_root / "docs" / "RELEASE_CHECKLIST.md",
         repo_root / "scripts" / "validate.ps1",
-        repo_root / "docs" / "release" / "M49.0.md",
+        repo_root / "docs" / "release" / "M50.0.md",
     )
 
     checks.append(_check("pyproject_present", pyproject.is_file(), str(pyproject)))
@@ -202,7 +202,7 @@ def evaluate_release_readiness(
             "release_surface_complete",
             not missing,
             (
-                "all required RC files are present"
+                "all required stable release files are present"
                 if not missing
                 else "missing: " + ", ".join(missing)
             ),

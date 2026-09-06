@@ -1,4 +1,4 @@
-# ASTP 1.0 RC security model
+# ASTP 1.0 stable security model
 
 ASTP is policy-first. Its safety boundary is not a disclaimer; it is part of the execution architecture.
 
@@ -25,6 +25,6 @@ Raw response body persistence is opt-in and bounded. Manifests bind artifacts by
 
 ## Release qualification
 
-`release-readiness` is offline. It validates the stored M48.0 Bug Bounty acceptance report and the M48.6 CTF acceptance report, checks package/repository version consistency, verifies the required 1.0 RC documentation surface, and records SHA-256 digests for the qualification reports.
+`release-readiness` is offline. It validates the stored M48.0 Bug Bounty acceptance report and the M48.6 CTF acceptance report, checks package/repository version consistency, verifies the required 1.0 stable documentation surface, and records SHA-256 digests for the qualification reports.
 
 The command does not contact a target and does not rerun historical network activity.
