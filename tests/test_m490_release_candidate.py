@@ -5,9 +5,18 @@ from pathlib import Path
 import yaml
 
 from astp import __version__
-from astp.bug_bounty_acceptance import BugBountyV1Acceptance
-from astp.ctf_acceptance import CtfAcceptanceMetrics, CtfAcceptanceResult
-from astp.release_readiness import RELEASE_VERSION, evaluate_release_readiness, release_info
+from astp.bug_bounty_acceptance import AcceptanceCheck, BugBountyV1Acceptance
+from astp.ctf_acceptance import (
+    CtfAcceptanceCaseResult,
+    CtfAcceptanceMetrics,
+    CtfAcceptanceResult,
+)
+from astp.release_readiness import (
+    BUG_BOUNTY_REQUIRED_CHECKS,
+    RELEASE_VERSION,
+    evaluate_release_readiness,
+    release_info,
+)
 
 
 def _write_yaml(path: Path, payload: dict) -> None:
@@ -15,9 +24,14 @@ def _write_yaml(path: Path, payload: dict) -> None:
 
 
 def _bug_bounty_report(path: Path, *, accepted: bool = True, permits: int = 1) -> Path:
+    checks = tuple(
+        AcceptanceCheck(name=name, passed=True, detail="qualified")
+        for name in sorted(BUG_BOUNTY_REQUIRED_CHECKS)
+    )
     report = BugBountyV1Acceptance(
         program_id="program-1",
         engagement_id="program-1",
+        checks=checks,
         accepted=accepted,
         evidence_records=1,
         target_records=1,
@@ -28,6 +42,24 @@ def _bug_bounty_report(path: Path, *, accepted: bool = True, permits: int = 1) -
     return path
 
 
+def _ctf_case(index: int, *, passed: bool = True) -> CtfAcceptanceCaseResult:
+    return CtfAcceptanceCaseResult(
+        challenge_id=f"case-{index}",
+        category="misc",
+        difficulty="rc",
+        expected_solved=True,
+        solved=True,
+        passed=passed,
+        candidate_count=1,
+        false_positive_flags=0,
+        hypothesis_count=1,
+        adapters_run=1,
+        elapsed_ms=1.0,
+        trace_sha256=f"{index:064x}",
+        trace_reproducible=True,
+    )
+
+
 def _ctf_report(
     path: Path,
     *,
@@ -35,9 +67,10 @@ def _ctf_report(
     reproducibility: float = 1.0,
     network_performed: bool = False,
 ) -> Path:
+    cases = tuple(_ctf_case(index) for index in range(8))
     metrics = CtfAcceptanceMetrics(
         total_cases=8,
-        passed_cases=8 if accepted else 7,
+        passed_cases=8,
         solved_cases=8,
         expected_solved_cases=8,
         solve_rate=1.0,
@@ -49,7 +82,7 @@ def _ctf_report(
     report = CtfAcceptanceResult(
         suite_id="rc-suite",
         accepted=accepted,
-        cases=(),
+        cases=cases,
         metrics=metrics,
         network_performed=network_performed,
     )
@@ -59,8 +92,8 @@ def _ctf_report(
 
 def test_release_version_metadata_is_synchronized() -> None:
     info = release_info()
-    assert __version__ == RELEASE_VERSION == "1.0.0rc1"
-    assert info["version"] == "1.0.0rc1"
+    assert __version__ == RELEASE_VERSION == "1.0.0rc2"
+    assert info["version"] == "1.0.0rc2"
     assert info["milestone"] == "M49.0"
     assert info["network_performed"] is False
 

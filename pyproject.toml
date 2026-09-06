@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "astp"
-version = "1.0.0rc1"
+version = "1.0.0rc2"
 description = "Policy-first automated security testing platform for authorized assessments and CTFs"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -41,3 +41,4 @@ target-version = ["py312"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-q --basetemp=.pytest-tmp"
+

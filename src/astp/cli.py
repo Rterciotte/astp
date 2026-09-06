@@ -4,9 +4,11 @@ import secrets
 import shutil
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
+import yaml
+from pydantic import BaseModel, ValidationError
 from rich.console import Console
 from rich.table import Table
 
@@ -142,10 +144,72 @@ DEFAULT_AUDIT_PATH = Path(".astp") / "audit.jsonl"
 DEFAULT_RUNTIME_DB_PATH = Path(".astp") / "runtime.db"
 
 
+def _input_error(exc: Exception) -> typer.BadParameter:
+    """Convert expected user-input failures into concise public CLI errors."""
+    if isinstance(exc, FileNotFoundError):
+        target = exc.filename or "input file"
+        return typer.BadParameter(f"input file does not exist: {target}")
+
+    if isinstance(exc, PermissionError):
+        target = exc.filename or "input file"
+        return typer.BadParameter(f"cannot read input file: {target}")
+
+    if isinstance(exc, UnicodeError):
+        return typer.BadParameter(f"input file is not valid UTF-8: {exc}")
+
+    if isinstance(exc, yaml.YAMLError):
+        return typer.BadParameter(f"invalid YAML: {exc}")
+
+    if isinstance(exc, ValidationError):
+        details: list[str] = []
+        for error in exc.errors(include_url=False):
+            location = ".".join(str(part) for part in error["loc"]) or "<root>"
+            details.append(f"{location}: {error['msg']}")
+        return typer.BadParameter("input validation failed: " + "; ".join(details))
+
+    if isinstance(exc, TypeError):
+        return typer.BadParameter(str(exc))
+
+    return typer.BadParameter(f"cannot read input: {exc}")
+
+
+def _load_yaml_input(path: Path) -> dict[str, Any]:
+    """Load YAML at the CLI boundary while preserving internal io.py behavior."""
+    try:
+        return load_yaml(path)
+    except (OSError, UnicodeError, yaml.YAMLError, TypeError) as exc:
+        raise _input_error(exc) from exc
+
+
+def _load_model_input[T: BaseModel](path: Path, model: type[T]) -> T:
+    """Load and validate a model at the CLI boundary without exposing expected tracebacks."""
+    try:
+        return load_model(path, model)
+    except (OSError, UnicodeError, yaml.YAMLError, TypeError, ValidationError) as exc:
+        raise _input_error(exc) from exc
+
+
+def _compile_scope_file_input(
+    source: Path,
+    *,
+    engagement_id: str,
+    engagement_name: str,
+):
+    """Compile a scope source while normalizing expected file-input errors for the CLI."""
+    try:
+        return compile_scope_file(
+            source,
+            engagement_id=engagement_id,
+            engagement_name=engagement_name,
+        )
+    except (OSError, UnicodeError) as exc:
+        raise _input_error(exc) from exc
+
+
 @app.command("show-engagement")
 def show_engagement(path: Path) -> None:
     """Validate and display a structured engagement YAML file."""
-    engagement = load_model(path, Engagement)
+    engagement = _load_model_input(path, Engagement)
     console.print(f"[bold]{engagement.name}[/bold] ({engagement.id})")
     console.print("\n[bold]Allowed scope[/bold]")
 
@@ -185,7 +249,7 @@ def compile_scope_command(
     ] = "Compiled Engagement",
 ) -> None:
     """Compile human-readable scope rules into a conservative structured engagement."""
-    result = compile_scope_file(
+    result = _compile_scope_file_input(
         source,
         engagement_id=engagement_id,
         engagement_name=engagement_name,
@@ -284,11 +348,11 @@ def authorize_test_command(
     ] = None,
 ) -> None:
     """Produce an auditable authorization decision without executing a test."""
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
-    approvals = [load_model(path, ApprovalArtifact) for path in (approval_path or [])]
+    engagement = _load_model_input(engagement_path, Engagement)
+    test = _load_model_input(test_path, TestDefinition)
+    approvals = [_load_model_input(path, ApprovalArtifact) for path in (approval_path or [])]
     operational_attestation = (
-        load_model(program_status_attestation, ProgramOperationalAttestation)
+        _load_model_input(program_status_attestation, ProgramOperationalAttestation)
         if program_status_attestation is not None
         else None
     )
@@ -424,11 +488,11 @@ def issue_permit_command(
     ] = DEFAULT_AUDIT_PATH,
 ) -> None:
     """Authorize an exact action and issue a short-lived signed execution permit."""
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
-    approvals = [load_model(path, ApprovalArtifact) for path in (approval_path or [])]
+    engagement = _load_model_input(engagement_path, Engagement)
+    test = _load_model_input(test_path, TestDefinition)
+    approvals = [_load_model_input(path, ApprovalArtifact) for path in (approval_path or [])]
     operational_attestation = (
-        load_model(program_status_attestation, ProgramOperationalAttestation)
+        _load_model_input(program_status_attestation, ProgramOperationalAttestation)
         if program_status_attestation is not None
         else None
     )
@@ -518,9 +582,9 @@ def verify_permit_command(
     ] = None,
 ) -> None:
     """Verify a signed permit against current policy and an exact requested action."""
-    permit = load_model(permit_path, SignedExecutionPermit)
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
+    permit = _load_model_input(permit_path, SignedExecutionPermit)
+    engagement = _load_model_input(engagement_path, Engagement)
+    test = _load_model_input(test_path, TestDefinition)
     try:
         result = verify_execution_permit(
             permit,
@@ -573,9 +637,9 @@ def consume_permit_command(
     ] = DEFAULT_AUDIT_PATH,
 ) -> None:
     """Verify and consume a permit exactly once; no network action is executed."""
-    permit = load_model(permit_path, SignedExecutionPermit)
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
+    permit = _load_model_input(permit_path, SignedExecutionPermit)
+    engagement = _load_model_input(engagement_path, Engagement)
+    test = _load_model_input(test_path, TestDefinition)
     _, keys = _permit_keyring()
     result = consume_execution_permit(
         permit,
@@ -758,9 +822,9 @@ def observe_http_command(
     ] = False,
 ) -> None:
     """Perform one permit-gated GET/HEAD observation and write redacted evidence."""
-    permit = load_model(permit_path, SignedExecutionPermit)
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
+    permit = _load_model_input(permit_path, SignedExecutionPermit)
+    engagement = _load_model_input(engagement_path, Engagement)
+    test = _load_model_input(test_path, TestDefinition)
     _, keys = _permit_keyring()
     output = evidence_path or (Path(".astp") / "evidence" / f"{permit.payload.permit_id}.json")
     try:
@@ -957,7 +1021,7 @@ def programs_command(
             "[yellow]No program catalog found. Run authenticated discovery first.[/yellow]"
         )
         raise typer.Exit(code=2)
-    workspace = load_model(catalog, BugBountyWorkspace)
+    workspace = _load_model_input(catalog, BugBountyWorkspace)
     table = Table(title=f"ASTP Programs — {workspace.platform}")
     table.add_column("#", justify="right")
     table.add_column("Active")
@@ -994,7 +1058,7 @@ def select_programs_command(
     / "program-catalog.yaml",
 ) -> None:
     """Select one or more synchronized programs as active workspace programs."""
-    workspace = load_model(catalog, BugBountyWorkspace)
+    workspace = _load_model_input(catalog, BugBountyWorkspace)
     selected = set(program_id or [])
     if not selected:
         table = Table(title="Select active bug bounty programs")
@@ -1137,7 +1201,7 @@ def review_program_command(
     ] = None,
 ) -> None:
     """Review blocking policy ambiguities without inventing program rules."""
-    workspace = load_model(catalog, BugBountyWorkspace)
+    workspace = _load_model_input(catalog, BugBountyWorkspace)
     item = next(
         (entry for entry in workspace.programs if entry.candidate.id == program_id),
         None,
@@ -1148,7 +1212,7 @@ def review_program_command(
         raise typer.BadParameter("program has not been normalized yet")
 
     program_path = Path(item.normalized_path)
-    program = load_model(program_path, BugBountyProgram)
+    program = _load_model_input(program_path, BugBountyProgram)
     if program.id != item.candidate.id:
         program.id = item.candidate.id
 
@@ -1257,7 +1321,7 @@ def attest_program_status_command(
     ] = None,
 ) -> None:
     """Record a short-lived operational-status attestation bound to a program revision."""
-    program = load_model(program_path, BugBountyProgram)
+    program = _load_model_input(program_path, BugBountyProgram)
     try:
         attestation = create_operational_attestation(
             program,
@@ -1287,7 +1351,7 @@ def compile_program_command(
     ] = None,
 ) -> None:
     """Compile a reviewed program into an executable ASTP engagement."""
-    program = load_model(program_path, BugBountyProgram)
+    program = _load_model_input(program_path, BugBountyProgram)
     try:
         engagement = compile_program(
             program,
@@ -1320,7 +1384,7 @@ def discover_targets_command(
     evidence = HttpObservationEvidence.model_validate_json(
         evidence_path.read_text(encoding="utf-8")
     )
-    engagement = load_model(engagement_path, Engagement)
+    engagement = _load_model_input(engagement_path, Engagement)
     result = discover_targets_from_evidence(
         evidence,
         engagement,
@@ -1358,8 +1422,8 @@ def merge_targets_command(
     """Merge discovered candidates into a deduplicated provenance-preserving registry."""
     from astp.target_discovery import TargetDiscoveryResult
 
-    engagement = load_model(engagement_path, Engagement)
-    discovery = load_model(discovery_path, TargetDiscoveryResult)
+    engagement = _load_model_input(engagement_path, Engagement)
+    discovery = _load_model_input(discovery_path, TargetDiscoveryResult)
     try:
         registry = load_or_create_registry(registry_path, engagement.id)
         merge_discovery(registry, discovery)
@@ -1394,16 +1458,16 @@ def plan_observations_command(
     ] = None,
 ) -> None:
     """Build a deterministic policy-evaluated plan; it never issues permits or executes."""
-    registry = load_model(registry_path, TargetRegistry)
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
+    registry = _load_model_input(registry_path, TargetRegistry)
+    engagement = _load_model_input(engagement_path, Engagement)
+    test = _load_model_input(test_path, TestDefinition)
     attestation = (
-        load_model(program_status_attestation, ProgramOperationalAttestation)
+        _load_model_input(program_status_attestation, ProgramOperationalAttestation)
         if program_status_attestation is not None
         else None
     )
     operational_lease = (
-        load_model(program_status_lease, ProgramOperationalLease)
+        _load_model_input(program_status_lease, ProgramOperationalLease)
         if program_status_lease is not None
         else None
     )
@@ -1443,7 +1507,7 @@ def build_work_queue_command(
     ] = 100,
 ) -> None:
     """Build a fair multi-program control-plane queue; no permits or network actions occur."""
-    plans = [load_model(path, ObservationPlan) for path in plan_paths]
+    plans = [_load_model_input(path, ObservationPlan) for path in plan_paths]
     try:
         queue = build_fair_work_queue(
             plans,
@@ -1478,7 +1542,7 @@ def validate_test_dsl_command(
     ] = None,
 ) -> None:
     """Validate Security Test DSL v0.1 without executing the test."""
-    definition = load_model(path, SecurityTestDefinition)
+    definition = _load_model_input(path, SecurityTestDefinition)
     console.print("Test DSL valid: YES")
     console.print(f"ID: {definition.id}")
     console.print(f"Risk: {definition.risk_class.value}")
@@ -1495,7 +1559,7 @@ def build_security_graph_command(
     output: Annotated[Path, typer.Option("--output", "-o", help="Write security graph YAML")],
 ) -> None:
     """Build a provenance graph from known targets and evidence relationships."""
-    registry = load_model(registry_path, TargetRegistry)
+    registry = _load_model_input(registry_path, TargetRegistry)
     graph = build_security_graph(registry)
     dump_yaml(graph, output)
     console.print(f"Graph nodes: {len(graph.nodes)}")
@@ -1512,7 +1576,7 @@ def build_hypotheses_command(
     """Create conservative observation hypotheses from the security graph."""
     from astp.security_graph import SecurityGraph
 
-    graph = load_model(graph_path, SecurityGraph)
+    graph = _load_model_input(graph_path, SecurityGraph)
     hypotheses = build_observation_hypotheses(graph)
     dump_yaml(hypotheses, output)
     console.print(f"Hypotheses: {len(hypotheses.hypotheses)}")
@@ -1527,7 +1591,7 @@ def correlate_findings_command(
     output: Annotated[Path, typer.Option("--output", "-o", help="Write correlated findings YAML")],
 ) -> None:
     """Deduplicate evidence-backed finding candidates without increasing proof state."""
-    raw = load_yaml(candidates_path)
+    raw = _load_yaml_input(candidates_path)
     rows = raw.get("candidates")
     if not isinstance(rows, list):
         raise typer.BadParameter("finding candidate YAML must contain a 'candidates' list")
@@ -1547,8 +1611,8 @@ def render_report_command(
     output: Annotated[Path, typer.Option("--output", "-o", help="Write Markdown report")],
 ) -> None:
     """Render an evidence-oriented Markdown report and permit-gated retest checklist."""
-    findings = load_model(findings_path, FindingSet)
-    engagement = load_model(engagement_path, Engagement)
+    findings = _load_model_input(findings_path, FindingSet)
+    engagement = _load_model_input(engagement_path, Engagement)
     rendered = render_markdown_report(engagement, findings)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(rendered, encoding="utf-8")
@@ -1582,19 +1646,19 @@ def broker_permit_command(
     """Re-authorize one queued action and issue one permit; never execute it."""
     from astp.work_queue import WorkQueue
 
-    queue = load_model(queue_path, WorkQueue)
+    queue = _load_model_input(queue_path, WorkQueue)
     item = next((row for row in queue.items if row.queue_id == queue_id), None)
     if item is None:
         raise typer.BadParameter(f"unknown queue item: {queue_id}")
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
+    engagement = _load_model_input(engagement_path, Engagement)
+    test = _load_model_input(test_path, TestDefinition)
     attestation = (
-        load_model(program_status_attestation, ProgramOperationalAttestation)
+        _load_model_input(program_status_attestation, ProgramOperationalAttestation)
         if program_status_attestation is not None
         else None
     )
     operational_lease = (
-        load_model(program_status_lease, ProgramOperationalLease)
+        _load_model_input(program_status_lease, ProgramOperationalLease)
         if program_status_lease is not None
         else None
     )
@@ -1633,7 +1697,7 @@ def init_planner_state_command(
     """Initialize durable planner state from a work queue."""
     from astp.work_queue import WorkQueue
 
-    queue = load_model(queue_path, WorkQueue)
+    queue = _load_model_input(queue_path, WorkQueue)
     initialize_planner_state(state_db, queue)
     console.print(f"Planner state initialized: {len(queue.items)} item(s)")
     console.print(f"State DB: {state_db}")
@@ -1683,7 +1747,7 @@ def map_surface_command(
     max_endpoints: Annotated[int, typer.Option("--max-endpoints", help="Hard endpoint cap")] = 250,
 ) -> None:
     """Build a bounded route map from already-discovered targets."""
-    registry = load_model(registry_path, TargetRegistry)
+    registry = _load_model_input(registry_path, TargetRegistry)
     try:
         result = build_surface_map(registry, max_endpoints=max_endpoints)
     except ValueError as exc:
@@ -1722,7 +1786,7 @@ def check_adapter_command(
     ] = "http.observation.v1",
 ) -> None:
     """Validate DSL-to-adapter compatibility without execution."""
-    definition = load_model(dsl_path, SecurityTestDefinition)
+    definition = _load_model_input(dsl_path, SecurityTestDefinition)
     registry = builtin_adapter_registry()
     try:
         ensure_adapter_compatible(registry.get(adapter_id), definition)
@@ -1745,7 +1809,7 @@ def prepare_autonomy_session_command(
     """Prepare a bounded autonomy session plan; execution remains disabled."""
     from astp.work_queue import WorkQueue
 
-    queue = load_model(queue_path, WorkQueue)
+    queue = _load_model_input(queue_path, WorkQueue)
     budget = SessionBudget(
         max_actions=max_actions,
         max_requests=max_requests,
@@ -1770,7 +1834,7 @@ def prioritize_targets_command(
     ] = None,
 ) -> None:
     """Rank already-discovered targets using deterministic non-exploit heuristics."""
-    registry = load_model(registry_path, TargetRegistry)
+    registry = _load_model_input(registry_path, TargetRegistry)
     rows = prioritize_registry(registry)
     table = Table(title="ASTP Surface Priorities")
     table.add_column("Score", justify="right")
@@ -1844,8 +1908,8 @@ def snapshot_policy_command(
     output: Annotated[Path, typer.Option("--output", "-o", help="Policy snapshot YAML")],
 ) -> None:
     """Capture a policy digest for later drift detection."""
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
+    engagement = _load_model_input(engagement_path, Engagement)
+    test = _load_model_input(test_path, TestDefinition)
     snapshot = capture_policy_snapshot(engagement, test)
     dump_yaml(snapshot, output)
     console.print(f"Policy snapshot: {snapshot.digest}")
@@ -1860,7 +1924,7 @@ def build_frontier_command(
     max_depth: Annotated[int, typer.Option("--max-depth", help="Maximum discovery depth")] = 3,
 ) -> None:
     """Build a bounded crawl frontier from discovered targets without requesting them."""
-    registry = load_model(registry_path, TargetRegistry)
+    registry = _load_model_input(registry_path, TargetRegistry)
     try:
         frontier = build_frontier(registry, max_depth=max_depth)
     except ValueError as exc:
@@ -1898,8 +1962,8 @@ def feedback_evidence_command(
     evidence = HttpObservationEvidence.model_validate_json(
         evidence_path.read_text(encoding="utf-8")
     )
-    engagement = load_model(engagement_path, Engagement)
-    registry = load_model(registry_path, TargetRegistry)
+    engagement = _load_model_input(engagement_path, Engagement)
+    registry = _load_model_input(registry_path, TargetRegistry)
     result = apply_evidence_feedback(
         evidence,
         engagement,
@@ -1969,10 +2033,10 @@ def run_observation_session_command(
         raise typer.BadParameter(
             "execution is disabled by default; pass --execute only for an authorized engagement"
         )
-    queue = load_model(queue_path, WorkQueue)
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
-    attestation = load_model(attestation_path, ProgramOperationalAttestation)
+    queue = _load_model_input(queue_path, WorkQueue)
+    engagement = _load_model_input(engagement_path, Engagement)
+    test = _load_model_input(test_path, TestDefinition)
+    attestation = _load_model_input(attestation_path, ProgramOperationalAttestation)
     active_key_id, keys = _permit_keyring()
     signing_key = keys[active_key_id]
     snapshot = capture_policy_snapshot(engagement, test)
@@ -2087,7 +2151,7 @@ def resume_session_check_command(
     / "planner.db",
 ) -> None:
     """Determine which queue items may be safely re-planned after interruption."""
-    queue = load_model(queue_path, WorkQueue)
+    queue = _load_model_input(queue_path, WorkQueue)
     entries = []
     for item in queue.items:
         try:
@@ -2126,7 +2190,7 @@ def analyze_javascript_command(
 
     result = analyze_javascript_file(artifact_path)
     if evidence_path is not None:
-        evidence = load_model(evidence_path, HttpObservationEvidence)
+        evidence = _load_model_input(evidence_path, HttpObservationEvidence)
         body = evidence.body_artifact
         if body is None or not body.persisted:
             raise typer.BadParameter("evidence does not reference a persisted body artifact")
@@ -2181,7 +2245,7 @@ def synthesize_findings_command(
     output: Annotated[Path, typer.Option("--output", "-o", help="Write correlated findings YAML")],
 ) -> None:
     """Turn eligible normalized signals into conservative correlated findings offline."""
-    summary = load_model(consumer_summary_path, EvidenceConsumerSummary)
+    summary = _load_model_input(consumer_summary_path, EvidenceConsumerSummary)
     findings = synthesize_consumer_findings(summary)
     dump_yaml(findings, output)
     console.print(f"Correlated findings: {len(findings.findings)}")
@@ -2219,11 +2283,11 @@ def assess_stored_evidence_command(
     ] = None,
 ) -> None:
     """Run the main offline assessment pipeline over already-collected evidence."""
-    registry = load_model(registry_path, TargetRegistry)
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
+    registry = _load_model_input(registry_path, TargetRegistry)
+    engagement = _load_model_input(engagement_path, Engagement)
+    test = _load_model_input(test_path, TestDefinition)
     attestation = (
-        load_model(operational_attestation, ProgramOperationalAttestation)
+        _load_model_input(operational_attestation, ProgramOperationalAttestation)
         if operational_attestation is not None
         else None
     )
@@ -2262,8 +2326,8 @@ def finalize_assessment_command(
     permits_consumed: Annotated[int, typer.Option("--permits-consumed", min=0)] = 0,
 ) -> None:
     """Build and immediately verify a portable final assessment package."""
-    findings = load_model(findings_path, FindingSet)
-    engagement = load_model(engagement_path, Engagement)
+    findings = _load_model_input(findings_path, FindingSet)
+    engagement = _load_model_input(engagement_path, Engagement)
     manifest = finalize_assessment_package(
         engagement_id=engagement.id,
         report_path=report_path,
@@ -2294,7 +2358,7 @@ def portfolio_plan_command(
     ],
 ) -> None:
     """Plan fair multi-program work without sharing policy, budgets, or evidence."""
-    programs = [load_model(path, BugBountyProgram) for path in program_paths]
+    programs = [_load_model_input(path, BugBountyProgram) for path in program_paths]
     try:
         plan = build_portfolio_plan(programs)
     except ValueError as exc:
@@ -2354,10 +2418,10 @@ def observe_authenticated_http_command(
     persist_body: Annotated[bool, typer.Option("--persist-body/--no-persist-body")] = False,
 ) -> None:
     """Perform one permit-gated authenticated observation using secret references."""
-    permit = load_model(permit_path, SignedExecutionPermit)
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
-    session = load_model(session_path, AuthSessionProfile)
+    permit = _load_model_input(permit_path, SignedExecutionPermit)
+    engagement = _load_model_input(engagement_path, Engagement)
+    test = _load_model_input(test_path, TestDefinition)
+    session = _load_model_input(session_path, AuthSessionProfile)
     _, keys = _permit_keyring()
     try:
         result = observe_authenticated_http(
@@ -2401,8 +2465,8 @@ def recovery_acceptance_command(
     ] = "recovery-acceptance",
 ) -> None:
     """Exercise fail-closed interruption/resume invariants without making requests."""
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
+    engagement = _load_model_input(engagement_path, Engagement)
+    test = _load_model_input(test_path, TestDefinition)
     report = run_recovery_acceptance(engagement, test, session_id=session_id)
     dump_yaml(report, output)
     console.print(f"Recovery acceptance: {'PASS' if report.accepted else 'FAIL'}")
@@ -2433,9 +2497,9 @@ def bug_bounty_v1_acceptance_command(
     ],
 ) -> None:
     """Verify the complete stored Bug Bounty v1 assessment chain offline."""
-    program = load_model(program_path, BugBountyProgram)
-    engagement = load_model(engagement_path, Engagement)
-    registry = load_model(registry_path, TargetRegistry)
+    program = _load_model_input(program_path, BugBountyProgram)
+    engagement = _load_model_input(engagement_path, Engagement)
+    registry = _load_model_input(registry_path, TargetRegistry)
     report = evaluate_bug_bounty_v1_acceptance(
         program=program,
         engagement=engagement,
@@ -2470,7 +2534,7 @@ def ctf_intake_command(
     ],
 ) -> None:
     """Validate CTF rules and hash declared local artifacts; no solver or network runs."""
-    challenge = load_model(challenge_path, ChallengeDefinition)
+    challenge = _load_model_input(challenge_path, ChallengeDefinition)
     result = inventory_challenge(challenge, challenge_path.parent)
     dump_yaml(result, output)
     console.print(f"Challenge: {challenge.id}")
@@ -2499,7 +2563,7 @@ def ctf_analyze_command(
     ],
 ) -> None:
     """Classify declared local artifacts and build a CTF hypothesis graph offline."""
-    challenge = load_model(challenge_path, ChallengeDefinition)
+    challenge = _load_model_input(challenge_path, ChallengeDefinition)
     result = analyze_ctf_challenge(challenge, challenge_path.parent)
     dump_yaml(result, output)
     console.print(f"Challenge: {challenge.id}")
@@ -2519,8 +2583,8 @@ def ctf_solve_local_command(
     ],
 ) -> None:
     """Run structured local-only CTF adapters; no shell and no network."""
-    challenge = load_model(challenge_path, ChallengeDefinition)
-    analysis = load_model(analysis_path, CtfAnalysisResult)
+    challenge = _load_model_input(challenge_path, ChallengeDefinition)
+    analysis = _load_model_input(analysis_path, CtfAnalysisResult)
     if analysis.challenge_id != challenge.id:
         raise typer.BadParameter("analysis belongs to a different challenge")
     try:
@@ -2550,8 +2614,8 @@ def ctf_verify_flags_command(
     ],
 ) -> None:
     """Verify candidate flags against the declared format and emit a reproducible solve trace."""
-    challenge = load_model(challenge_path, ChallengeDefinition)
-    solve = load_model(solve_path, CtfLocalSolveResult)
+    challenge = _load_model_input(challenge_path, ChallengeDefinition)
+    solve = _load_model_input(solve_path, CtfLocalSolveResult)
     try:
         result = verify_flag_candidates(challenge, solve)
     except ValueError as exc:
@@ -2637,10 +2701,10 @@ def ctf_observe_http_command(
     ] = False,
 ) -> None:
     """Perform one exact permit-gated GET/HEAD against a declared CTF endpoint."""
-    challenge = load_model(challenge_path, ChallengeDefinition)
-    permit = load_model(permit_path, SignedExecutionPermit)
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
+    challenge = _load_model_input(challenge_path, ChallengeDefinition)
+    permit = _load_model_input(permit_path, SignedExecutionPermit)
+    engagement = _load_model_input(engagement_path, Engagement)
+    test = _load_model_input(test_path, TestDefinition)
     normalized_method = http_method.upper()
     if normalized_method not in {"GET", "HEAD"}:
         raise typer.BadParameter("ctf-observe-http only supports GET or HEAD")
@@ -2787,8 +2851,8 @@ def evaluate_test_command(
     ] = False,
 ) -> None:
     """Evaluate whether a test would be allowed. It does not execute the test."""
-    engagement = load_model(engagement_path, Engagement)
-    test = load_model(test_path, TestDefinition)
+    engagement = _load_model_input(engagement_path, Engagement)
+    test = _load_model_input(test_path, TestDefinition)
 
     request = EvaluationRequest(
         target=target,

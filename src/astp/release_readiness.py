@@ -14,7 +14,23 @@ from astp.ctf_acceptance import CtfAcceptanceResult
 
 RELEASE_MILESTONE = "M49.0"
 RELEASE_CHANNEL = "rc"
-RELEASE_VERSION = "1.0.0rc1"
+RELEASE_VERSION = "1.0.0rc2"
+
+BUG_BOUNTY_REQUIRED_CHECKS = frozenset(
+    {
+        "program_review_complete",
+        "engagement_program_binding",
+        "target_registry_binding",
+        "target_registry_populated",
+        "stored_evidence_present",
+        "evidence_manifest_integrity",
+        "audit_chain_integrity",
+        "assessment_bundle_integrity",
+        "assessment_bundle_binding",
+        "network_permit_accounting",
+        "authorized_field_execution_recorded",
+    }
+)
 
 
 class ReleaseReadinessCheck(BaseModel):
@@ -75,6 +91,69 @@ def _pyproject_version(repo_root: Path) -> str:
     return project["version"]
 
 
+def _bug_bounty_checks_consistent(report: BugBountyV1Acceptance) -> tuple[bool, str]:
+    names = [item.name for item in report.checks]
+    unique_names = set(names)
+    missing = sorted(BUG_BOUNTY_REQUIRED_CHECKS - unique_names)
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    failed = sorted(item.name for item in report.checks if not item.passed)
+
+    consistent = (
+        not missing
+        and not duplicates
+        and not failed
+        and len(names) == len(BUG_BOUNTY_REQUIRED_CHECKS)
+        and report.accepted
+    )
+    detail_parts = [f"checks={len(names)}/{len(BUG_BOUNTY_REQUIRED_CHECKS)}"]
+    if missing:
+        detail_parts.append("missing=" + ",".join(missing))
+    if duplicates:
+        detail_parts.append("duplicates=" + ",".join(duplicates))
+    if failed:
+        detail_parts.append("failed=" + ",".join(failed))
+    if not report.accepted:
+        detail_parts.append("accepted=False")
+    if consistent:
+        detail_parts.append("all required M48.0 checks passed")
+    return consistent, "; ".join(detail_parts)
+
+
+def _ctf_case_consistency(report: CtfAcceptanceResult) -> tuple[bool, str]:
+    cases = report.cases
+    metrics = report.metrics
+    total_cases = len(cases)
+    passed_cases = sum(1 for item in cases if item.passed)
+    solved_cases = sum(1 for item in cases if item.solved)
+    expected_solved_cases = sum(1 for item in cases if item.expected_solved)
+    false_positive_flags = sum(item.false_positive_flags for item in cases)
+    reproducible_cases = sum(1 for item in cases if item.trace_reproducible)
+    trace_rate = reproducible_cases / total_cases if total_cases else 0.0
+    any_case_network = any(item.network_performed for item in cases)
+
+    consistent = (
+        total_cases > 0
+        and all(item.passed for item in cases)
+        and not any_case_network
+        and metrics.total_cases == total_cases
+        and metrics.passed_cases == passed_cases
+        and metrics.solved_cases == solved_cases
+        and metrics.expected_solved_cases == expected_solved_cases
+        and metrics.false_positive_flags == false_positive_flags
+        and abs(metrics.trace_reproducibility_rate - trace_rate) < 1e-12
+        and report.accepted == all(item.passed for item in cases)
+    )
+    detail = (
+        f"cases={total_cases}; passed={passed_cases}/{metrics.passed_cases}; "
+        f"solved={solved_cases}/{metrics.solved_cases}; "
+        f"expected={expected_solved_cases}/{metrics.expected_solved_cases}; "
+        f"false_positive_flags={false_positive_flags}/{metrics.false_positive_flags}; "
+        f"trace_rate={trace_rate:.3f}/{metrics.trace_reproducibility_rate:.3f}; "
+        f"case_network={any_case_network}; accepted={report.accepted}"
+    )
+    return consistent, detail
+
+
 def evaluate_release_readiness(
     *,
     repo_root: Path,
@@ -102,7 +181,7 @@ def evaluate_release_readiness(
 
     try:
         project_version = _pyproject_version(repo_root)
-    except (OSError, ValueError, tomllib.TOMLDecodeError) as exc:
+    except (OSError, ValueError, TypeError, tomllib.TOMLDecodeError) as exc:
         project_version = "unknown"
         checks.append(_check("version_metadata_parse", False, str(exc)))
     else:
@@ -133,10 +212,12 @@ def evaluate_release_readiness(
     bug_bounty: BugBountyV1Acceptance | None = None
     try:
         bug_bounty = BugBountyV1Acceptance.model_validate(_load_yaml(bug_bounty_acceptance_path))
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, TypeError, UnicodeError, yaml.YAMLError) as exc:
         checks.append(_check("bug_bounty_acceptance_parse", False, str(exc)))
     else:
         checks.append(_check("bug_bounty_acceptance_parse", True, "valid M48.0 acceptance report"))
+        bug_checks_ok, bug_checks_detail = _bug_bounty_checks_consistent(bug_bounty)
+        checks.append(_check("bug_bounty_check_consistency", bug_checks_ok, bug_checks_detail))
         checks.append(
             _check(
                 "bug_bounty_v1_accepted",
@@ -158,10 +239,12 @@ def evaluate_release_readiness(
     ctf: CtfAcceptanceResult | None = None
     try:
         ctf = CtfAcceptanceResult.model_validate(_load_yaml(ctf_acceptance_path))
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, TypeError, UnicodeError, yaml.YAMLError) as exc:
         checks.append(_check("ctf_acceptance_parse", False, str(exc)))
     else:
         checks.append(_check("ctf_acceptance_parse", True, "valid M48.6 acceptance report"))
+        ctf_cases_ok, ctf_cases_detail = _ctf_case_consistency(ctf)
+        checks.append(_check("ctf_case_consistency", ctf_cases_ok, ctf_cases_detail))
         checks.append(
             _check(
                 "ctf_v1_accepted",
@@ -179,8 +262,11 @@ def evaluate_release_readiness(
         checks.append(
             _check(
                 "ctf_acceptance_offline",
-                not ctf.network_performed,
-                f"network_performed={ctf.network_performed}",
+                not ctf.network_performed and not any(item.network_performed for item in ctf.cases),
+                (
+                    f"network_performed={ctf.network_performed}; "
+                    f"case_network={any(item.network_performed for item in ctf.cases)}"
+                ),
             )
         )
 
