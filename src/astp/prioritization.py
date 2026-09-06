@@ -35,6 +35,21 @@ def prioritize_registry(registry: TargetRegistry) -> list[PrioritizedTarget]:
             score += 10
             reasons.append(PriorityReason(label="observed_redirect", weight=10))
         path = urlsplit(entry.canonical_target).path or "/"
+        lower_path = path.lower()
+        if lower_path.endswith(".js"):
+            score += 15
+            reasons.append(PriorityReason(label="javascript_artifact", weight=15))
+        if "/api/" in lower_path or lower_path.startswith("/api/"):
+            score += 25
+            reasons.append(PriorityReason(label="api_surface", weight=25))
+        if lower_path.endswith(
+            (".svg", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".woff", ".woff2")
+        ):
+            score -= 20
+            reasons.append(PriorityReason(label="low_value_static_asset", weight=-20))
+        elif lower_path.endswith(".css"):
+            score -= 5
+            reasons.append(PriorityReason(label="stylesheet_asset", weight=-5))
         depth = len([part for part in path.split("/") if part])
         if depth <= 2:
             score += 5

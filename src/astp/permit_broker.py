@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from astp.authorization import AuthorizationRequest, authorize_test
 from astp.models import Decision, Engagement, ProgramOperationalAttestation, TestDefinition
+from astp.operational_lease import ProgramOperationalLease
 from astp.permits import SignedExecutionPermit, issue_execution_permit
 from astp.work_queue import WorkQueueItem
 
@@ -29,6 +30,7 @@ def broker_queue_item_permit(
     key_id: str = "local-v1",
     ttl_seconds: int = 120,
     operational_attestation: ProgramOperationalAttestation | None = None,
+    operational_lease: ProgramOperationalLease | None = None,
     semantic_exclusion_clears: set[str] | None = None,
     requested_rps: float | None = None,
     now: datetime | None = None,
@@ -47,15 +49,21 @@ def broker_queue_item_permit(
         http_method=item.method,
         requested_requests_per_second=requested_rps,
         program_operational_attestation=operational_attestation,
+        program_operational_lease=operational_lease,
         semantic_exclusion_clears=set(semantic_exclusion_clears or set()),
         semantic_exclusion_matches=set(),
         now=current,
     )
     authorization = authorize_test(engagement, test, request)
     if authorization.decision != Decision.ALLOW:
+        details = "; ".join(
+            check.message
+            for check in authorization.checks
+            if check.status.value in {"review", "fail"}
+        )
         raise ValueError(
             "permit broker re-authorization did not return ALLOW: "
-            f"{authorization.decision.value}"
+            f"{authorization.decision.value}" + (f" ({details})" if details else "")
         )
     permit = issue_execution_permit(
         engagement,

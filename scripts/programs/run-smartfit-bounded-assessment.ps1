@@ -104,8 +104,32 @@ try {
         "--program-status-attestation", $prep.attestation_path,
         "--rps", [string]$prep.requested_rps
     ) + $semanticArgs
-    & astp @assessArgs
-    if ($LASTEXITCODE -ne 0) { throw "Offline assessment/report pipeline failed." }
+    $assessOutput = & astp @assessArgs 2>&1
+    $assessExit = $LASTEXITCODE
+    $assessOutput | ForEach-Object {
+        if ([string]$_ -eq "Network execution: NOT PERFORMED") {
+            Write-Host "Assessment analysis phase network I/O: NOT PERFORMED"
+        }
+        else {
+            Write-Host $_
+        }
+    }
+    if ($assessExit -ne 0) { throw "Offline assessment/report pipeline failed." }
+
+    $statusFile = Get-ChildItem (Join-Path $base "execution-status-*.json") |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if (-not $statusFile) { throw "No execution status artifact found for provenance binding." }
+
+    Write-Host ""
+    Write-Host "Binding response-backed network provenance into assessment result/report..."
+    & python -m astp.field_assessment_provenance `
+        --status $statusFile.FullName `
+        --evidence-dir $prep.evidence_dir `
+        --result $prep.result_path `
+        --report $prep.report_path `
+        --output-dir $base
+    if ($LASTEXITCODE -ne 0) { throw "Response-backed network provenance binding failed closed." }
 
     Write-Host ""
     Write-Host "SMART_FIT_BOUNDED_ASSESSMENT: COMPLETE"

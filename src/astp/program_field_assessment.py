@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from astp.io import dump_yaml, load_model
 from astp.models import Engagement, RiskClass, TestDefinition, target_in_scope
+from astp.operational_lease import MAX_ASSESSMENT_LEASE_SECONDS, build_operational_lease
 from astp.program_preflight import ProgramPreflightReport
 from astp.target_registry import empty_registry, save_registry
 from astp.work_queue import WorkQueue, WorkQueueItem
@@ -27,6 +28,7 @@ class FieldAssessmentPreparation(BaseModel):
     preflight_report_hash: str
     engagement_path: str
     attestation_path: str
+    operational_lease_path: str | None = None
     test_path: str
     queue_path: str
     registry_path: str
@@ -151,6 +153,26 @@ def prepare_bounded_field_assessment(
     stamp = current.strftime("%Y%m%dT%H%M%SZ")
     assessment_id = f"{report.program_id}-{stamp}"
     base = root / ".astp" / "field-assessments" / assessment_id
+    operational_lease = None
+    operational_lease_path = None
+    try:
+        from astp.models import ProgramOperationalAttestation
+
+        attestation = load_model(attestation_path, ProgramOperationalAttestation)
+        operational_lease = build_operational_lease(
+            engagement,
+            attestation,
+            assessment_id=assessment_id,
+            preflight_report_hash=report.report_hash,
+            valid_from=current,
+            ttl_seconds=MAX_ASSESSMENT_LEASE_SECONDS,
+        )
+        operational_lease_path = base / f"operational-lease-{operational_lease.lease_hash}.yaml"
+    except (ValueError, OSError):
+        # Backward-compatible fixtures/legacy preflights may not contain a typed attestation.
+        # They remain usable, but receive no reusable operational lease.
+        operational_lease = None
+        operational_lease_path = None
     evidence_dir = base / "evidence"
     test_path = base / "test.yaml"
     queue_path = base / "queue.yaml"
@@ -175,6 +197,8 @@ def prepare_bounded_field_assessment(
     )
     registry = empty_registry(engagement.id, now=current)
     _persist_yaml_immutable(test_path, test)
+    if operational_lease is not None and operational_lease_path is not None:
+        _persist_yaml_immutable(operational_lease_path, operational_lease)
     _persist_yaml_immutable(queue_path, queue)
     if registry_path.exists():
         existing = registry_path.read_text(encoding="utf-8")
@@ -194,6 +218,7 @@ def prepare_bounded_field_assessment(
         "preflight_report_hash": report.report_hash,
         "engagement_path": str(engagement_path),
         "attestation_path": str(attestation_path),
+        "operational_lease_path": str(operational_lease_path) if operational_lease_path else None,
         "test_path": str(test_path),
         "queue_path": str(queue_path),
         "registry_path": str(registry_path),

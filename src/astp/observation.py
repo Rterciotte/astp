@@ -79,6 +79,16 @@ class RedirectObservation(BaseModel):
     followed: bool = False
 
 
+class BodyArtifactReference(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    persisted: bool = True
+    path: str
+    sha256: str
+    size_bytes: int
+    sensitivity: SensitivityLabel
+
+
 class HttpObservationEvidence(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -100,6 +110,7 @@ class HttpObservationEvidence(BaseModel):
     body_truncated: bool = False
     body_sha256: str
     body_preview: str | None = None
+    body_artifact: BodyArtifactReference | None = None
     redirect: RedirectObservation | None = None
     resolved_endpoint: ResolvedEndpoint | None = None
     transport_failure: str | None = None
@@ -134,6 +145,7 @@ class ObservationResult(BaseModel):
     evidence: HttpObservationEvidence
     evidence_path: Path
     manifest_path: Path
+    body_artifact_path: Path | None = None
 
 
 def observation_user_agent(engagement: Engagement) -> str:
@@ -310,6 +322,25 @@ def _write_evidence(path: Path, evidence: HttpObservationEvidence) -> None:
     os.replace(temporary, path)
 
 
+def _body_artifact_path(evidence_path: Path) -> Path:
+    return evidence_path.with_name(f"{evidence_path.stem}.body.bin")
+
+
+def _write_body_artifact(path: Path, body: bytes) -> None:
+    """Atomically persist exactly the bounded bytes observed from the response."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        with temporary.open("wb") as handle:
+            handle.write(body)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
 def _evidence_hash(payload: dict[str, object]) -> str:
     return hashlib.sha256(_canonical_json(payload)).hexdigest()
 
@@ -377,6 +408,7 @@ def observe_http(
     sensitivity: SensitivityLabel = SensitivityLabel.INTERNAL,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
+    persist_body: bool = False,
     now: datetime | None = None,
     transport: ObservationTransport | None = None,
 ) -> ObservationResult:
@@ -574,6 +606,18 @@ def observe_http(
         )
 
     observed_at = now or datetime.now(UTC)
+    body_artifact_path = None
+    body_artifact = None
+    if persist_body and normalized_method != "HEAD":
+        body_artifact_path = _body_artifact_path(evidence_path)
+        _write_body_artifact(body_artifact_path, body)
+        body_artifact = BodyArtifactReference(
+            path=str(body_artifact_path),
+            sha256=hashlib.sha256(body).hexdigest(),
+            size_bytes=len(body),
+            sensitivity=sensitivity,
+        )
+
     preliminary = HttpObservationEvidence(
         schema_version="2",
         evidence_id=str(uuid4()),
@@ -599,6 +643,7 @@ def observe_http(
             content_type,
             engagement.constraints.redaction.sensitive_body_fields,
         ),
+        body_artifact=body_artifact,
         redirect=redirect,
         resolved_endpoint=resolved_endpoint,
         transport_failure=None,
@@ -607,6 +652,17 @@ def observe_http(
     canonical_payload = preliminary.model_dump(mode="json", exclude={"evidence_hash"})
     evidence = preliminary.model_copy(update={"evidence_hash": _evidence_hash(canonical_payload)})
     _write_evidence(evidence_path, evidence)
+    if body_artifact_path is not None:
+        register_evidence(
+            manifest_path,
+            body_artifact_path,
+            evidence_type="http.observation.body",
+            evidence_id=evidence.evidence_id,
+            permit_id=permit.payload.permit_id,
+            action_id=action_id,
+            sensitivity=sensitivity,
+            now=now,
+        )
     manifest_entry = register_evidence(
         manifest_path,
         evidence_path,
@@ -632,5 +688,8 @@ def observe_http(
         now=now,
     )
     return ObservationResult(
-        evidence=evidence, evidence_path=evidence_path, manifest_path=manifest_path
+        evidence=evidence,
+        evidence_path=evidence_path,
+        manifest_path=manifest_path,
+        body_artifact_path=body_artifact_path,
     )

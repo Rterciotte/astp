@@ -35,6 +35,7 @@ def build_frontier(registry: TargetRegistry, *, max_depth: int = 3) -> CrawlFron
     items = [
         FrontierItem(target_id=entry.latest_candidate.id, target=entry.canonical_target, depth=0)
         for entry in registry.entries
+        if entry.latest_candidate.in_scope
     ]
     return CrawlFrontier(
         created_at=datetime.now(UTC),

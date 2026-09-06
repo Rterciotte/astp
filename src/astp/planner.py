@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from astp.authorization import AuthorizationRequest, authorize_test
 from astp.models import Decision, Engagement, ProgramOperationalAttestation, TestDefinition
+from astp.operational_lease import ProgramOperationalLease
 from astp.target_discovery import CandidateSafety
 from astp.target_registry import TargetRegistry
 
@@ -46,6 +47,7 @@ def build_observation_plan(
     *,
     semantic_exclusion_clears: set[str] | None = None,
     operational_attestation: ProgramOperationalAttestation | None = None,
+    operational_lease: ProgramOperationalLease | None = None,
     requested_rps: float | None = None,
     now: datetime | None = None,
 ) -> ObservationPlan:
@@ -72,6 +74,7 @@ def build_observation_plan(
             http_method="GET",
             requested_requests_per_second=requested_rps,
             program_operational_attestation=operational_attestation,
+            program_operational_lease=operational_lease,
             semantic_exclusion_clears=clears,
             semantic_exclusion_matches=set(),
             now=current,
@@ -84,10 +87,16 @@ def build_observation_plan(
             )
         elif result.decision in {Decision.INSUFFICIENT_CONTEXT, Decision.APPROVAL_REQUIRED}:
             status = PlanItemStatus.BLOCKED_CONTEXT
-            reason = "Authorization requires additional context or explicit approval."
+            blockers = [
+                check.message for check in result.checks if check.status.value in {"review", "fail"}
+            ]
+            reason = "; ".join(blockers) or (
+                "Authorization requires additional context or explicit approval."
+            )
         else:
             status = PlanItemStatus.BLOCKED_POLICY
-            reason = "Current engagement policy denies this proposed action."
+            blockers = [check.message for check in result.checks if check.status.value == "fail"]
+            reason = "; ".join(blockers) or "Current engagement policy denies this proposed action."
         items.append(
             ObservationPlanItem(
                 id=f"plan-{index:04d}",

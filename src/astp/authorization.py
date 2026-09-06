@@ -18,6 +18,7 @@ from astp.models import (
     TestDefinition,
     _match_rule,
 )
+from astp.operational_lease import ProgramOperationalLease, lease_is_valid
 
 
 class CheckStatus(str, Enum):
@@ -42,6 +43,7 @@ class AuthorizationRequest(BaseModel):
     semantic_exclusion_clears: set[str] = Field(default_factory=set)
     semantic_exclusion_matches: set[str] = Field(default_factory=set)
     program_operational_attestation: ProgramOperationalAttestation | None = None
+    program_operational_lease: ProgramOperationalLease | None = None
     now: datetime | None = None
 
 
@@ -264,6 +266,28 @@ def _check_program_operational_gate(
         seconds=binding.operational_attestation_max_age_seconds
     )
     if current >= valid_until:
+        lease = request.program_operational_lease
+        if lease is not None:
+            valid, lease_reason = lease_is_valid(lease, engagement, attestation, now=current)
+            if valid:
+                checks.append(
+                    AuthorizationCheck(
+                        name="program_operational_status",
+                        status=CheckStatus.PASS,
+                        message=(
+                            "Program remains authorized under bounded assessment operational "
+                            f"lease {lease.id} until {lease.valid_until.isoformat()}."
+                        ),
+                    )
+                )
+                return None, attestation.id, lease.valid_until
+            checks.append(
+                AuthorizationCheck(
+                    name="program_operational_lease",
+                    status=CheckStatus.REVIEW,
+                    message=lease_reason,
+                )
+            )
         checks.append(
             AuthorizationCheck(
                 name="program_operational_status",
