@@ -1,9 +1,9 @@
-# ASTP — M42.5-M44.4 overlay
+# ASTP — M44.5-M46.4 overlay
 
-This overlay adds the Physical Adaptive Assessment Loop.
+This overlay adds the strict Full Pentest Readiness Closure gate.
 
-Apply it over the validated M40.5-M42.4 tree, then run the normal ASTP validation and the M42.5-M44.4 offline harness. The explicit physical script is a separate operator action and targets only the isolated ASTP qualification lab.
+Apply it over the validated M42.5-M44.4 tree. Run the normal validation and offline harness first. Then evaluate the already-persisted physical evidence with `scripts/runtime-qualification/full-pentest-readiness.ps1`.
 
-Version: 0.431.0
+Version: 0.451.0
 
-See `docs/OVERLAY_README_M42_5_M44_4.md` and `docs/M42_5_M44_4_FIELD_TEST.md`.
+The readiness evaluator launches no containers and performs no network I/O.
