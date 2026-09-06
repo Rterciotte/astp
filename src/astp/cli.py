@@ -2777,6 +2777,13 @@ def nightly_campaign_command(
         bool,
         typer.Option("--persist-body/--no-persist-body"),
     ] = True,
+    program_ids: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--program-id",
+            help="Run only this catalog program ID; repeat to select multiple programs",
+        ),
+    ] = None,
 ) -> None:
     """Run a bounded multi-program Bug Bounty campaign from synchronized authenticated rules."""
     try:
@@ -2791,6 +2798,7 @@ def nightly_campaign_command(
             max_rounds=max_rounds,
             max_link_candidates=max_link_candidates,
             persist_body=persist_body,
+            program_ids=program_ids,
         )
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         raise typer.BadParameter(str(exc)) from exc

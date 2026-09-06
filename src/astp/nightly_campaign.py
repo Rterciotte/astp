@@ -308,6 +308,7 @@ def run_nightly_campaign(
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
     persist_body: bool = True,
+    program_ids: list[str] | None = None,
 ) -> NightlyCampaignSummary:
     """Run a bounded multi-program campaign from already synchronized program rules."""
     if max_programs < 1:
@@ -332,9 +333,20 @@ def run_nightly_campaign(
     if execute:
         key_id, keys = _permit_keyring()
 
+    selected_items = workspace.programs
+    if program_ids:
+        requested_ids = list(dict.fromkeys(program_id.strip() for program_id in program_ids))
+        if any(not program_id for program_id in requested_ids):
+            raise ValueError("program_ids must not contain empty values")
+        by_id = {item.candidate.id: item for item in workspace.programs}
+        unknown_ids = [program_id for program_id in requested_ids if program_id not in by_id]
+        if unknown_ids:
+            raise ValueError("unknown program ID(s): " + ", ".join(unknown_ids))
+        selected_items = [by_id[program_id] for program_id in requested_ids]
+
     test = _observation_test()
     program_results: list[NightlyProgramResult] = []
-    for item in workspace.programs[:max_programs]:
+    for item in selected_items[:max_programs]:
         try:
             result = _run_program(
                 item=item,

@@ -1,9 +1,53 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import pytest
+
 from astp import nightly_campaign as campaign_module
 from astp.models import Engagement, ScopeKind, ScopePolicy, ScopeRule
 from astp.nightly_campaign import NightlyProgramResult, build_scope_seed_registry
+
+
+def _workspace(*program_ids: str):
+    return SimpleNamespace(
+        platform="bughunt",
+        programs=[
+            SimpleNamespace(
+                candidate=SimpleNamespace(
+                    id=program_id,
+                    name=f"Program {program_id}",
+                )
+            )
+            for program_id in program_ids
+        ],
+    )
+
+
+def _stub_campaign_io(monkeypatch, workspace) -> None:
+    monkeypatch.setattr(
+        campaign_module,
+        "load_model",
+        lambda path, model: workspace,
+    )
+    monkeypatch.setattr(
+        campaign_module,
+        "dump_yaml",
+        lambda value, path: None,
+    )
+    monkeypatch.setattr(
+        campaign_module,
+        "_write_campaign_markdown",
+        lambda summary, path: None,
+    )
+
+
+def _completed_result(item) -> NightlyProgramResult:
+    return NightlyProgramResult(
+        program_id=item.candidate.id,
+        program_name=item.candidate.name,
+        status="completed",
+        reason="completed",
+    )
 
 
 def test_scope_seed_registry_uses_only_explicit_http_seedable_scope() -> None:
@@ -66,38 +110,8 @@ def test_nightly_campaign_isolates_expected_program_failure(
     tmp_path,
     monkeypatch,
 ) -> None:
-    first = SimpleNamespace(
-        candidate=SimpleNamespace(
-            id="program-one",
-            name="Program One",
-        )
-    )
-    second = SimpleNamespace(
-        candidate=SimpleNamespace(
-            id="program-two",
-            name="Program Two",
-        )
-    )
-    workspace = SimpleNamespace(
-        platform="bughunt",
-        programs=[first, second],
-    )
-
-    monkeypatch.setattr(
-        campaign_module,
-        "load_model",
-        lambda path, model: workspace,
-    )
-    monkeypatch.setattr(
-        campaign_module,
-        "dump_yaml",
-        lambda value, path: None,
-    )
-    monkeypatch.setattr(
-        campaign_module,
-        "_write_campaign_markdown",
-        lambda summary, path: None,
-    )
+    workspace = _workspace("program-one", "program-two")
+    _stub_campaign_io(monkeypatch, workspace)
 
     calls: list[str] = []
 
@@ -106,12 +120,7 @@ def test_nightly_campaign_isolates_expected_program_failure(
         calls.append(item.candidate.id)
         if item.candidate.id == "program-one":
             raise AttributeError("offline consumer mismatch")
-        return NightlyProgramResult(
-            program_id=item.candidate.id,
-            program_name=item.candidate.name,
-            status="completed",
-            reason="completed",
-        )
+        return _completed_result(item)
 
     monkeypatch.setattr(
         campaign_module,
@@ -137,3 +146,147 @@ def test_nightly_campaign_isolates_expected_program_failure(
     completed = summary.program_results[1]
     assert completed.program_id == "program-two"
     assert completed.status == "completed"
+
+
+def test_nightly_campaign_program_ids_process_only_selected_program(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    workspace = _workspace("program-one", "program-two", "program-three")
+    _stub_campaign_io(monkeypatch, workspace)
+
+    calls: list[str] = []
+
+    def fake_run_program(**kwargs):
+        item = kwargs["item"]
+        calls.append(item.candidate.id)
+        return _completed_result(item)
+
+    monkeypatch.setattr(campaign_module, "_run_program", fake_run_program)
+
+    summary = campaign_module.run_nightly_campaign(
+        catalog_path=tmp_path / "catalog.yaml",
+        output_directory=tmp_path / "campaigns",
+        execute=False,
+        program_ids=["program-two"],
+    )
+
+    assert calls == ["program-two"]
+    assert [row.program_id for row in summary.program_results] == ["program-two"]
+
+
+def test_nightly_campaign_program_ids_preserve_requested_order(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    workspace = _workspace("program-one", "program-two", "program-three")
+    _stub_campaign_io(monkeypatch, workspace)
+
+    calls: list[str] = []
+
+    def fake_run_program(**kwargs):
+        item = kwargs["item"]
+        calls.append(item.candidate.id)
+        return _completed_result(item)
+
+    monkeypatch.setattr(campaign_module, "_run_program", fake_run_program)
+
+    summary = campaign_module.run_nightly_campaign(
+        catalog_path=tmp_path / "catalog.yaml",
+        output_directory=tmp_path / "campaigns",
+        execute=False,
+        program_ids=["program-three", "program-one"],
+    )
+
+    assert calls == ["program-three", "program-one"]
+    assert [row.program_id for row in summary.program_results] == [
+        "program-three",
+        "program-one",
+    ]
+
+
+def test_nightly_campaign_program_ids_deduplicate_without_reexecution(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    workspace = _workspace("program-one", "program-two")
+    _stub_campaign_io(monkeypatch, workspace)
+
+    calls: list[str] = []
+
+    def fake_run_program(**kwargs):
+        item = kwargs["item"]
+        calls.append(item.candidate.id)
+        return _completed_result(item)
+
+    monkeypatch.setattr(campaign_module, "_run_program", fake_run_program)
+
+    summary = campaign_module.run_nightly_campaign(
+        catalog_path=tmp_path / "catalog.yaml",
+        output_directory=tmp_path / "campaigns",
+        execute=False,
+        program_ids=["program-two", "program-two", "program-one"],
+    )
+
+    assert calls == ["program-two", "program-one"]
+    assert [row.program_id for row in summary.program_results] == [
+        "program-two",
+        "program-one",
+    ]
+
+
+def test_nightly_campaign_unknown_program_id_fails_before_program_processing(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    workspace = _workspace("program-one", "program-two")
+    _stub_campaign_io(monkeypatch, workspace)
+
+    calls: list[str] = []
+
+    def fake_run_program(**kwargs):
+        item = kwargs["item"]
+        calls.append(item.candidate.id)
+        return _completed_result(item)
+
+    monkeypatch.setattr(campaign_module, "_run_program", fake_run_program)
+
+    with pytest.raises(ValueError, match=r"unknown program ID\(s\): missing-program"):
+        campaign_module.run_nightly_campaign(
+            catalog_path=tmp_path / "catalog.yaml",
+            output_directory=tmp_path / "campaigns",
+            execute=False,
+            program_ids=["missing-program"],
+        )
+
+    assert calls == []
+
+
+def test_nightly_campaign_without_program_ids_preserves_catalog_behavior(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    workspace = _workspace("program-one", "program-two", "program-three")
+    _stub_campaign_io(monkeypatch, workspace)
+
+    calls: list[str] = []
+
+    def fake_run_program(**kwargs):
+        item = kwargs["item"]
+        calls.append(item.candidate.id)
+        return _completed_result(item)
+
+    monkeypatch.setattr(campaign_module, "_run_program", fake_run_program)
+
+    summary = campaign_module.run_nightly_campaign(
+        catalog_path=tmp_path / "catalog.yaml",
+        output_directory=tmp_path / "campaigns",
+        execute=False,
+    )
+
+    assert calls == ["program-one", "program-two", "program-three"]
+    assert [row.program_id for row in summary.program_results] == [
+        "program-one",
+        "program-two",
+        "program-three",
+    ]
