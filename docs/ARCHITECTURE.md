@@ -409,3 +409,28 @@ ASTP now treats recovery and product acceptance as explicit offline gates.
 Recovery never turns an interruption into permission. A crash before/after permit issuance, after permit consumption, or during worker failure returns to a fail-closed state; a future network retry must be planned again and must receive a fresh permit. Evidence already durably written may be verified and analyzed offline, and report assembly may be repeated offline.
 
 Bug Bounty v1 acceptance validates one chain across reviewed program provenance, compiled engagement, target registry, evidence, evidence manifest, authorization audit, and final assessment bundle. The acceptance command performs no network requests and requires recorded authorized field execution plus one-to-one network-action/permit accounting before returning PASS.
+
+
+## M48.1–M48.4 CTF bounded solver architecture
+
+CTF mode now has a separate bounded analysis/execution branch. `ctf_analysis.py` classifies local artifacts and creates hypotheses without network access. `ctf_solver.py` owns built-in byte-oriented local adapters and the flag-candidate/solve-trace models; these adapters do not expose arbitrary shell execution. `ctf_network.py` adds the challenge-specific exact-endpoint gate before the existing HTTP observation worker is reached.
+
+```text
+ChallengeDefinition
+      |
+      +--> inventory/hash --------> artifact classification --------> hypotheses
+      |                                  |
+      |                                  +--> built-in local adapters
+      |                                            |
+      |                                            +--> candidate flags
+      |                                                     |
+      |                                                     +--> pattern verification + trace
+      |
+      +--> declared endpoint -- exact-match gate -- Engagement/Test -- signed permit
+                                                           |
+                                                           +--> existing observe_http boundary
+                                                                   |
+                                                                   +--> evidence/manifest/audit
+```
+
+The network branch deliberately reuses `observe_http` instead of introducing a CTF-specific transport bypass. Consequently permit signature/policy binding, single-use lifecycle, target rate limits, bounded body capture, redaction, evidence registration, and audit semantics remain shared with the Bug Bounty path.

@@ -25,7 +25,10 @@ from astp.browser_intake import capture_to_text, load_capture
 from astp.bug_bounty_acceptance import evaluate_bug_bounty_v1_acceptance
 from astp.circuit_breaker import FailureCircuitBreaker
 from astp.controlled_loop import run_controlled_queue
+from astp.ctf_analysis import CtfAnalysisResult, analyze_ctf_challenge
 from astp.ctf_mode import ChallengeDefinition, inventory_challenge
+from astp.ctf_network import ensure_ctf_http_target_authorized
+from astp.ctf_solver import CtfLocalSolveResult, run_local_ctf_solvers, verify_flag_candidates
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_consumers import EvidenceConsumerSummary, consume_evidence_directory
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
@@ -2475,6 +2478,177 @@ def ctf_intake_command(
         console.print(f"- BLOCKER: {blocker}")
     console.print("Network execution: NOT PERFORMED")
     console.print(f"Written to: {output}")
+
+
+@app.command("ctf-analyze")
+def ctf_analyze_command(
+    challenge_path: Annotated[Path, typer.Argument(help="CTF challenge definition YAML")],
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Write artifact classification and hypothesis graph YAML",
+        ),
+    ],
+) -> None:
+    """Classify declared local artifacts and build a CTF hypothesis graph offline."""
+    challenge = load_model(challenge_path, ChallengeDefinition)
+    result = analyze_ctf_challenge(challenge, challenge_path.parent)
+    dump_yaml(result, output)
+    console.print(f"Challenge: {challenge.id}")
+    console.print(f"Artifacts classified: {len(result.classifications)}")
+    console.print(f"Hypotheses: {len(result.hypothesis_graph.hypotheses)}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("ctf-solve-local")
+def ctf_solve_local_command(
+    challenge_path: Annotated[Path, typer.Argument(help="CTF challenge definition YAML")],
+    analysis_path: Annotated[Path, typer.Argument(help="CTF analysis YAML from ctf-analyze")],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write isolated local solver result YAML"),
+    ],
+) -> None:
+    """Run structured local-only CTF adapters; no shell and no network."""
+    challenge = load_model(challenge_path, ChallengeDefinition)
+    analysis = load_model(analysis_path, CtfAnalysisResult)
+    if analysis.challenge_id != challenge.id:
+        raise typer.BadParameter("analysis belongs to a different challenge")
+    try:
+        result = run_local_ctf_solvers(challenge, challenge_path.parent, analysis)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    dump_yaml(result, output)
+    console.print(f"Challenge: {challenge.id}")
+    console.print(f"Isolated adapters run: {len(result.adapters_run)}")
+    console.print(f"Flag candidates: {len(result.candidates)}")
+    console.print("External processes spawned: NO")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("ctf-verify-flags")
+def ctf_verify_flags_command(
+    challenge_path: Annotated[Path, typer.Argument(help="CTF challenge definition YAML")],
+    solve_path: Annotated[Path, typer.Argument(help="CTF local solver result YAML")],
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Write verified flag candidates and solve trace YAML",
+        ),
+    ],
+) -> None:
+    """Verify candidate flags against the declared format and emit a reproducible solve trace."""
+    challenge = load_model(challenge_path, ChallengeDefinition)
+    solve = load_model(solve_path, CtfLocalSolveResult)
+    try:
+        result = verify_flag_candidates(challenge, solve)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    dump_yaml(result, output)
+    console.print(f"Challenge: {challenge.id}")
+    console.print(f"Candidates checked: {len(result.verified)}")
+    console.print(f"Solved by declared flag format: {'YES' if result.solved else 'NO'}")
+    console.print(f"Solve trace events: {len(result.solve_trace)}")
+    console.print("Network execution: NOT PERFORMED")
+    console.print(f"Written to: {output}")
+
+
+@app.command("ctf-observe-http")
+def ctf_observe_http_command(
+    challenge_path: Annotated[Path, typer.Argument(help="CTF challenge definition YAML")],
+    permit_path: Annotated[Path, typer.Argument(help="Signed execution permit YAML")],
+    engagement_path: Annotated[
+        Path, typer.Argument(help="Engagement YAML used to issue the permit")
+    ],
+    test_path: Annotated[
+        Path, typer.Argument(help="Security test definition YAML used to issue the permit")
+    ],
+    target: Annotated[str, typer.Option("--target", help="Exact declared challenge endpoint")],
+    http_method: Annotated[str, typer.Option("--http-method", help="GET or HEAD")] = "GET",
+    requested_rps: Annotated[
+        float | None, typer.Option("--rps", help="Requested requests per second")
+    ] = None,
+    state_path: Annotated[Path, typer.Option("--state", help="Permit lifecycle state JSON")] = Path(
+        ".astp/ctf-permit-state.json"
+    ),
+    audit_path: Annotated[Path, typer.Option("--audit", help="Authorization/audit JSONL")] = Path(
+        ".astp/ctf-audit.jsonl"
+    ),
+    evidence_path: Annotated[Path, typer.Option("--evidence", help="HTTP evidence JSON")] = Path(
+        ".astp/ctf-http-evidence.json"
+    ),
+    manifest_path: Annotated[
+        Path, typer.Option("--manifest", help="Evidence manifest JSONL")
+    ] = Path(".astp/ctf-evidence-manifest.jsonl"),
+    rate_state_path: Annotated[
+        Path, typer.Option("--rate-state", help="Rate limiter state JSON")
+    ] = Path(".astp/ctf-rate-state.json"),
+    runtime_db_path: Annotated[
+        Path | None, typer.Option("--runtime-db", help="Optional durable runtime SQLite DB")
+    ] = None,
+    timeout_seconds: Annotated[
+        float, typer.Option("--timeout", help="HTTP timeout seconds")
+    ] = DEFAULT_TIMEOUT_SECONDS,
+    max_body_bytes: Annotated[
+        int, typer.Option("--max-body-bytes", help="Maximum response body bytes")
+    ] = DEFAULT_MAX_BODY_BYTES,
+    persist_body: Annotated[
+        bool,
+        typer.Option(
+            "--persist-body/--no-persist-body",
+            help="Persist bounded response body artifact",
+        ),
+    ] = False,
+) -> None:
+    """Perform one exact permit-gated GET/HEAD against a declared CTF endpoint."""
+    challenge = load_model(challenge_path, ChallengeDefinition)
+    permit = load_model(permit_path, SignedExecutionPermit)
+    engagement = load_model(engagement_path, Engagement)
+    test = load_model(test_path, TestDefinition)
+    normalized_method = http_method.upper()
+    if normalized_method not in {"GET", "HEAD"}:
+        raise typer.BadParameter("ctf-observe-http only supports GET or HEAD")
+    try:
+        canonical_target = ensure_ctf_http_target_authorized(challenge, target)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    _, keys = _permit_keyring()
+    try:
+        result = observe_http(
+            permit,
+            engagement,
+            test,
+            keys,
+            target=canonical_target,
+            method=normalized_method,
+            identity=None,
+            requested_rps=requested_rps,
+            state_path=state_path,
+            audit_path=audit_path,
+            evidence_path=evidence_path,
+            manifest_path=manifest_path,
+            rate_state_path=rate_state_path,
+            runtime_db_path=runtime_db_path,
+            timeout_seconds=timeout_seconds,
+            max_body_bytes=max_body_bytes,
+            persist_body=persist_body,
+        )
+    except (ObservationError, ValueError) as exc:
+        console.print(f"CTF HTTP observation completed: [bold]NO[/bold]\n{exc}")
+        raise typer.Exit(code=6) from exc
+    console.print(f"Challenge: {challenge.id}")
+    console.print(f"Status: {result.evidence.status_code}")
+    console.print(f"Evidence ID: {result.evidence.evidence_id}")
+    console.print("Declared endpoint match: YES")
+    console.print("Permit consumed: YES")
+    console.print("Network execution: one permit-gated CTF GET/HEAD")
+    console.print(f"Evidence: {result.evidence_path}")
 
 
 @app.command("doctor")

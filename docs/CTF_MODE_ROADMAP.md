@@ -1,74 +1,48 @@
 # ASTP CTF Mode — implementation roadmap
 
-CTF mode is now in implementation. M47.1 provides the first control-plane layer: structured challenge rules plus local artifact inventory. It deliberately does **not** execute a solver or contact challenge endpoints.
+CTF mode is now implemented through M48.4. The control plane remains rules-first: a challenge must explicitly permit the relevant automation, local artifacts stay inside the challenge directory, and network work is never implied by a declared endpoint.
 
-## Current implementation — M47.1
-
-`python -m astp.cli ctf-intake` accepts a `ChallengeDefinition` containing:
-
-- challenge ID, title, and category;
-- relative local artifact paths;
-- optional explicitly authorized endpoints;
-- expected flag pattern;
-- whether AI assistance is allowed;
-- whether automation is allowed;
-- network policy: `disabled` or `declared_endpoints_only`.
-
-The intake hashes local artifacts and records blockers. Artifact paths cannot escape the challenge directory. If rules prohibit AI or automation, autonomous solving is not eligible. No network action occurs.
+## Implemented path
 
 ```text
-Challenge YAML
-   -> rule validation
-   -> local artifact inventory + SHA-256
-   -> eligibility/blockers
-   -> NO solver / NO network (M47.1)
+ChallengeDefinition
+  -> ctf-intake: rules + local artifact SHA-256 inventory
+  -> ctf-analyze: artifact classifier + hypothesis graph
+  -> ctf-solve-local: bounded built-in adapters
+  -> ctf-verify-flags: candidate format verification + solve trace
+
+Optional network branch:
+  declared endpoint
+  -> exact endpoint validation
+  -> normal Engagement/Test policy
+  -> fresh signed execution permit
+  -> ctf-observe-http GET/HEAD
+  -> evidence + manifest + audit
 ```
 
-## Goal
+## M48.1 — Artifact classifier and hypothesis graph
 
-Given a challenge statement plus authorized artifacts/endpoints, build a hypothesis graph, choose safe analysis tools, execute bounded experiments in an isolated worker, recognize candidate flags, validate them against the declared format, and produce a reproducible solve trace/write-up.
+Classification uses local bytes, extensions, and file magic for text, JSON, JavaScript, HTML, ZIP, PE, ELF, images, PCAP/PCAPNG, and generic binary data. Each artifact maps to bounded eligible adapters. Hypotheses are deterministic and network hypotheses explicitly carry `requires_fresh_permit: true`.
 
-## Planned solver families
+## M48.2 — Isolated local solver adapters
 
-- web and API challenge reasoning;
-- reverse engineering and static/dynamic binary analysis;
-- binary exploitation inside challenge sandboxes;
-- cryptography and encoding analysis;
-- digital forensics, PCAP, disk/memory, and steganography;
-- OSINT when the event rules explicitly allow it;
-- cloud, mobile, hardware, and miscellaneous challenge adapters later.
+Current adapters are implemented inside ASTP and receive artifact bytes at the adapter boundary: `text-pattern`, `safe-strings`, `json-structure`, and `zip-inventory`. They do not expose arbitrary shell access, spawn external processes, or perform network requests. Local artifact processing is bounded by size/entry/candidate limits. If challenge rules disallow automation, the solver fails closed.
 
-## Remaining architecture
+## M48.3 — Web/API permit path
 
-```text
-Implemented:
-Challenge intake
-  -> rule/eligibility gate
-  -> local artifact inventory
+`ctf-observe-http` supports a single GET/HEAD. The requested URL must canonicalize to an exact value present in `authorized_endpoints`. That check is additive: standard ASTP engagement scope, test policy, signed permit verification, lifecycle consumption, rate limiting, evidence registration, and audit behavior still apply. A declared endpoint is therefore **not an execution permit**.
 
-Next:
-  -> artifact classifier
-  -> CTF hypothesis graph
-  -> solver planner
-  -> bounded capability/permit
-  -> isolated solver adapter
-  -> observation/result parser
-  -> flag candidate verifier
-  -> evidence + solve trace
-  -> next hypothesis
-  -> reproducible write-up
-```
+## M48.4 — Flag verification and solve trace
 
-The planner must learn from failed hypotheses instead of blindly running every tool. Tool adapters must expose structured capabilities and evidence, not raw unrestricted shell access.
+Solver candidates carry artifact path, adapter ID, and artifact SHA-256. `ctf-verify-flags` verifies them against `flag_pattern` and appends trace events. A local pattern match is represented as format verification; ASTP does not claim a competition-side submission succeeded unless a future explicit authorized submission capability records that result.
 
-## Network boundary
+## Remaining
 
-`declared_endpoints_only` is a declaration in the challenge contract, not an execution permit. Future network-capable CTF workers must still bind actions to exact authorized endpoints and ASTP's permit/lifecycle boundary. M47.1 never opens a network connection.
+### M48.5 — Category expansion
+Add richer reverse engineering, forensics, crypto/encoding, web/API reasoning, and selected sandboxed pwn families. External tools, when introduced, must be wrapped by explicit capability contracts rather than generic shell access.
 
-## Evaluation
+### M48.6 — Acceptance suite
+Use local synthetic labs and retired/public challenge corpora whose rules allow automation. Measure solve rate, false-positive flag rate, time-to-flag, resource cost, hypothesis count, and trace reproducibility by category and difficulty.
 
-CTF capability should be measured on reproducible public/retired challenge sets and local synthetic labs, tracking solve rate, time-to-flag, tool cost, false flag rate, number of hypotheses, and reproducibility. Difficulty and category coverage should be reported separately.
-
-## Important boundary
-
-CTF mode is for challenge environments and other explicitly authorized labs. Competition rules take precedence: some events allow automation/AI and others explicitly prohibit it.
+### M49.0 — 1.0 release candidate
+Consolidate the CTF and Bug Bounty workflows into the final documented product surface.

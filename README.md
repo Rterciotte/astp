@@ -575,9 +575,9 @@ Checks whether a test definition is compatible with an adapter. It does not exec
 ### `prepare-autonomy-session`
 Prepares a bounded autonomy session plan. Preparation does not execute network actions.
 
-# 3. CTF mode — foundation
+# 3. CTF mode — bounded solver path
 
-CTF mode is now in its first implementation stage. The current command performs **intake and local artifact inventory only**; it is not yet a general autonomous solver.
+CTF mode now has a bounded end-to-end foundation: rules intake, local artifact classification, a hypothesis graph, isolated local adapters, exact permit-gated HTTP observation for declared endpoints, and flag-candidate verification with a reproducible solve trace. It still does **not** expose unrestricted shell execution or implicit network access.
 
 ### `ctf-intake`
 
@@ -606,7 +606,47 @@ python -m astp.cli ctf-intake .\challenge.yaml --output .\ctf-intake.yaml
 
 If an event forbids AI or automation, ASTP records that as a blocker. Event rules always take precedence.
 
-See `docs/CTF_MODE_ROADMAP.md` for the remaining solver architecture.
+### `ctf-analyze`
+
+Classifies the declared local files and creates a hypothesis graph. This is offline.
+
+```powershell
+python -m astp.cli ctf-analyze .\challenge.yaml --output .\ctf-analysis.yaml
+```
+
+### `ctf-solve-local`
+
+Runs only ASTP's structured local adapters. It does not start a shell, spawn external processes, or contact the network. Current adapters cover text/pattern scanning, printable strings, JSON structure, and ZIP inventory.
+
+```powershell
+python -m astp.cli ctf-solve-local .\challenge.yaml .\ctf-analysis.yaml --output .\ctf-solve.yaml
+```
+
+### `ctf-verify-flags`
+
+Checks solver candidates against the flag pattern declared in the challenge definition and appends verification events to the solve trace. Matching the declared format is recorded separately from any server-side submission that a competition may require.
+
+```powershell
+python -m astp.cli ctf-verify-flags .\challenge.yaml .\ctf-solve.yaml --output .\ctf-verification.yaml
+```
+
+### `ctf-observe-http`
+
+Performs exactly one bounded GET/HEAD only when all normal ASTP permit checks pass **and** the target exactly matches one of the challenge's declared endpoints. A declaration in `challenge.yaml` is not itself a permit.
+
+```powershell
+python -m astp.cli ctf-observe-http `
+  .\challenge.yaml `
+  .\permit.yaml `
+  .\engagement.yaml `
+  .\test.yaml `
+  --target https://challenge.example/path `
+  --evidence .\ctf-http-evidence.json `
+  --manifest .\ctf-evidence-manifest.jsonl `
+  --audit .\ctf-audit.jsonl
+```
+
+See `docs/CTF_MODE_ROADMAP.md` for category expansion and the remaining acceptance work.
 
 # 4. Specialized field/preflight entry points
 
@@ -704,6 +744,10 @@ For convenience, every command currently exposed by `python -m astp.cli` is list
 | `check-adapter` | Checks test/adapter compatibility; offline. |
 | `prepare-autonomy-session` | Prepares bounded autonomy; no execution. |
 | `ctf-intake` | Validates CTF rules and inventories local challenge files; offline. |
+| `ctf-analyze` | Classifies local CTF artifacts and builds a hypothesis graph; offline. |
+| `ctf-solve-local` | Runs bounded built-in local adapters without shell/network. |
+| `ctf-verify-flags` | Verifies candidates against the declared flag format and emits a solve trace; offline. |
+| `ctf-observe-http` | Performs one exact permit-gated GET/HEAD to a declared CTF endpoint. |
 
 For exact options of any command:
 
@@ -752,6 +796,6 @@ A tool result does not automatically move a finding forward. The required eviden
 
 ASTP already contains a large policy-first pentest engine and has completed a real bounded bug-bounty HTTP field observation with permit consumption, exact response-body persistence, SHA-256 verification, and manifest registration.
 
-The current completion push now also exposes isolated multi-program portfolio planning, permit-gated authenticated observation using secret references, and a unified non-executing active-verifier planning pass. The next work focuses on crash/recovery acceptance and the complete bug-bounty v1 acceptance run before deeper CTF solver expansion.
+Bug Bounty v1 has now passed its real authorized end-to-end acceptance. CTF mode also exposes bounded artifact analysis, isolated local adapters, exact permit-gated HTTP observation, and reproducible flag verification. The next work is category expansion, CTF acceptance coverage, and the ASTP 1.0 release-candidate consolidation.
 
 The authoritative forward plan is `docs/NEXT_STEPS.md`. Milestone-specific change notes are kept in `docs/release/`.
