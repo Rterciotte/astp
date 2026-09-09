@@ -96,6 +96,23 @@ def test_proxy_rejects_wrong_scheme_host_or_port_without_io(tmp_path, target):
     assert counting.accounting.summary()["requests_forwarded"] == 0
 
 
+def test_proxy_path_prefix_requires_a_segment_boundary(tmp_path):
+    permit = _permit("http://example.test", allowed_path_prefix="/api")
+    counting = CountingProxy(permit, KEY, tmp_path / "ledger.db")
+    status, _, _, _ = counting.forward("GET", "http://example.test/api-evil", {}, b"")
+    assert status == 403
+    assert counting.accounting.summary()["requests_forwarded"] == 0
+
+
+@pytest.mark.parametrize("suffix", ["/api/../admin", "/api/%2e%2e/admin"])
+def test_proxy_path_prefix_rejects_dot_segment_escape(tmp_path, suffix):
+    permit = _permit("http://example.test", allowed_path_prefix="/api")
+    counting = CountingProxy(permit, KEY, tmp_path / "ledger.db")
+    status, _, _, _ = counting.forward("GET", "http://example.test" + suffix, {}, b"")
+    assert status == 403
+    assert counting.accounting.summary()["requests_forwarded"] == 0
+
+
 def test_proxy_blocks_out_of_scope_redirect_and_connect(tmp_path):
     with LocalAcceptanceLab() as lab:
         counting = CountingProxy(_permit(lab.base_url), KEY, tmp_path / "ledger.db")

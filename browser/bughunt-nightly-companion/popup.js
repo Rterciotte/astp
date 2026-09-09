@@ -4,9 +4,6 @@ const start = document.getElementById("start");
 
 async function refresh() {
   const response = await chrome.runtime.sendMessage({ type: "ASTP_STATUS" });
-  if (response?.astpNightlyToken && !token.value) {
-    token.value = response.astpNightlyToken;
-  }
   const row = response?.astpNightlyStatus || {};
   status.textContent = JSON.stringify(row, null, 2);
   start.disabled = Boolean(row.running);

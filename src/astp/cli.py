@@ -3021,6 +3021,10 @@ def orchestrator_start_command(
     )
     campaign_root = root / campaign_id
     if execute:
+        if platform == "local-bughunt" and os.environ.get("ASTP_ACCEPTANCE_MODE") != "local-only":
+            raise typer.BadParameter(
+                "local-bughunt physical execution requires ASTP_ACCEPTANCE_MODE=local-only"
+            )
         if docker_config is None or (not detector_request and platform != "local-bughunt"):
             raise typer.BadParameter(
                 "--execute requires --docker-config and at least one typed --detector-request"
@@ -3170,6 +3174,8 @@ def orchestrator_chaos_inject_command(
     acceptance_enabled: Annotated[bool, typer.Option("--acceptance-enabled")] = False,
 ) -> None:
     """Acceptance-only typed crash hook; exits after durable injection."""
+    if os.environ.get("ASTP_ACCEPTANCE_MODE") != "local-only":
+        raise typer.BadParameter("chaos injection requires ASTP_ACCEPTANCE_MODE=local-only")
     inject_chaos(root, campaign_id, point, target=target, enabled=acceptance_enabled)
     raise typer.Exit(86)
 

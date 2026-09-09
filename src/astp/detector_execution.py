@@ -435,19 +435,20 @@ class DetectorExecutionService:
                 self.journal.result_persisted(request, result)
             return result
         except Exception as exc:  # noqa: BLE001 - production boundary must persist failures
-            self.budgets.close_failed(run_id, 0, uncertain=False)
+            self.budgets.close_failed(run_id, 0, uncertain=True)
             result = DetectorRunResult(
                 detector_run_id=run_id,
                 action_id=action_id,
                 detector_id=request.detector.detector_id,
                 runtime_id=request.runtime_id,
                 target=request.target,
-                status=DetectorRunStatus.FAILED,
+                status=DetectorRunStatus.UNKNOWN_OUTCOME,
                 started_at=started,
                 finished_at=datetime.now(UTC),
                 authorization=permit,
+                accounting=DetectorAccounting(unknown_outcomes=0),
                 failure_category="adapter_failure",
-                retryable=True,
+                retryable=False,
                 message_redacted=type(exc).__name__,
             )
             self._persist_result(run_root, result)

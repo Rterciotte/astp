@@ -26,7 +26,11 @@ def build_campaign_manifest(
 
 
 def verify_campaign_manifest(manifest: CampaignManifest, root: Path) -> bool:
-    return all(
-        (root / name).is_file() and hashlib.sha256((root / name).read_bytes()).hexdigest() == digest
-        for name, digest in manifest.artifacts.items()
-    )
+    resolved_root = root.resolve()
+    for name, digest in manifest.artifacts.items():
+        candidate = (root / name).resolve()
+        if resolved_root not in candidate.parents or not candidate.is_file():
+            return False
+        if hashlib.sha256(candidate.read_bytes()).hexdigest() != digest:
+            return False
+    return True

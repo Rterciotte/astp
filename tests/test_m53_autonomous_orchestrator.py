@@ -127,6 +127,15 @@ def test_final_report_and_manifest_are_verifiable(tmp_path):
     assert report.is_file() and verify_campaign_manifest(manifest, root)
 
 
+def test_campaign_manifest_rejects_path_escape(tmp_path):
+    outside = tmp_path.parent / "outside-manifest-artifact.txt"
+    outside.write_text("outside", encoding="utf-8")
+    manifest = CampaignManifest(
+        campaign_id="c", report_state="final", artifacts={"../outside-manifest-artifact.txt": "x"}
+    )
+    assert not verify_campaign_manifest(manifest, tmp_path)
+
+
 def test_detector_run_accounting_reconciliation_is_exact(tmp_path):
     store = OrchestratorStore(tmp_path / "campaign.db")
     store.create_campaign(config())

@@ -235,10 +235,14 @@ def _hash_manifest(root: Path) -> None:
 
 def verify_full_night_manifest(root: Path) -> bool:
     manifest = json.loads((root / "full-night-manifest.json").read_text(encoding="utf-8"))
-    return all(
-        (root / name).is_file() and hashlib.sha256((root / name).read_bytes()).hexdigest() == digest
-        for name, digest in manifest["artifacts"].items()
-    )
+    resolved_root = root.resolve()
+    for name, digest in manifest["artifacts"].items():
+        candidate = (root / name).resolve()
+        if resolved_root not in candidate.parents or not candidate.is_file():
+            return False
+        if hashlib.sha256(candidate.read_bytes()).hexdigest() != digest:
+            return False
+    return True
 
 
 def run_full_night(
@@ -267,12 +271,22 @@ def run_full_night(
     ]
     environment = __import__("os").environ.copy()
     environment["ASTP_DETECTOR_RUN_KEY"] = signing_key
+    environment["ASTP_ACCEPTANCE_MODE"] = "local-only"
     completed = subprocess.run(
         command, capture_output=True, text=True, env=environment, check=False
     )
     if completed.returncode:
         raise RuntimeError(f"round 1 failed: {completed.stderr}")
     campaign_root = phase1 / campaign_id
+    pass1 = json.loads((campaign_root / "m53-pass1-report.json").read_text(encoding="utf-8"))
+    e_program = next(row for row in pass1["programs"] if row["program_id"] == "E")
+    dalfox_run_id = e_program["detector_run_ids"][0]
+    dalfox_result = json.loads(
+        (campaign_root / "runs" / dalfox_run_id / "result.json").read_text(encoding="utf-8")
+    )
+    if dalfox_result["accounting"]["forwarded"] <= 0:
+        raise RuntimeError("Dalfox produced no physical candidate evidence")
+    dalfox_candidate_id = f"candidate-{dalfox_run_id.removeprefix('detector-run-')}"
 
     restart_root = root / "process-restart"
     injected = subprocess.run(
@@ -326,7 +340,7 @@ def run_full_night(
         "E",
         "playwright.dom-navigation-field.v1",
         xss_target,
-        parent="candidate-dalfox-unattended",
+        parent=dalfox_candidate_id,
     )
     sqlmap = _request(
         campaign_id, "F", "sqlmap.detect-bounded.v1", "http://astp-m52-lab:8080/sql?id=1"
@@ -361,15 +375,9 @@ def run_full_night(
         ),
     )
     internal_results = [internal_service.execute(request) for request in internal_requests]
+    for path in inputs.values():
+        path.unlink(missing_ok=True)
 
-    pass1 = json.loads((campaign_root / "m53-pass1-report.json").read_text(encoding="utf-8"))
-    campaign_markdown = (campaign_root / "campaign-report.md").read_text(encoding="utf-8")
-    counters = {}
-    for line in campaign_markdown.splitlines():
-        if line.startswith("- ") and ": " in line:
-            key, value = line[2:].split(": ", 1)
-            if value.isdigit():
-                counters[key] = int(value)
     all_extra = external_results + internal_results
     extra_attempted = sum(row.accounting.attempted for row in all_extra)
     extra_forwarded = sum(row.accounting.forwarded for row in all_extra)
@@ -409,18 +417,24 @@ def run_full_night(
     findings = [row for row in all_extra if row.finding_id]
     pass1_completed = sum(row["status"] == "completed" for row in pass1_results)
     pass1_failed = sum(row["status"] == "failed" for row in pass1_results)
+    pass1_attempted = sum(row["accounting"]["attempted"] for row in pass1_results)
+    pass1_forwarded = sum(row["accounting"]["forwarded"] for row in pass1_results)
+    pass1_responses = sum(row["accounting"]["responses"] for row in pass1_results)
+    pass1_blocked = sum(row["accounting"]["blocked_before_io"] for row in pass1_results)
+    pass1_failed_after_io = sum(row["accounting"]["failed_after_io"] for row in pass1_results)
+    pass1_consumed = sum(row["status"] != "blocked_before_io" for row in pass1_results)
     report = FullNightReport(
         campaign_id=campaign_id,
-        detector_runs_started=counters.get("Started", 0) + len(all_extra),
+        detector_runs_started=pass1_consumed + len(all_extra),
         detector_runs_completed=pass1_completed + len(all_extra),
         detector_runs_failed=pass1_failed,
-        permits_issued=counters.get("Issued", 0) + len(all_extra),
-        permits_consumed=counters.get("Consumed", 0) + len(all_extra),
-        requests_attempted=counters.get("Attempted", 0) + extra_attempted,
-        requests_forwarded=counters.get("Forwarded", 0) + extra_forwarded,
-        responses_received=counters.get("Responses", 0) + extra_responses,
-        blocked_before_io=counters.get("Blocked before I/O", 0),
-        failed_after_io=counters.get("Failed after I/O", 0),
+        permits_issued=len(pass1_results) + len(all_extra),
+        permits_consumed=pass1_consumed + len(all_extra),
+        requests_attempted=pass1_attempted + extra_attempted,
+        requests_forwarded=pass1_forwarded + extra_forwarded,
+        responses_received=pass1_responses + extra_responses,
+        blocked_before_io=pass1_blocked,
+        failed_after_io=pass1_failed_after_io,
         finding_candidates=len(findings) + 1,
         findings_reproduced=sum(
             row.proof_after.value in {"reproduced", "confirmed"} for row in findings

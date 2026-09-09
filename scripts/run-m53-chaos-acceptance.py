@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -10,7 +11,9 @@ from astp.m53_chaos import ChaosPoint, verify_chaos_manifest
 
 
 def run(argv: list[str], expected: int = 0) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(argv, capture_output=True, text=True, check=False)
+    environment = os.environ.copy()
+    environment["ASTP_ACCEPTANCE_MODE"] = "local-only"
+    completed = subprocess.run(argv, capture_output=True, text=True, check=False, env=environment)
     if completed.returncode != expected:
         raise RuntimeError(
             f"command returned {completed.returncode}, expected {expected}: {completed.stderr}"

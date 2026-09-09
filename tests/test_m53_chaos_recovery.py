@@ -1,7 +1,9 @@
 import json
 
 import pytest
+from typer.testing import CliRunner
 
+from astp.cli import app
 from astp.m53_chaos import (
     ChaosPoint,
     RecoveryClass,
@@ -21,6 +23,24 @@ def test_chaos_is_disabled_by_default(tmp_path):
             target=None,
             enabled=False,
         )
+
+
+def test_chaos_cli_requires_acceptance_environment(tmp_path):
+    result = CliRunner().invoke(
+        app,
+        [
+            "orchestrator-chaos-inject",
+            "--campaign-id",
+            "campaign",
+            "--point",
+            ChaosPoint.AFTER_EVIDENCE_BEFORE_PROOF.value,
+            "--root",
+            str(tmp_path),
+            "--acceptance-enabled",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "ASTP_ACCEPTANCE_MODE=local-only" in result.output
 
 
 @pytest.mark.parametrize(

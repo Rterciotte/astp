@@ -337,7 +337,11 @@ def consolidate_chaos(root: Path, campaign_id: str) -> ChaosCampaignReport:
 
 def verify_chaos_manifest(root: Path) -> bool:
     manifest = json.loads((root / "chaos-manifest.json").read_text())
-    return all(
-        (root / name).is_file() and hashlib.sha256((root / name).read_bytes()).hexdigest() == digest
-        for name, digest in manifest["artifacts"].items()
-    )
+    resolved_root = root.resolve()
+    for name, digest in manifest["artifacts"].items():
+        candidate = (root / name).resolve()
+        if resolved_root not in candidate.parents or not candidate.is_file():
+            return False
+        if hashlib.sha256(candidate.read_bytes()).hexdigest() != digest:
+            return False
+    return True

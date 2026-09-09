@@ -2,6 +2,7 @@
 __pycache__/
 .pytest_cache/
 .ruff_cache/
+.black-cache/
 *.pyc
 *.pyo
 *.egg-info/
@@ -10,4 +11,6 @@ build/
 .env
 .vscode/settings.local.json
 .astp/
+OVERLAY.txt
+*.bak
 .pytest-tmp/

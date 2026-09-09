@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import http.client
 import os
+import posixpath
 import sqlite3
 import threading
 import time
@@ -10,7 +11,7 @@ from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar, Self
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import unquote, urljoin, urlsplit
 
 from astp.detector_run_permit import SignedDetectorRunPermit
 
@@ -161,7 +162,19 @@ class CountingProxy:
         allowed_origin = f"{allowed.scheme}://{allowed.hostname}:{allowed.port or (443 if allowed.scheme == 'https' else 80)}"
         if parsed.scheme != "http" or origin != allowed_origin:
             return request_id, "origin/scheme/port rejected"
-        if not parsed.path.startswith(self.permit.payload.allowed_path_prefix):
+        decoded_path = unquote(parsed.path)
+        normalized_path = posixpath.normpath(decoded_path)
+        if decoded_path.endswith("/") and normalized_path != "/":
+            normalized_path += "/"
+        allowed_path = (
+            posixpath.normpath(unquote(self.permit.payload.allowed_path_prefix)).rstrip("/") or "/"
+        )
+        path_allowed = (
+            allowed_path == "/"
+            or normalized_path == allowed_path
+            or normalized_path.startswith(allowed_path + "/")
+        )
+        if not path_allowed:
             return request_id, "path outside authorized prefix"
         if method.upper() not in self.permit.payload.allowed_methods:
             return request_id, "method rejected"

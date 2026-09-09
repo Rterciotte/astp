@@ -129,6 +129,9 @@ class DockerDetectorAdapter:
             raise DetectorAdapterError("runtime_binding", retryable=False)
         if runtime.image_digest != request.runtime_digest:
             raise DetectorAdapterError("runtime_digest_drift", retryable=False)
+        inspected = self._run(["docker", "image", "inspect", "--format", "{{.Id}}", runtime.image])
+        if inspected.returncode or inspected.stdout.strip() != runtime.image_digest:
+            raise DetectorAdapterError("runtime_image_identity_drift", retryable=False)
 
         suffix = permit.payload.detector_run_id.removeprefix("detector-run-")
         worker_network = f"astp-worker-{suffix}"

@@ -1,7 +1,16 @@
+import subprocess
+
 from typer.testing import CliRunner
 
-from astp.cli import app
+from astp.cli import _local_bughunt_detector_requests, app
+from astp.detector_execution import DetectorExecutionService
+from astp.docker_detector_adapter import (
+    DockerDetectorAdapter,
+    DockerDetectorConfig,
+    DockerDetectorRuntime,
+)
 from astp.m53_full_night import FullNightReport, _hash_manifest, verify_full_night_manifest
+from astp.platform_adapters import LocalBughuntAdapter
 
 
 def _report() -> FullNightReport:
@@ -40,3 +49,56 @@ def test_full_night_manifest_verifies_offline_and_detects_tampering(tmp_path) ->
     assert result.exit_code == 0 and "valid: YES" in result.output
     artifact.write_text('{"rounds":5}', encoding="utf-8")
     assert not verify_full_night_manifest(tmp_path)
+
+
+def test_full_night_manifest_rejects_path_escape(tmp_path) -> None:
+    outside = tmp_path.parent / "outside.txt"
+    outside.write_text("outside", encoding="utf-8")
+    (tmp_path / "full-night-manifest.json").write_text(
+        '{"artifacts":{"../outside.txt":"not-used"}}', encoding="utf-8"
+    )
+    assert not verify_full_night_manifest(tmp_path)
+
+
+def test_local_physical_modes_require_explicit_acceptance_environment(tmp_path) -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "orchestrator-start",
+            "--campaign-id",
+            "blocked",
+            "--platform",
+            "local-bughunt",
+            "--all-ready",
+            "--execute",
+            "--docker-config",
+            str(tmp_path / "missing.json"),
+        ],
+        env={"ASTP_DETECTOR_RUN_KEY": "x" * 32},
+    )
+    assert result.exit_code != 0
+    assert "ASTP_ACCEPTANCE_MODE=local-only" in result.output
+
+
+def test_docker_runtime_rejects_retagged_image_before_launch(tmp_path, monkeypatch) -> None:
+    request = _local_bughunt_detector_requests(
+        "campaign", LocalBughuntAdapter.authenticated_fixture()
+    )[0]
+    runtime = DockerDetectorRuntime(
+        image="astp/nuclei-worker:m52", image_digest=request.runtime_digest
+    )
+    adapter = DockerDetectorAdapter(
+        DockerDetectorConfig(
+            target_network="acceptance-network",
+            runtimes={request.detector.detector_id: runtime},
+        ),
+        "x" * 32,
+    )
+    monkeypatch.setattr(
+        adapter,
+        "_run",
+        lambda *args, **kwargs: subprocess.CompletedProcess([], 0, "sha256:different\n", ""),
+    )
+    result = DetectorExecutionService(tmp_path, "x" * 32, (adapter,)).execute(request)
+    assert result.failure_category == "runtime_image_identity_drift"
+    assert result.accounting.forwarded == 0

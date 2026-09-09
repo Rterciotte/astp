@@ -205,7 +205,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           currentWindow: true,
         });
         if (!tab?.id) throw new Error("No active browser tab");
-        await chrome.storage.local.set({ astpNightlyToken: message.token });
         await runSync({ token: message.token, tabId: tab.id });
       } catch (error) {
         await setStatus({
@@ -221,10 +220,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "ASTP_STATUS") {
     (async () => {
-      const stored = await chrome.storage.local.get([
-        "astpNightlyStatus",
-        "astpNightlyToken",
-      ]);
+      const stored = await chrome.storage.local.get(["astpNightlyStatus"]);
       sendResponse(stored);
     })();
     return true;
