@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from http.client import HTTPConnection
 
@@ -62,6 +63,21 @@ def test_proxy_forwards_exact_origin_and_enforces_budget_before_io(tmp_path):
         "response_bytes": 24,
     }
     assert "never-log-this" not in (tmp_path / "ledger.db").read_bytes().decode(errors="ignore")
+
+
+def test_authoritative_forwarding_timestamps_include_rate_limit_wait(tmp_path):
+    ledger = tmp_path / "rate-ledger.db"
+    with LocalAcceptanceLab() as lab:
+        counting = CountingProxy(_permit(lab.base_url, max_rps=4), KEY, ledger)
+        with RunningCountingProxy(counting) as proxy:
+            assert _proxy_get(proxy.url, lab.base_url + "/health")[0] == 404
+            assert _proxy_get(proxy.url, lab.base_url + "/health")[0] == 404
+    with sqlite3.connect(ledger) as db:
+        timestamps = [
+            datetime.fromisoformat(row[0])
+            for row in db.execute("SELECT started_at FROM requests ORDER BY started_at")
+        ]
+    assert (timestamps[1] - timestamps[0]).total_seconds() >= 0.25
 
 
 @pytest.mark.parametrize(

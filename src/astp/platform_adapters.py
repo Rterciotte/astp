@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Protocol
 
 from pydantic import BaseModel
@@ -58,3 +59,130 @@ def classify_bughunt_page(path: str, text: str, selectors: set[str]) -> BrowserP
         page_kind="listing" if listing else "unknown",
         reason="page lacks bounded semantic detail readiness",
     )
+
+
+class LocalSpaScenario(StrEnum):
+    ROUTE_FIRST = "route_first"
+    DOM_FIRST = "dom_first"
+    STALE_LISTING = "stale_listing"
+    LOADING = "loading"
+    SLOW_DETAIL = "slow_detail"
+    DETAIL_FAILURE = "detail_failure"
+    TIMEOUT = "timeout"
+    RECOVERY = "recovery"
+
+
+class LocalBughuntProgram(PlatformProgram):
+    scenario: LocalSpaScenario
+    automation_allowed: bool = True
+    semantic_excluded_targets: tuple[str, ...] = ()
+    rate_limit_rps: float = 1.0
+
+
+class LocalBughuntAdapter:
+    """Deterministic authenticated SPA fixture; it never stores login credentials."""
+
+    def __init__(self, session: AuthenticatedSessionHandle) -> None:
+        if not session.locally_protected or not session.opaque_ref:
+            raise ValueError("a locally protected authenticated session is required")
+        self.session = session
+        self.session_valid = True
+        scenarios = tuple(LocalSpaScenario)
+        self._programs = tuple(
+            LocalBughuntProgram(
+                platform="local-bughunt",
+                program_id=chr(ord("A") + index),
+                name=f"Acceptance {chr(ord('A') + index)}",
+                revision="1",
+                operational=index != 4,
+                ready=True,
+                scenario=scenario,
+                automation_allowed=index != 1,
+                semantic_excluded_targets=(
+                    ("http://astp-m52-lab:8080/excluded",) if index == 2 else ()
+                ),
+            )
+            for index, scenario in enumerate(scenarios)
+        )
+        self._attempts: dict[str, int] = {}
+
+    @classmethod
+    def authenticated_fixture(cls) -> LocalBughuntAdapter:
+        return cls(
+            AuthenticatedSessionHandle(
+                provider="local-bughunt",
+                opaque_ref="session-ref-local-protected",
+                created_at=datetime.now(UTC),
+            )
+        )
+
+    def discover_programs(self) -> tuple[PlatformProgram, ...]:
+        self._require_session()
+        return self._programs
+
+    def fetch_program_detail(self, program_id: str) -> PlatformProgram:
+        self._require_session()
+        program = self._get(program_id)
+        attempt = self._attempts.get(program_id, 0) + 1
+        self._attempts[program_id] = attempt
+        path, text, selectors = self._spa_state(program, attempt)
+        readiness = classify_bughunt_page(path, text, selectors)
+        if not readiness.ready:
+            raise TimeoutError(readiness.reason)
+        return program
+
+    def refresh_program(self, program_id: str) -> PlatformProgram:
+        program = self._get(program_id)
+        if program_id == "E":
+            program = program.model_copy(update={"operational": True})
+        if program_id == "F":
+            program = program.model_copy(update={"revision": "2"})
+        self._programs = tuple(
+            program if row.program_id == program_id else row for row in self._programs
+        )
+        return program
+
+    def get_operational_status(self, program_id: str) -> bool | None:
+        return self._get(program_id).operational
+
+    def get_revision(self, program_id: str) -> str:
+        return self._get(program_id).revision
+
+    def supports_authenticated_browser_session(self) -> bool:
+        return True
+
+    def expire_session(self) -> None:
+        self.session_valid = False
+
+    def _require_session(self) -> None:
+        if not self.session_valid:
+            raise PermissionError("WAITING_PREREQUISITE: authenticated session expired")
+
+    def _get(self, program_id: str) -> LocalBughuntProgram:
+        try:
+            return next(row for row in self._programs if row.program_id == program_id)
+        except StopIteration as exc:
+            raise ValueError("unknown local program") from exc
+
+    @staticmethod
+    def _spa_state(program: LocalBughuntProgram, attempt: int) -> tuple[str, str, set[str]]:
+        detail_path = f"/program/{program.program_id}"
+        detail = (program.name + " scope regras recompensas política detalhes " * 12).strip()
+        if program.scenario is LocalSpaScenario.DETAIL_FAILURE:
+            raise ConnectionError("local detail navigation failed")
+        if program.scenario is LocalSpaScenario.TIMEOUT:
+            return detail_path, "loading", {"loading-skeleton"}
+        if (
+            program.scenario
+            in {
+                LocalSpaScenario.ROUTE_FIRST,
+                LocalSpaScenario.STALE_LISTING,
+                LocalSpaScenario.LOADING,
+                LocalSpaScenario.SLOW_DETAIL,
+            }
+            and attempt == 1
+        ):
+            return detail_path, "Programas disponíveis", {"program-list"}
+        if program.scenario is LocalSpaScenario.DOM_FIRST and attempt == 1:
+            return "/programs", detail, {"program-detail"}
+        return detail_path, detail, {"program-detail"}

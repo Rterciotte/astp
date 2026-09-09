@@ -199,15 +199,22 @@ class CountingProxy:
                 denial.encode(),
                 request_id,
             )
-        self.accounting.start(
-            request_id, payload.permit_id, payload.detector_run_id, method, target, "forwarding"
-        )
         try:
             interval = 1.0 / payload.max_rps
             with self.lock:
                 delay = max(0.0, self.last_forwarded + interval - time.monotonic())
             if delay:
                 time.sleep(delay)
+            self.accounting.start(
+                request_id,
+                payload.permit_id,
+                payload.detector_run_id,
+                method,
+                target,
+                "forwarding",
+            )
+            with self.lock:
+                self.last_forwarded = time.monotonic()
             parsed = urlsplit(target)
             clean_headers = {
                 name: value
@@ -223,7 +230,6 @@ class CountingProxy:
             response_body = response.read(1_048_576)
             response_headers = dict(response.getheaders())
             with self.lock:
-                self.last_forwarded = time.monotonic()
                 self.circuit_failures = 0
             if 300 <= response.status < 400 and response_headers.get("Location"):
                 redirect = urljoin(target, response_headers["Location"])

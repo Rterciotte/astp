@@ -33,6 +33,8 @@ from astp.ctf_mode import ChallengeDefinition, inventory_challenge
 from astp.ctf_network import ensure_ctf_http_target_authorized
 from astp.ctf_solver import CtfLocalSolveResult, run_local_ctf_solvers, verify_flag_candidates
 from astp.detector_execution import DetectorExecutionRequest
+from astp.detector_policy import DetectorPolicyContext, MentionDisposition, decide_detector
+from astp.detector_registry import builtin_detector_registry
 from astp.docker_detector_adapter import DockerDetectorAdapter, DockerDetectorConfig
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_consumers import EvidenceConsumerSummary, consume_evidence_directory
@@ -84,6 +86,7 @@ from astp.orchestrator import (
 )
 from astp.orchestrator_manifest import CampaignManifest, verify_campaign_manifest
 from astp.orchestrator_models import AutonomousCampaignConfig
+from astp.orchestrator_scheduler import rank_opportunity
 from astp.orchestrator_store import OrchestratorStore
 from astp.permit_broker import broker_queue_item_permit
 from astp.permits import (
@@ -95,6 +98,7 @@ from astp.permits import (
 )
 from astp.planner import ObservationPlan, build_observation_plan
 from astp.planner_state import get_planner_state, initialize_planner_state
+from astp.platform_adapters import LocalBughuntAdapter
 from astp.policy_snapshot import capture_policy_snapshot
 from astp.portfolio_orchestrator import build_portfolio_plan
 from astp.prioritization import prioritize_registry
@@ -3002,6 +3006,7 @@ def orchestrator_start_command(
     execute: Annotated[bool, typer.Option("--execute")] = False,
     detector_request: Annotated[list[Path] | None, typer.Option("--detector-request")] = None,
     docker_config: Annotated[Path | None, typer.Option("--docker-config")] = None,
+    platform: Annotated[str, typer.Option("--platform")] = "bughunt",
 ) -> None:
     """Create a durable orchestrator campaign; defaults to a zero-network dry run."""
     config = AutonomousCampaignConfig(
@@ -3013,7 +3018,7 @@ def orchestrator_start_command(
     )
     campaign_root = root / campaign_id
     if execute:
-        if docker_config is None or not detector_request:
+        if docker_config is None or (not detector_request and platform != "local-bughunt"):
             raise typer.BadParameter(
                 "--execute requires --docker-config and at least one typed --detector-request"
             )
@@ -3024,10 +3029,17 @@ def orchestrator_start_command(
             adapter_config = DockerDetectorConfig.model_validate_json(
                 docker_config.read_text(encoding="utf-8")
             )
-            requests = tuple(
-                DetectorExecutionRequest.model_validate_json(path.read_text(encoding="utf-8"))
-                for path in detector_request
-            )
+            if platform == "local-bughunt":
+                local_platform = LocalBughuntAdapter.authenticated_fixture()
+                discovered = local_platform.discover_programs()
+                requests = _local_bughunt_detector_requests(campaign_id, local_platform)
+                console.print(f"Programs discovered: {len(discovered)}")
+                console.print("Authenticated session: ATTACHED")
+            else:
+                requests = tuple(
+                    DetectorExecutionRequest.model_validate_json(path.read_text(encoding="utf-8"))
+                    for path in detector_request or []
+                )
             adapter = DockerDetectorAdapter(adapter_config, signing_key)
             snapshot, results = run_orchestrator_execution(
                 config,
@@ -3053,6 +3065,65 @@ def orchestrator_start_command(
         else "Network execution: NOT PERFORMED"
     )
     console.print(f"Storage: {campaign_root}")
+
+
+def _local_bughunt_detector_requests(
+    campaign_id: str, platform: LocalBughuntAdapter
+) -> tuple[DetectorExecutionRequest, ...]:
+    registry = {item.detector_id: item for item in builtin_detector_registry()}
+    digests = {
+        "nuclei.astp-lab-cve.v1": "sha256:8074909a9b3bf948c9b75103df1367690b8bb0a039e4658e6616aea4205d3459",
+        "ffuf.discovery-bounded.v1": "sha256:0ca90ed6786042fd13735b0bd7dfa2d9a793846fdf78c226071ad21f20b51dfa",
+    }
+    requests = []
+    for program in platform.discover_programs():
+        if program.program_id == "B":
+            continue
+        if program.operational is False or program.program_id == "F":
+            program = platform.refresh_program(program.program_id)
+        detector_id = (
+            "ffuf.discovery-bounded.v1" if program.program_id == "D" else "nuclei.astp-lab-cve.v1"
+        )
+        detector = registry[detector_id]
+        context = DetectorPolicyContext(
+            disposition=MentionDisposition.EXPLICITLY_ALLOWED,
+            target_in_scope=True,
+            remaining_requests=20,
+        )
+        target = "http://astp-m52-lab:8080"
+        opportunity = rank_opportunity(
+            detector,
+            program_id=program.program_id,
+            target=target,
+            signals=("known_cve",),
+            decision=decide_detector(detector, context),
+            remaining_budget=20,
+        )
+        requests.append(
+            DetectorExecutionRequest(
+                campaign_id=campaign_id,
+                campaign_active=True,
+                program_id=program.program_id,
+                program_revision=program.revision,
+                current_program_revision=program.revision,
+                target=target,
+                opportunity=opportunity,
+                detector=detector,
+                runtime_id=detector.required_runtime or detector.engine,
+                runtime_digest=digests[detector_id],
+                runtime_qualification_digest=digests[detector_id],
+                lease_current=True,
+                target_in_scope=True,
+                semantic_review_complete=True,
+                policy_context=context,
+                global_remaining=200,
+                program_remaining=20,
+                detector_remaining=20,
+                max_rps=program.rate_limit_rps,
+                proof_requirement=detector.proof_requirement,
+            )
+        )
+    return tuple(requests)
 
 
 @app.command("orchestrator-status")
