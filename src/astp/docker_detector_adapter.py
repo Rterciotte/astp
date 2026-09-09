@@ -32,6 +32,7 @@ class DockerDetectorConfig(BaseModel):
 
     target_network: str
     proxy_image: str = "astp/counting-proxy:m52"
+    proxy_image_digest: str
     runtimes: dict[str, DockerDetectorRuntime]
     timeout_seconds: int = 90
 
@@ -123,6 +124,15 @@ class DockerDetectorAdapter:
         permit: SignedDetectorRunPermit,
         run_root: Path,
     ) -> DetectorAdapterResult:
+        proxy_inspected = self._run(
+            ["docker", "image", "inspect", "--format", "{{.Id}}", self.config.proxy_image]
+        )
+        if (
+            proxy_inspected.returncode
+            or proxy_inspected.stdout.strip() != self.config.proxy_image_digest
+        ):
+            raise DetectorAdapterError("proxy_image_identity_drift", retryable=False)
+
         runtime = self.config.runtimes.get(request.detector.detector_id)
         expected_image = FIELD_IMAGES[request.detector.detector_id]
         if runtime is None or runtime.image != expected_image:

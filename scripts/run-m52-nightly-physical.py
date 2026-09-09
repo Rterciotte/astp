@@ -122,6 +122,7 @@ def main() -> int:
             DockerDetectorAdapter(
                 DockerDetectorConfig(
                     target_network=arguments.target_network,
+                    proxy_image_digest="sha256:ea27c092e8ab432fa3196613a9c554a5a12eb42a8fa3f34ce0014ad823868d02",
                     runtimes={
                         detector.detector_id: DockerDetectorRuntime(
                             image="astp/nuclei-worker:m52", image_digest=digest

@@ -90,6 +90,7 @@ def test_docker_runtime_rejects_retagged_image_before_launch(tmp_path, monkeypat
     adapter = DockerDetectorAdapter(
         DockerDetectorConfig(
             target_network="acceptance-network",
+            proxy_image_digest="sha256:proxy",
             runtimes={request.detector.detector_id: runtime},
         ),
         "x" * 32,
@@ -97,8 +98,52 @@ def test_docker_runtime_rejects_retagged_image_before_launch(tmp_path, monkeypat
     monkeypatch.setattr(
         adapter,
         "_run",
-        lambda *args, **kwargs: subprocess.CompletedProcess([], 0, "sha256:different\n", ""),
+        lambda argv, **kwargs: subprocess.CompletedProcess(
+            argv,
+            0,
+            "sha256:proxy\n" if argv[-1] == "astp/counting-proxy:m52" else "sha256:different\n",
+            "",
+        ),
     )
     result = DetectorExecutionService(tmp_path, "x" * 32, (adapter,)).execute(request)
     assert result.failure_category == "runtime_image_identity_drift"
     assert result.accounting.forwarded == 0
+
+
+def test_docker_runtime_rejects_retagged_proxy_before_detector_inspection(
+    tmp_path, monkeypatch
+) -> None:
+    request = _local_bughunt_detector_requests(
+        "campaign", LocalBughuntAdapter.authenticated_fixture()
+    )[0]
+    runtime = DockerDetectorRuntime(
+        image="astp/nuclei-worker:m52", image_digest=request.runtime_digest
+    )
+    adapter = DockerDetectorAdapter(
+        DockerDetectorConfig(
+            target_network="acceptance-network",
+            proxy_image_digest="sha256:expected-proxy",
+            runtimes={request.detector.detector_id: runtime},
+        ),
+        "x" * 32,
+    )
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "sha256:different-proxy\n", "")
+
+    monkeypatch.setattr(adapter, "_run", fake_run)
+    result = DetectorExecutionService(tmp_path, "x" * 32, (adapter,)).execute(request)
+    assert result.failure_category == "proxy_image_identity_drift"
+    assert result.accounting.forwarded == 0
+    assert calls == [
+        [
+            "docker",
+            "image",
+            "inspect",
+            "--format",
+            "{{.Id}}",
+            "astp/counting-proxy:m52",
+        ]
+    ]
