@@ -3009,6 +3009,7 @@ def orchestrator_start_command(
     detector_request: Annotated[list[Path] | None, typer.Option("--detector-request")] = None,
     docker_config: Annotated[Path | None, typer.Option("--docker-config")] = None,
     platform: Annotated[str, typer.Option("--platform")] = "bughunt",
+    accelerated_night: Annotated[bool, typer.Option("--accelerated-night")] = False,
 ) -> None:
     """Create a durable orchestrator campaign; defaults to a zero-network dry run."""
     config = AutonomousCampaignConfig(
@@ -3027,6 +3028,21 @@ def orchestrator_start_command(
         signing_key = os.environ.get("ASTP_DETECTOR_RUN_KEY", "")
         if len(signing_key.encode()) < 32:
             raise typer.BadParameter("ASTP_DETECTOR_RUN_KEY must contain at least 32 bytes")
+        if accelerated_night:
+            if platform != "local-bughunt" or docker_config is None:
+                raise typer.BadParameter(
+                    "--accelerated-night requires --platform local-bughunt and --docker-config"
+                )
+            from astp.m53_full_night import run_full_night
+
+            report = run_full_night(campaign_id, campaign_root, docker_config, signing_key)
+            console.print(f"Campaign: {campaign_id}")
+            console.print(f"State: {report.status}")
+            console.print(f"Coverage: {report.coverage}")
+            console.print(f"Logical hours: {report.logical_duration_hours}")
+            console.print(f"Operator interventions: {report.operator_interventions}")
+            console.print(f"Storage: {campaign_root}")
+            return
         try:
             adapter_config = DockerDetectorConfig.model_validate_json(
                 docker_config.read_text(encoding="utf-8")
@@ -3247,10 +3263,16 @@ def verify_orchestrator_campaign_command(
     campaign_root: Annotated[Path, typer.Argument()],
 ) -> None:
     """Verify the hashes in a finalized orchestrator campaign manifest."""
-    manifest = CampaignManifest.model_validate_json(
-        (campaign_root / "campaign-manifest.json").read_text(encoding="utf-8")
-    )
-    valid = verify_campaign_manifest(manifest, campaign_root)
+    full_night_manifest = campaign_root / "full-night-manifest.json"
+    if full_night_manifest.is_file():
+        from astp.m53_full_night import verify_full_night_manifest
+
+        valid = verify_full_night_manifest(campaign_root)
+    else:
+        manifest = CampaignManifest.model_validate_json(
+            (campaign_root / "campaign-manifest.json").read_text(encoding="utf-8")
+        )
+        valid = verify_campaign_manifest(manifest, campaign_root)
     console.print(f"Campaign manifest valid: {'YES' if valid else 'NO'}")
     if not valid:
         raise typer.Exit(code=9)

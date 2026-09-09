@@ -26,6 +26,14 @@ def main() -> None:
                 image="astp/dalfox-worker:m52",
                 image_digest="sha256:4598aeb2403c27d5ecda7c9a853d88df255a2874e4cc772bfa33bcb88aa16afc",
             ),
+            "playwright.dom-navigation-field.v1": DockerDetectorRuntime(
+                image="astp/playwright-field-worker:m52",
+                image_digest="sha256:40aa366c13c49219029f280bb446990f9bcec3e88f768fee41deb61f73a44fb4",
+            ),
+            "sqlmap.detect-bounded.v1": DockerDetectorRuntime(
+                image="astp/sqlmap-worker:m52",
+                image_digest="sha256:ca2886211f38fef3858d37e4f22a33c22051487d1872216efcccb53de15dbd16",
+            ),
         },
     )
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
