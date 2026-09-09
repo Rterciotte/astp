@@ -53,6 +53,7 @@ from astp.lifecycle import (
     revoke_permit,
     verify_audit_chain,
 )
+from astp.m53_pass1 import run_m53_pass1_execution
 from astp.method_strategy import choose_observation_method
 from astp.models import (
     ApprovalArtifact,
@@ -3041,13 +3042,22 @@ def orchestrator_start_command(
                     for path in detector_request or []
                 )
             adapter = DockerDetectorAdapter(adapter_config, signing_key)
-            snapshot, results = run_orchestrator_execution(
-                config,
-                campaign_root,
-                requests=requests,
-                adapters=(adapter,),
-                signing_key=signing_key,
-            )
+            if platform == "local-bughunt":
+                snapshot, results, _ = run_m53_pass1_execution(
+                    config,
+                    campaign_root,
+                    requests=requests,
+                    adapter=adapter,
+                    signing_key=signing_key,
+                )
+            else:
+                snapshot, results = run_orchestrator_execution(
+                    config,
+                    campaign_root,
+                    requests=requests,
+                    adapters=(adapter,),
+                    signing_key=signing_key,
+                )
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(str(exc)) from exc
         console.print(f"Detector runs: {len(results)}")
@@ -3074,6 +3084,7 @@ def _local_bughunt_detector_requests(
     digests = {
         "nuclei.astp-lab-cve.v1": "sha256:8074909a9b3bf948c9b75103df1367690b8bb0a039e4658e6616aea4205d3459",
         "ffuf.discovery-bounded.v1": "sha256:0ca90ed6786042fd13735b0bd7dfa2d9a793846fdf78c226071ad21f20b51dfa",
+        "dalfox.reflected-bounded.v1": "sha256:4598aeb2403c27d5ecda7c9a853d88df255a2874e4cc772bfa33bcb88aa16afc",
     }
     requests = []
     for program in platform.discover_programs():
@@ -3081,21 +3092,28 @@ def _local_bughunt_detector_requests(
             continue
         if program.operational is False or program.program_id == "F":
             program = platform.refresh_program(program.program_id)
-        detector_id = (
-            "ffuf.discovery-bounded.v1" if program.program_id == "D" else "nuclei.astp-lab-cve.v1"
-        )
+        detector_id = {
+            "D": "ffuf.discovery-bounded.v1",
+            "E": "dalfox.reflected-bounded.v1",
+            "H": "ffuf.discovery-bounded.v1",
+        }.get(program.program_id, "nuclei.astp-lab-cve.v1")
         detector = registry[detector_id]
         context = DetectorPolicyContext(
             disposition=MentionDisposition.EXPLICITLY_ALLOWED,
             target_in_scope=True,
-            remaining_requests=20,
+            remaining_requests=100,
+            browser_available=True,
         )
-        target = "http://astp-m52-lab:8080"
+        target = (
+            "http://astp-m52-lab:8080/reflect?q=ASTP_XSS"
+            if program.program_id == "E"
+            else "http://astp-m52-lab:8080"
+        )
         opportunity = rank_opportunity(
             detector,
             program_id=program.program_id,
             target=target,
-            signals=("known_cve",),
+            signals=("reflected-parameter",) if program.program_id == "E" else ("known_cve",),
             decision=decide_detector(detector, context),
             remaining_budget=20,
         )

@@ -22,6 +22,10 @@ def main() -> None:
                 image="astp/ffuf-worker:m52",
                 image_digest="sha256:0ca90ed6786042fd13735b0bd7dfa2d9a793846fdf78c226071ad21f20b51dfa",
             ),
+            "dalfox.reflected-bounded.v1": DockerDetectorRuntime(
+                image="astp/dalfox-worker:m52",
+                image_digest="sha256:4598aeb2403c27d5ecda7c9a853d88df255a2874e4cc772bfa33bcb88aa16afc",
+            ),
         },
     )
     arguments.output.parent.mkdir(parents=True, exist_ok=True)

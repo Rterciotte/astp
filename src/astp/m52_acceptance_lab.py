@@ -12,6 +12,7 @@ class VulnerableLabHandler(BaseHTTPRequestHandler):
     server_version = "ASTP-M52-Lab/1"
     sessions: ClassVar[set[str]] = set()
     oast_callbacks: ClassVar[set[str]] = set()
+    rate_limit_requests: ClassVar[int] = 0
 
     def log_message(self, *_args: object) -> None:
         return
@@ -98,6 +99,13 @@ class VulnerableLabHandler(BaseHTTPRequestHandler):
         if parsed.path == "/.astp-hidden":
             self._send("hidden endpoint")
             return
+        if parsed.path == "/api":
+            type(self).rate_limit_requests += 1
+            if type(self).rate_limit_requests == 1:
+                self._send("retry later", 429, headers={"Retry-After": "2"})
+            else:
+                self._send("recovered")
+            return
         if parsed.path == "/session":
             token = self.headers.get("X-ASTP-Session", "")
             self._send(
@@ -132,6 +140,7 @@ class LocalAcceptanceLab:
         return f"http://127.0.0.1:{self.server.server_port}"
 
     def __enter__(self) -> Self:
+        VulnerableLabHandler.rate_limit_requests = 0
         self.thread.start()
         return self
 
