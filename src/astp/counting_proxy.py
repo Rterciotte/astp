@@ -17,6 +17,9 @@ from astp.detector_run_permit import SignedDetectorRunPermit
 
 SECRET_HEADERS = {"authorization", "cookie", "proxy-authorization", "x-api-key"}
 HOP_HEADERS = {"connection", "proxy-connection", "keep-alive", "transfer-encoding", "upgrade"}
+PROVENANCE_HEADER = "X-ASTP-Response-Provenance"
+SYNTHETIC_HEADER = "X-ASTP-Response-Synthetic"
+BOUNDARY_REASON_HEADER = "X-ASTP-Boundary-Reason"
 
 
 class ProxyAccounting:
@@ -208,7 +211,11 @@ class CountingProxy:
             )
             return (
                 429 if "budget" in denial or "concurrency" in denial else 403,
-                {},
+                {
+                    PROVENANCE_HEADER: "astp_boundary",
+                    SYNTHETIC_HEADER: "true",
+                    BOUNDARY_REASON_HEADER: denial.replace(" ", "_"),
+                },
                 denial.encode(),
                 request_id,
             )
@@ -252,6 +259,8 @@ class CountingProxy:
             response = connection.getresponse()
             response_body = response.read(1_048_576)
             response_headers = dict(response.getheaders())
+            response_headers[PROVENANCE_HEADER] = "target"
+            response_headers[SYNTHETIC_HEADER] = "false"
             with self.lock:
                 self.circuit_failures = 0
             if 300 <= response.status < 400 and response_headers.get("Location"):
@@ -275,12 +284,9 @@ class CountingProxy:
                         len(response_body),
                         "out-of-scope redirect blocked",
                     )
-                    return (
-                        403,
-                        {"X-ASTP-Redirect-Target": redirect},
-                        b"out-of-scope redirect blocked",
-                        request_id,
-                    )
+                    response_headers["X-ASTP-Redirect-Target"] = redirect
+                    response_headers[BOUNDARY_REASON_HEADER] = "out_of_scope_redirect"
+                    return response.status, response_headers, response_body, request_id
             self.accounting.finish(
                 request_id, "response_received", response.status, len(body), len(response_body)
             )
@@ -291,7 +297,16 @@ class CountingProxy:
             self.accounting.finish(
                 request_id, "failed_after_io", None, len(body), 0, type(exc).__name__
             )
-            return 502, {}, b"upstream failure", request_id
+            return (
+                502,
+                {
+                    PROVENANCE_HEADER: "astp_boundary",
+                    SYNTHETIC_HEADER: "true",
+                    BOUNDARY_REASON_HEADER: "upstream_failure",
+                },
+                b"upstream failure",
+                request_id,
+            )
         finally:
             with self.lock:
                 self.active -= 1
@@ -318,7 +333,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
         status, headers, response, request_id = self.proxy.forward(
             self.command, self.path, dict(self.headers), body
         )
-        self.send_response(status)
+        # Avoid BaseHTTPRequestHandler's synthetic Server/Date headers. All
+        # forwarded headers must retain their actual producer provenance.
+        self.send_response_only(status)
         for name, value in headers.items():
             if name.lower() not in HOP_HEADERS | {"content-length"}:
                 self.send_header(name, value)

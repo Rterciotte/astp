@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 
-from astp.observation import HttpObservationEvidence
+from astp.observation import HttpObservationEvidence, has_target_response_provenance
 
 
 class AnalyzerKind(str, Enum):
@@ -32,6 +32,8 @@ class ProtocolAnalysis(BaseModel):
 
 
 def analyze_protocol_posture(evidence: HttpObservationEvidence) -> ProtocolAnalysis:
+    if not has_target_response_provenance(evidence):
+        return ProtocolAnalysis(target=evidence.target)
     headers = {name.lower(): value for name, value in evidence.response_headers.items()}
     signals: list[AnalyzerSignal] = []
 

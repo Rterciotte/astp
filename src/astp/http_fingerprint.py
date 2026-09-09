@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from astp.fingerprint import FingerprintEvidence, FingerprintKind, TechnologyFingerprint
-from astp.observation import HttpObservationEvidence
+from astp.observation import HttpObservationEvidence, has_target_response_provenance
 
 _META_GENERATOR = re.compile(
     r'<meta[^>]+name=["\']generator["\'][^>]+content=["\']([^"\']+)', re.IGNORECASE
@@ -34,6 +34,8 @@ def _add(
 
 
 def fingerprint_http(evidence: HttpObservationEvidence) -> TechnologyFingerprint:
+    if not has_target_response_provenance(evidence):
+        return TechnologyFingerprint(target=evidence.target, evidence_ids=[evidence.evidence_id])
     headers = {name.lower(): value for name, value in evidence.response_headers.items()}
     rows: list[FingerprintEvidence] = []
 

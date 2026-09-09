@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from astp.findings import FindingCandidate, ProofState
-from astp.observation import HttpObservationEvidence
+from astp.observation import HttpObservationEvidence, has_target_response_provenance
 from astp.proof_verifier import ProofVerification
 
 
@@ -12,7 +12,7 @@ def verify_cors_headers(
     matched = []
     for signal in candidate.signals:
         evidence = evidence_by_id.get(signal.evidence_id)
-        if evidence is None:
+        if evidence is None or not has_target_response_provenance(evidence):
             continue
         headers = {key.lower(): value for key, value in evidence.response_headers.items()}
         origin = headers.get("access-control-allow-origin")

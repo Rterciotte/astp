@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from astp.observation import HttpObservationEvidence
+from astp.observation import HttpObservationEvidence, has_target_response_provenance
 
 
 class VerifierSignalKind(StrEnum):
@@ -35,8 +35,21 @@ def _headers(evidence: HttpObservationEvidence) -> dict[str, str]:
 
 def verify_stored_http_evidence(evidence: HttpObservationEvidence) -> tuple[VerifierSignal, ...]:
     """Derive conservative posture signals from already-captured HTTP evidence."""
-    headers = _headers(evidence)
     signals: list[VerifierSignal] = []
+    if not has_target_response_provenance(evidence):
+        if evidence.redirect is not None and evidence.redirect.requires_new_permit:
+            signals.append(
+                VerifierSignal(
+                    kind=VerifierSignalKind.REDIRECT_POLICY,
+                    verifier_id="redirect.reauthorization.v1",
+                    target=evidence.target,
+                    summary="Redirect target requires a separately authorized action.",
+                    confidence=1.0,
+                    proof_ceiling="informational",
+                )
+            )
+        return tuple(signals)
+    headers = _headers(evidence)
 
     if "content-security-policy" not in headers:
         signals.append(

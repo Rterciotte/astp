@@ -23,8 +23,12 @@ from astp.docker_detector_adapter import DockerDetectorAdapter
 from astp.evidence_store import SensitivityLabel, register_evidence
 from astp.observation import (
     BodyArtifactReference,
+    BoundaryDecision,
     HttpObservationEvidence,
+    HttpResponseHop,
     RedirectObservation,
+    ResponseProvenance,
+    ResponseProvenanceSource,
     _decode_preview,
     _evidence_hash,
     _redact_headers,
@@ -186,6 +190,7 @@ class FieldHttpObservationAdapter:
         redirects = []
         response_body = b""
         response_headers: dict[str, str] = {}
+        response_chain: list[dict] = []
         status = 0
         request_id = ""
         for redirect_index in range(request.max_redirects + 1):
@@ -201,6 +206,23 @@ class FieldHttpObservationAdapter:
             status = response.status
             request_id = response_headers.get("X-ASTP-Request-ID", "")
             blocked_target = response_headers.get("X-ASTP-Redirect-Target")
+            target_observed = response_headers.get("X-ASTP-Response-Provenance") == "target"
+            target_headers = {
+                name: value
+                for name, value in response_headers.items()
+                if not name.lower().startswith("x-astp-")
+            }
+            if target_observed:
+                captured_body = response_body[: request.max_body_bytes]
+                response_chain.append(
+                    {
+                        "target": current,
+                        "status_code": status,
+                        "headers": target_headers,
+                        "body_sha256": hashlib.sha256(captured_body).hexdigest(),
+                        "body_bytes_captured": len(captured_body),
+                    }
+                )
             location = blocked_target or response_headers.get("Location")
             if not location or not (300 <= status < 400 or blocked_target):
                 break
@@ -234,6 +256,7 @@ class FieldHttpObservationAdapter:
             "redirects": redirects,
             "proxy_request_id": request_id,
             "observed_at": datetime.now(UTC),
+            "response_chain": response_chain,
         }
 
     def _connect_proxy(self, proxy_port: int) -> http.client.HTTPConnection:
@@ -283,6 +306,27 @@ class FieldHttpObservationAdapter:
         )
         redirects = receipt["redirects"]
         last_redirect = redirects[-1] if redirects else None
+        raw_headers = receipt["headers"]
+        provenance_value = raw_headers.get("X-ASTP-Response-Provenance")
+        synthetic = raw_headers.get("X-ASTP-Response-Synthetic", "").lower() == "true"
+        boundary_reason = raw_headers.get("X-ASTP-Boundary-Reason")
+        target_observed = provenance_value == "target" and not synthetic
+        provenance = ResponseProvenance(
+            source=(
+                ResponseProvenanceSource.TARGET
+                if target_observed
+                else ResponseProvenanceSource.ASTP_BOUNDARY
+            ),
+            target_response_observed=target_observed,
+            synthetic=not target_observed,
+            producer="target" if target_observed else "counting_proxy",
+            reason=None if target_observed else boundary_reason or "boundary_response",
+        )
+        target_headers = {
+            name: value
+            for name, value in raw_headers.items()
+            if not name.lower().startswith("x-astp-")
+        }
         preliminary = HttpObservationEvidence(
             evidence_id=str(uuid4()),
             action_id=permit.payload.action_id,
@@ -293,12 +337,16 @@ class FieldHttpObservationAdapter:
             method=request.http_method,
             target=redact_url(receipt["final_url"]),
             status_code=receipt["status"],
-            response_headers=_redact_headers(receipt["headers"]),
-            content_type=receipt["headers"].get("Content-Type"),
+            response_headers=_redact_headers(target_headers) if target_observed else {},
+            content_type=target_headers.get("Content-Type") if target_observed else None,
             body_bytes_captured=len(body),
             body_truncated=receipt["body_truncated"],
             body_sha256=hashlib.sha256(body).hexdigest(),
-            body_preview=_decode_preview(body, receipt["headers"].get("Content-Type")),
+            body_preview=(
+                _decode_preview(body, target_headers.get("Content-Type"))
+                if target_observed
+                else None
+            ),
             body_artifact=body_reference,
             redirect=(
                 RedirectObservation(
@@ -309,6 +357,32 @@ class FieldHttpObservationAdapter:
                 )
                 if last_redirect
                 else None
+            ),
+            response_provenance=provenance,
+            boundary=(
+                BoundaryDecision(
+                    producer="counting_proxy",
+                    reason=boundary_reason,
+                    redirect_followed=last_redirect["followed"] if last_redirect else None,
+                )
+                if boundary_reason
+                else None
+            ),
+            response_chain=tuple(
+                HttpResponseHop(
+                    target=redact_url(hop["target"]),
+                    status_code=hop["status_code"],
+                    response_headers=_redact_headers(hop["headers"]),
+                    body_sha256=hop["body_sha256"],
+                    body_bytes_captured=hop["body_bytes_captured"],
+                    provenance=ResponseProvenance(
+                        source=ResponseProvenanceSource.TARGET,
+                        target_response_observed=True,
+                        synthetic=False,
+                        producer="target",
+                    ),
+                )
+                for hop in receipt.get("response_chain", [])
             ),
             evidence_hash="pending",
         )
@@ -343,6 +417,10 @@ class FieldHttpObservationAdapter:
                         if key not in {"body", "headers"}
                     },
                     "headers": _redact_headers(receipt["headers"]),
+                    "response_chain": [
+                        {**hop, "headers": _redact_headers(hop["headers"])}
+                        for hop in receipt.get("response_chain", [])
+                    ],
                     "observed_at": receipt["observed_at"].isoformat(),
                 },
                 indent=2,

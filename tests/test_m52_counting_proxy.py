@@ -123,7 +123,7 @@ def test_proxy_blocks_out_of_scope_redirect_and_connect(tmp_path):
             connection = HTTPConnection(proxy.url.removeprefix("http://"), timeout=3)
             connection.request("CONNECT", "outside.test:443")
             connect_status = connection.getresponse().status
-    assert status == 403 and body == b"out-of-scope redirect blocked"
+    assert status == 302 and body == b""
     assert connect_status == 405
 
 

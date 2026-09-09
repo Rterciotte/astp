@@ -25,6 +25,7 @@ from astp.field_http_observation import (
     FieldHttpObservationAdapter,
     FieldHttpObservationConfig,
 )
+from astp.observation import ResponseProvenanceSource
 from astp.orchestrator_scheduler import rank_opportunity
 
 KEY = "field-observation-test-signing-key"
@@ -183,7 +184,10 @@ def test_out_of_scope_redirect_is_observed_but_never_followed(target, tmp_path) 
             int(proxy.url.rsplit(":", 1)[1]),
             _request(target + "/redirect-out", follow_redirects=True, max_redirects=2),
         )
-    assert receipt["status"] == 403
+    assert receipt["status"] == 302
+    assert receipt["headers"]["Location"] == "http://outside.invalid/collect"
+    assert receipt["headers"]["X-ASTP-Response-Provenance"] == "target"
+    assert receipt["headers"]["X-ASTP-Boundary-Reason"] == "out_of_scope_redirect"
     assert receipt["redirects"] == [
         {
             "target": "http://outside.invalid/collect",
@@ -193,6 +197,20 @@ def test_out_of_scope_redirect_is_observed_but_never_followed(target, tmp_path) 
         }
     ]
     assert len(TargetHandler.hits) == 1
+    run_root = tmp_path / "redirect-evidence"
+    run_root.mkdir()
+    evidence = _local_adapter()._persist_evidence(
+        run_root,
+        _request(target + "/redirect-out", follow_redirects=True, max_redirects=2),
+        _permit(target),
+        receipt,
+    )
+    assert evidence.status_code == 302
+    assert evidence.response_headers["Location"] == "http://outside.invalid/collect"
+    assert evidence.response_provenance.source is ResponseProvenanceSource.TARGET
+    assert evidence.boundary.reason == "out_of_scope_redirect"
+    assert evidence.boundary.redirect_followed is False
+    assert all(not name.lower().startswith("x-astp-") for name in evidence.response_headers)
 
 
 def test_same_origin_redirect_is_followed_once_and_accounted(target, tmp_path) -> None:
@@ -205,6 +223,11 @@ def test_same_origin_redirect_is_followed_once_and_accounted(target, tmp_path) -
     assert receipt["status"] == 200
     assert [hit[1] for hit in TargetHandler.hits] == ["/redirect-in", "/final"]
     assert receipt["redirects"][0]["followed"]
+    assert [hop["status_code"] for hop in receipt["response_chain"]] == [302, 200]
+    assert all(
+        hop["headers"].get("X-ASTP-Response-Provenance") is None
+        for hop in receipt["response_chain"]
+    )
     assert FieldHttpObservationAdapter._origin(receipt["final_url"]) == (
         "http",
         "127.0.0.1",
@@ -232,6 +255,25 @@ def test_budget_and_rate_are_authoritative_in_proxy(target, tmp_path) -> None:
     assert rate_proxy.forward("GET", target, {}, b"")[0] == 200
     assert rate_proxy.forward("GET", target, {}, b"")[0] == 200
     assert time.monotonic() - started >= 0.9
+
+
+def test_budget_block_is_persisted_as_boundary_without_target_attribution(target, tmp_path):
+    ledger = tmp_path / "budget-boundary.db"
+    proxy_impl = CountingProxy(_permit(target, requests=1, rps=100), KEY, ledger)
+    with RunningCountingProxy(proxy_impl) as proxy:
+        port = int(proxy.url.rsplit(":", 1)[1])
+        adapter = _local_adapter()
+        assert adapter._observe(port, _request(target))["status"] == 200
+        receipt = adapter._observe(port, _request(target))
+    run_root = tmp_path / "budget-boundary"
+    run_root.mkdir()
+    evidence = adapter._persist_evidence(run_root, _request(target), _permit(target), receipt)
+    assert receipt["status"] == 429
+    assert evidence.response_provenance.source is ResponseProvenanceSource.ASTP_BOUNDARY
+    assert evidence.response_provenance.target_response_observed is False
+    assert evidence.response_headers == {}
+    assert evidence.body_preview is None
+    assert evidence.response_chain == ()
 
 
 def test_proxy_digest_mismatch_and_stale_revision_block_before_io(

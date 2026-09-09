@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlsplit
 
 from pydantic import BaseModel, Field
 
-from astp.observation import HttpObservationEvidence
+from astp.observation import HttpObservationEvidence, has_target_response_provenance
 
 _SCRIPT_RE = re.compile(
     r"<script\b[^>]*?\bsrc\s*=\s*[\"']([^\"']+)[\"']",
@@ -31,6 +31,8 @@ class JavaScriptInventory(BaseModel):
 
 
 def inventory_javascript(evidence: HttpObservationEvidence) -> JavaScriptInventory:
+    if not has_target_response_provenance(evidence):
+        return JavaScriptInventory(target=evidence.target)
     preview = evidence.body_preview or ""
     artifacts: list[JavaScriptArtifact] = []
     seen: set[str] = set()

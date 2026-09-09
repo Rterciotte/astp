@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from astp.action import canonical_http_target
 from astp.models import Engagement, target_in_scope
-from astp.observation import HttpObservationEvidence
+from astp.observation import HttpObservationEvidence, has_target_response_provenance
 
 _LINK_RE = re.compile(r"(?i)(?:href|src)\s*=\s*[\"']([^\"']+)[\"']|https?://[^\s<>\"']+")
 
@@ -254,7 +254,7 @@ def discover_targets_from_evidence(
             )
         )
 
-    if include_links and evidence.body_preview:
+    if include_links and has_target_response_provenance(evidence) and evidence.body_preview:
         seen: set[str] = set()
         for match in _LINK_RE.finditer(evidence.body_preview):
             raw = match.group(1) or match.group(0)

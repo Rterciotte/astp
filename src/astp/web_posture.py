@@ -5,7 +5,11 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 
-from astp.observation import HttpObservationEvidence
+from astp.observation import (
+    HttpObservationEvidence,
+    ResponseProvenanceSource,
+    has_target_response_provenance,
+)
 
 
 class PostureSignalLevel(str, Enum):
@@ -26,9 +30,12 @@ class WebPostureAssessment(BaseModel):
     target: str
     evidence_id: str
     signals: list[WebPostureSignal] = Field(default_factory=list)
+    provenance: ResponseProvenanceSource = ResponseProvenanceSource.OFFLINE_DERIVED
 
 
 def analyze_http_posture(evidence: HttpObservationEvidence) -> WebPostureAssessment:
+    if not has_target_response_provenance(evidence):
+        return WebPostureAssessment(target=evidence.target, evidence_id=evidence.evidence_id)
     headers = {name.lower(): value for name, value in evidence.response_headers.items()}
     signals: list[WebPostureSignal] = []
     scheme = urlsplit(evidence.target).scheme.lower()

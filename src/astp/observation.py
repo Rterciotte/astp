@@ -6,6 +6,7 @@ import os
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 from urllib.request import Request
@@ -79,6 +80,41 @@ class RedirectObservation(BaseModel):
     followed: bool = False
 
 
+class ResponseProvenanceSource(StrEnum):
+    TARGET = "target"
+    ASTP_BOUNDARY = "astp_boundary"
+    OFFLINE_DERIVED = "offline_derived"
+
+
+class ResponseProvenance(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    source: ResponseProvenanceSource
+    target_response_observed: bool
+    synthetic: bool
+    producer: str
+    reason: str | None = None
+
+
+class BoundaryDecision(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    producer: str
+    reason: str
+    redirect_followed: bool | None = None
+
+
+class HttpResponseHop(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    target: str
+    status_code: int
+    response_headers: dict[str, str] = Field(default_factory=dict)
+    body_sha256: str
+    body_bytes_captured: int = 0
+    provenance: ResponseProvenance
+
+
 class BodyArtifactReference(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -92,7 +128,7 @@ class BodyArtifactReference(BaseModel):
 class HttpObservationEvidence(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    schema_version: str = "2"
+    schema_version: str = "3"
     evidence_id: str
     action_id: str
     sensitivity: SensitivityLabel = SensitivityLabel.INTERNAL
@@ -114,6 +150,9 @@ class HttpObservationEvidence(BaseModel):
     redirect: RedirectObservation | None = None
     resolved_endpoint: ResolvedEndpoint | None = None
     transport_failure: str | None = None
+    response_provenance: ResponseProvenance | None = None
+    boundary: BoundaryDecision | None = None
+    response_chain: tuple[HttpResponseHop, ...] = ()
     evidence_hash: str
 
     @field_validator("observed_at")
@@ -122,6 +161,23 @@ class HttpObservationEvidence(BaseModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("observed_at must include a timezone")
         return value
+
+
+def has_target_response_provenance(evidence: HttpObservationEvidence) -> bool:
+    """Enforce NO_TARGET_ATTRIBUTION_WITHOUT_TARGET_PROVENANCE.
+
+    Legacy evidence remains analyzable only when it contains no explicit ASTP
+    boundary markers. This preserves established target captures while failing
+    closed for the known synthetic-proxy evidence shape.
+    """
+    provenance = evidence.response_provenance
+    if provenance is not None:
+        return bool(
+            provenance.source is ResponseProvenanceSource.TARGET
+            and provenance.target_response_observed
+            and not provenance.synthetic
+        )
+    return not any(name.lower().startswith("x-astp-") for name in evidence.response_headers)
 
 
 class HttpObservationFailureEvidence(BaseModel):
@@ -309,7 +365,20 @@ def _read_bounded(response, method: str, max_body_bytes: int) -> tuple[bytes, bo
 
 def verify_observation_evidence(evidence: HttpObservationEvidence) -> bool:
     payload = evidence.model_dump(mode="json", exclude={"evidence_hash"})
-    return hashlib.sha256(_canonical_json(payload)).hexdigest() == evidence.evidence_hash
+    if hashlib.sha256(_canonical_json(payload)).hexdigest() == evidence.evidence_hash:
+        return True
+    # Additive schema evolution must not invalidate already-hashed evidence.
+    legacy_optional = {
+        "response_provenance",
+        "boundary",
+        "response_chain",
+    } - evidence.model_fields_set
+    if legacy_optional:
+        legacy_payload = evidence.model_dump(
+            mode="json", exclude={"evidence_hash", *legacy_optional}
+        )
+        return hashlib.sha256(_canonical_json(legacy_payload)).hexdigest() == evidence.evidence_hash
+    return False
 
 
 def _write_evidence(path: Path, evidence: HttpObservationEvidence) -> None:
@@ -618,8 +687,15 @@ def observe_http(
             sensitivity=sensitivity,
         )
 
+    target_provenance = ResponseProvenance(
+        source=ResponseProvenanceSource.TARGET,
+        target_response_observed=True,
+        synthetic=False,
+        producer="target",
+    )
+    redacted_headers = _redact_headers(headers, engagement.constraints.redaction.sensitive_headers)
     preliminary = HttpObservationEvidence(
-        schema_version="2",
+        schema_version="3",
         evidence_id=str(uuid4()),
         action_id=action_id,
         sensitivity=sensitivity,
@@ -631,9 +707,7 @@ def observe_http(
         target=redact_url(target, engagement.constraints.redaction.sensitive_query_parameters),
         status_code=status_code,
         reason=str(reason) if reason is not None else None,
-        response_headers=_redact_headers(
-            headers, engagement.constraints.redaction.sensitive_headers
-        ),
+        response_headers=redacted_headers,
         content_type=content_type,
         body_bytes_captured=len(body),
         body_truncated=truncated,
@@ -647,6 +721,19 @@ def observe_http(
         redirect=redirect,
         resolved_endpoint=resolved_endpoint,
         transport_failure=None,
+        response_provenance=target_provenance,
+        response_chain=(
+            HttpResponseHop(
+                target=redact_url(
+                    target, engagement.constraints.redaction.sensitive_query_parameters
+                ),
+                status_code=status_code,
+                response_headers=redacted_headers,
+                body_sha256=hashlib.sha256(body).hexdigest(),
+                body_bytes_captured=len(body),
+                provenance=target_provenance,
+            ),
+        ),
         evidence_hash="pending",
     )
     canonical_payload = preliminary.model_dump(mode="json", exclude={"evidence_hash"})

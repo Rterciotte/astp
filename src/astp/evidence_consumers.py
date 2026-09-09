@@ -11,7 +11,12 @@ from pydantic import BaseModel, Field
 
 from astp.http_fingerprint import fingerprint_http
 from astp.js_static_analysis import JavascriptStaticSignal, analyze_javascript_bytes
-from astp.observation import HttpObservationEvidence, verify_observation_evidence
+from astp.observation import (
+    HttpObservationEvidence,
+    ResponseProvenanceSource,
+    has_target_response_provenance,
+    verify_observation_evidence,
+)
 from astp.protocol_analyzers import analyze_protocol_posture
 from astp.secret_exposure import SecretExposureSignal, analyze_exposed_content
 from astp.signal_normalizer import NormalizedSignal, NormalizedSignalClass, normalize_signals
@@ -45,6 +50,7 @@ class EvidenceConsumerRecord(BaseModel):
     discovered_candidates: list[DiscoveredCandidate] = Field(default_factory=list)
     body_artifact_verified: bool = False
     limitations: list[str] = Field(default_factory=list)
+    provenance: ResponseProvenanceSource = ResponseProvenanceSource.OFFLINE_DERIVED
 
 
 class EvidenceConsumerSummary(BaseModel):
@@ -193,6 +199,7 @@ def consume_http_evidence(evidence_path: Path) -> EvidenceConsumerRecord:
             limitations=limitations,
         )
 
+    target_response = has_target_response_provenance(evidence)
     fingerprint = fingerprint_http(evidence)
     protocol = analyze_protocol_posture(evidence)
     posture = analyze_http_posture(evidence)
@@ -203,6 +210,11 @@ def consume_http_evidence(evidence_path: Path) -> EvidenceConsumerRecord:
     secret_signals: list[SecretExposureSignal] = []
 
     discovered.extend(_collect_redirect_candidates(evidence))
+
+    if not target_response:
+        limitations.append(
+            "NO_TARGET_ATTRIBUTION_WITHOUT_TARGET_PROVENANCE: target-derived analysis suppressed."
+        )
 
     body_path = _body_artifact_path(evidence, evidence_path)
     body_verified = False
@@ -215,7 +227,8 @@ def consume_http_evidence(evidence_path: Path) -> EvidenceConsumerRecord:
             len(data) == artifact.size_bytes and hashlib.sha256(data).hexdigest() == artifact.sha256
         )
         if body_verified:
-            body = data
+            if target_response:
+                body = data
         else:
             limitations.append("Persisted body artifact failed size/SHA-256 verification.")
     elif getattr(evidence, "body_artifact", None) is not None:

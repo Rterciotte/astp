@@ -4,7 +4,11 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from astp.observation import HttpObservationEvidence
+from astp.observation import (
+    HttpObservationEvidence,
+    ResponseProvenanceSource,
+    has_target_response_provenance,
+)
 
 
 class InterpretationSignalKind(str, Enum):
@@ -29,6 +33,7 @@ class ObservationInterpretation(BaseModel):
     signals: list[InterpretationSignal] = Field(default_factory=list)
     should_expand_surface: bool = False
     requires_human_review: bool = False
+    provenance: ResponseProvenanceSource = ResponseProvenanceSource.OFFLINE_DERIVED
 
 
 def interpret_observation(evidence: HttpObservationEvidence) -> ObservationInterpretation:
@@ -40,35 +45,36 @@ def interpret_observation(evidence: HttpObservationEvidence) -> ObservationInter
                 value=evidence.redirect.target,
             )
         )
-    if evidence.status_code in {401, 403}:
+    target_response = has_target_response_provenance(evidence)
+    if target_response and evidence.status_code in {401, 403}:
         signals.append(
             InterpretationSignal(
                 kind=InterpretationSignalKind.AUTH_BOUNDARY,
                 value=str(evidence.status_code),
             )
         )
-    elif 400 <= evidence.status_code < 500:
+    elif target_response and 400 <= evidence.status_code < 500:
         signals.append(
             InterpretationSignal(
                 kind=InterpretationSignalKind.CLIENT_ERROR,
                 value=str(evidence.status_code),
             )
         )
-    elif evidence.status_code >= 500:
+    elif target_response and evidence.status_code >= 500:
         signals.append(
             InterpretationSignal(
                 kind=InterpretationSignalKind.SERVER_ERROR,
                 value=str(evidence.status_code),
             )
         )
-    if evidence.content_type:
+    if target_response and evidence.content_type:
         signals.append(
             InterpretationSignal(
                 kind=InterpretationSignalKind.CONTENT_TYPE,
                 value=evidence.content_type,
             )
         )
-    if evidence.body_truncated:
+    if target_response and evidence.body_truncated:
         signals.append(
             InterpretationSignal(
                 kind=InterpretationSignalKind.BODY_TRUNCATED,
@@ -79,6 +85,7 @@ def interpret_observation(evidence: HttpObservationEvidence) -> ObservationInter
         evidence_id=evidence.evidence_id,
         target=evidence.target,
         signals=signals,
-        should_expand_surface=evidence.redirect is not None or bool(evidence.body_preview),
-        requires_human_review=evidence.status_code >= 500,
+        should_expand_surface=evidence.redirect is not None
+        or (target_response and bool(evidence.body_preview)),
+        requires_human_review=target_response and evidence.status_code >= 500,
     )
