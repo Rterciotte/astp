@@ -131,17 +131,23 @@ class DockerDetectorAdapter:
             proxy_inspected.returncode
             or proxy_inspected.stdout.strip() != self.config.proxy_image_digest
         ):
-            raise DetectorAdapterError("proxy_image_identity_drift", retryable=False)
+            raise DetectorAdapterError(
+                "proxy_image_identity_drift", retryable=False, blocked_before_io=True
+            )
 
         runtime = self.config.runtimes.get(request.detector.detector_id)
         expected_image = FIELD_IMAGES[request.detector.detector_id]
         if runtime is None or runtime.image != expected_image:
-            raise DetectorAdapterError("runtime_binding", retryable=False)
+            raise DetectorAdapterError("runtime_binding", retryable=False, blocked_before_io=True)
         if runtime.image_digest != request.runtime_digest:
-            raise DetectorAdapterError("runtime_digest_drift", retryable=False)
+            raise DetectorAdapterError(
+                "runtime_digest_drift", retryable=False, blocked_before_io=True
+            )
         inspected = self._run(["docker", "image", "inspect", "--format", "{{.Id}}", runtime.image])
         if inspected.returncode or inspected.stdout.strip() != runtime.image_digest:
-            raise DetectorAdapterError("runtime_image_identity_drift", retryable=False)
+            raise DetectorAdapterError(
+                "runtime_image_identity_drift", retryable=False, blocked_before_io=True
+            )
 
         suffix = permit.payload.detector_run_id.removeprefix("detector-run-")
         worker_network = f"astp-worker-{suffix}"
@@ -280,14 +286,16 @@ class DockerDetectorAdapter:
             ).fetchone()
         responses = rows.get("response_received", 0)
         failed = rows.get("failed_after_io", 0)
+        unknown = rows.get("forwarding", 0)
         blocked = rows.get("blocked_before_io", 0)
-        forwarded = responses + failed
+        forwarded = responses + failed + unknown
         return DetectorAccounting(
             attempted=forwarded + blocked,
             forwarded=forwarded,
             responses=responses,
             blocked_before_io=blocked,
             failed_after_io=failed,
+            unknown_outcomes=unknown,
             request_bytes=request_bytes,
             response_bytes=response_bytes,
         )

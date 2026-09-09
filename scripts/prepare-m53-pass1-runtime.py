@@ -13,7 +13,7 @@ def main() -> None:
     arguments = parser.parse_args()
     config = DockerDetectorConfig(
         target_network=arguments.target_network,
-        proxy_image_digest="sha256:ea27c092e8ab432fa3196613a9c554a5a12eb42a8fa3f34ce0014ad823868d02",
+        proxy_image_digest="sha256:8bd3363e8dab429137feba77ab899048aca86dc77b22e816a3c61ea6393df15e",
         runtimes={
             "nuclei.astp-lab-cve.v1": DockerDetectorRuntime(
                 image="astp/nuclei-worker:m52",

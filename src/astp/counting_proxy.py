@@ -160,7 +160,7 @@ class CountingProxy:
         origin = f"{parsed.scheme}://{parsed.hostname}:{parsed.port or (443 if parsed.scheme == 'https' else 80)}"
         allowed = urlsplit(self.permit.payload.allowed_origin)
         allowed_origin = f"{allowed.scheme}://{allowed.hostname}:{allowed.port or (443 if allowed.scheme == 'https' else 80)}"
-        if parsed.scheme != "http" or origin != allowed_origin:
+        if parsed.scheme not in {"http", "https"} or origin != allowed_origin:
             return request_id, "origin/scheme/port rejected"
         decoded_path = unquote(parsed.path)
         normalized_path = posixpath.normpath(decoded_path)
@@ -232,9 +232,19 @@ class CountingProxy:
             clean_headers = {
                 name: value
                 for name, value in headers.items()
-                if name.lower() not in HOP_HEADERS | SECRET_HEADERS
+                if name.lower() not in HOP_HEADERS | SECRET_HEADERS | {"host"}
             }
-            connection = http.client.HTTPConnection(parsed.hostname, parsed.port or 80, timeout=10)
+            clean_headers["Host"] = parsed.netloc
+            connection_class = (
+                http.client.HTTPSConnection
+                if parsed.scheme == "https"
+                else http.client.HTTPConnection
+            )
+            connection = connection_class(
+                parsed.hostname,
+                parsed.port or (443 if parsed.scheme == "https" else 80),
+                timeout=10,
+            )
             path = parsed.path or "/"
             if parsed.query:
                 path += "?" + parsed.query
@@ -251,8 +261,12 @@ class CountingProxy:
                 if (
                     redirect_origin.scheme,
                     redirect_origin.hostname,
-                    redirect_origin.port or 80,
-                ) != (allowed.scheme, allowed.hostname, allowed.port or 80):
+                    redirect_origin.port or (443 if redirect_origin.scheme == "https" else 80),
+                ) != (
+                    allowed.scheme,
+                    allowed.hostname,
+                    allowed.port or (443 if allowed.scheme == "https" else 80),
+                ):
                     self.accounting.finish(
                         request_id,
                         "response_received",
@@ -261,7 +275,12 @@ class CountingProxy:
                         len(response_body),
                         "out-of-scope redirect blocked",
                     )
-                    return 403, {}, b"out-of-scope redirect blocked", request_id
+                    return (
+                        403,
+                        {"X-ASTP-Redirect-Target": redirect},
+                        b"out-of-scope redirect blocked",
+                        request_id,
+                    )
             self.accounting.finish(
                 request_id, "response_received", response.status, len(body), len(response_body)
             )

@@ -129,6 +129,16 @@ def builtin_detector_registry() -> tuple[DetectorCapability, ...]:
     unavailable = RuntimeState.UNAVAILABLE
     return (
         _cap(
+            "astp.http-observation-field.v1",
+            VulnerabilityFamily.SECURITY_MISCONFIGURATION,
+            "astp",
+            "http.observation.field",
+            ProofRequirement.OBSERVATION,
+            requests=30,
+            runtime="counting-proxy",
+            follows_redirects=True,
+        ),
+        _cap(
             "astp.http-posture.v1",
             VulnerabilityFamily.SECURITY_MISCONFIGURATION,
             "astp",

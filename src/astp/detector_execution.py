@@ -7,7 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -76,12 +76,14 @@ class DetectorAdapterError(RuntimeError):
         accounting: DetectorAccounting | None = None,
         network_started: bool = False,
         retryable: bool = False,
+        blocked_before_io: bool = False,
     ) -> None:
         super().__init__(category)
         self.category = category
         self.accounting = accounting or DetectorAccounting()
         self.network_started = network_started
         self.retryable = retryable
+        self.blocked_before_io = blocked_before_io
 
 
 class TypedDetectorAdapter(Protocol):
@@ -133,6 +135,12 @@ class DetectorExecutionRequest(BaseModel):
     execution_attempt: int = Field(default=1, ge=1)
     parent_candidate_id: str | None = None
     input_artifact_path: str | None = None
+    http_method: Literal["GET", "HEAD"] = "GET"
+    user_agent: str | None = None
+    follow_redirects: bool = False
+    max_redirects: int = Field(default=0, ge=0, le=5)
+    authorized_path_prefix: str | None = None
+    max_body_bytes: int = Field(default=262_144, ge=0, le=1_048_576)
 
 
 class DetectorRunResult(BaseModel):
@@ -326,8 +334,8 @@ class DetectorExecutionService:
                 detector_id=request.detector.detector_id,
                 operation=request.detector.operation,
                 allowed_origin=origin,
-                allowed_path_prefix=parsed.path or "/",
-                allowed_methods=("GET",),
+                allowed_path_prefix=request.authorized_path_prefix or parsed.path or "/",
+                allowed_methods=(request.http_method,),
                 max_requests=ceiling,
                 max_concurrency=request.detector.maximum_default_concurrency,
                 max_rps=request.max_rps,
@@ -420,7 +428,13 @@ class DetectorExecutionService:
                 runtime_id=request.runtime_id,
                 target=request.target,
                 status=(
-                    DetectorRunStatus.UNKNOWN_OUTCOME if uncertain else DetectorRunStatus.FAILED
+                    DetectorRunStatus.UNKNOWN_OUTCOME
+                    if uncertain
+                    else (
+                        DetectorRunStatus.BLOCKED_BEFORE_IO
+                        if exc.blocked_before_io
+                        else DetectorRunStatus.FAILED
+                    )
                 ),
                 started_at=started,
                 finished_at=datetime.now(UTC),
