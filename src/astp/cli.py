@@ -53,6 +53,7 @@ from astp.lifecycle import (
     revoke_permit,
     verify_audit_chain,
 )
+from astp.m53_chaos import ChaosPoint, consolidate_chaos, inject_chaos, recover_chaos
 from astp.m53_pass1 import run_m53_pass1_execution
 from astp.method_strategy import choose_observation_method
 from astp.models import (
@@ -3142,6 +3143,41 @@ def _local_bughunt_detector_requests(
             )
         )
     return tuple(requests)
+
+
+@app.command("orchestrator-chaos-inject", hidden=True)
+def orchestrator_chaos_inject_command(
+    campaign_id: Annotated[str, typer.Option("--campaign-id")],
+    point: Annotated[ChaosPoint, typer.Option("--point")],
+    root: Annotated[Path, typer.Option("--root")],
+    target: Annotated[str | None, typer.Option("--target")] = None,
+    acceptance_enabled: Annotated[bool, typer.Option("--acceptance-enabled")] = False,
+) -> None:
+    """Acceptance-only typed crash hook; exits after durable injection."""
+    inject_chaos(root, campaign_id, point, target=target, enabled=acceptance_enabled)
+    raise typer.Exit(86)
+
+
+@app.command("orchestrator-chaos-resume", hidden=True)
+def orchestrator_chaos_resume_command(
+    campaign_id: Annotated[str, typer.Option("--campaign-id")],
+    root: Annotated[Path, typer.Option("--root")],
+) -> None:
+    """Recover a durable acceptance run without resupplying detector requests."""
+    event = json.loads((root / "chaos-event.json").read_text(encoding="utf-8"))
+    if event["campaign_id"] != campaign_id:
+        raise typer.BadParameter("campaign binding mismatch")
+    result = recover_chaos(root)
+    console.print(result.model_dump_json())
+
+
+@app.command("orchestrator-chaos-consolidate", hidden=True)
+def orchestrator_chaos_consolidate_command(
+    campaign_id: Annotated[str, typer.Option("--campaign-id")],
+    root: Annotated[Path, typer.Option("--root")],
+) -> None:
+    report = consolidate_chaos(root, campaign_id)
+    console.print(report.model_dump_json())
 
 
 @app.command("orchestrator-status")

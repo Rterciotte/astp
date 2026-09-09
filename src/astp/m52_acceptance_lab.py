@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, Self
 from urllib.parse import parse_qs, urlsplit
@@ -53,6 +54,10 @@ class VulnerableLabHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/cve-fixture":
             self._send("fixture", headers={"X-ASTP-CVE-Fixture": "CVE-2099-0001-vulnerable"})
+            return
+        if parsed.path == "/slow":
+            time.sleep(2)
+            self._send("slow response")
             return
         if parsed.path in {"/idor/object/A", "/secure/object/A"}:
             identity = self.headers.get("X-ASTP-Identity", "")
