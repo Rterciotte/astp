@@ -17,7 +17,13 @@ from astp.evidence_consumers import (
 )
 from astp.evidence_store import SensitivityLabel
 from astp.findings import FindingSet
-from astp.observation import BodyArtifactReference, HttpObservationEvidence, _canonical_json
+from astp.observation import (
+    BodyArtifactReference,
+    HttpObservationEvidence,
+    ResponseProvenance,
+    ResponseProvenanceSource,
+    _canonical_json,
+)
 
 runner = CliRunner()
 
@@ -51,6 +57,12 @@ def _write_evidence(
             sha256=body_hash,
             size_bytes=len(body),
             sensitivity=SensitivityLabel.INTERNAL,
+        ),
+        response_provenance=ResponseProvenance(
+            source=ResponseProvenanceSource.TARGET,
+            target_response_observed=True,
+            synthetic=False,
+            producer="target",
         ),
         evidence_hash="pending",
     )

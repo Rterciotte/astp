@@ -14,7 +14,11 @@ from astp.fingerprint import TechnologyFingerprint
 from astp.javascript_inventory import inventory_javascript
 from astp.lineage import build_assessment_lineage
 from astp.network_capabilities import builtin_network_capabilities
-from astp.observation import HttpObservationEvidence
+from astp.observation import (
+    HttpObservationEvidence,
+    ResponseProvenance,
+    ResponseProvenanceSource,
+)
 from astp.operator_review import ReviewDecision, record_operator_review
 from astp.portable_assessment import export_portable_assessment, verify_portable_assessment
 from astp.report_bundle import create_report_bundle, verify_report_bundle
@@ -43,6 +47,12 @@ def _evidence(**updates: object) -> HttpObservationEvidence:
         "body_bytes_captured": 1,
         "body_sha256": "0" * 64,
         "body_preview": "<html></html>",
+        "response_provenance": ResponseProvenance(
+            source=ResponseProvenanceSource.TARGET,
+            target_response_observed=True,
+            synthetic=False,
+            producer="target",
+        ),
         "evidence_hash": "1" * 64,
     }
     payload.update(updates)

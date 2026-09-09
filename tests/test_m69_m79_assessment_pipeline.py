@@ -20,7 +20,11 @@ from astp.models import (
     ScopeRule,
 )
 from astp.models import TestDefinition as RuntimeTestDefinition
-from astp.observation import HttpObservationEvidence
+from astp.observation import (
+    HttpObservationEvidence,
+    ResponseProvenance,
+    ResponseProvenanceSource,
+)
 from astp.proof_registry import builtin_proof_registry, select_proof_verifier
 from astp.protocol_analyzers import analyze_protocol_posture
 from astp.signal_normalizer import NormalizedSignalClass, normalize_signals
@@ -61,6 +65,12 @@ def evidence(*, body: str = "", headers: dict[str, str] | None = None) -> HttpOb
         content_type="text/html",
         body_sha256="0" * 64,
         body_preview=body or None,
+        response_provenance=ResponseProvenance(
+            source=ResponseProvenanceSource.TARGET,
+            target_response_observed=True,
+            synthetic=False,
+            producer="target",
+        ),
         evidence_hash="pending",
     )
     import hashlib

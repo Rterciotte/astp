@@ -95,8 +95,8 @@ def test_target_redirect_and_boundary_decision_are_separate():
     )
 
 
-def test_legacy_astp_boundary_evidence_fails_closed(tmp_path):
-    evidence = _evidence(status=403, headers={"X-ASTP-Request-ID": "request"})
+def test_legacy_evidence_without_any_boundary_marker_fails_closed(tmp_path):
+    evidence = _evidence(status=200, headers={"Server": "looks-like-a-target"})
     payload = evidence.model_dump(
         mode="json",
         exclude={"evidence_hash", "response_provenance", "boundary", "response_chain"},

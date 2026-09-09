@@ -12,7 +12,12 @@ from astp.coordinator_gates import (
 )
 from astp.coordinator_history import list_transition_history, record_transition
 from astp.evidence_store import SensitivityLabel
-from astp.observation import HttpObservationEvidence, RedirectObservation
+from astp.observation import (
+    HttpObservationEvidence,
+    RedirectObservation,
+    ResponseProvenance,
+    ResponseProvenanceSource,
+)
 from astp.pentest_readiness import current_pentest_readiness
 from astp.verification_planner import VerificationProposalStatus, propose_verification_action
 from astp.verifier_catalog import builtin_verifier_catalog
@@ -32,6 +37,12 @@ def _evidence(**overrides: object) -> HttpObservationEvidence:
         "target": "https://example.com/account",
         "status_code": 200,
         "response_headers": {},
+        "response_provenance": ResponseProvenance(
+            source=ResponseProvenanceSource.TARGET,
+            target_response_observed=True,
+            synthetic=False,
+            producer="target",
+        ),
         "body_sha256": "a" * 64,
         "evidence_hash": "b" * 64,
     }

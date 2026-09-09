@@ -315,6 +315,8 @@ def test_required_user_agent_and_sensitive_headers_are_not_persisted(target, tmp
     assert evidence.response_headers["Set-Cookie"] == "[REDACTED]"
     assert "must-not-persist" not in (run_root / "observation-evidence.json").read_text()
     assert "must-not-persist" not in (run_root / "observation-receipt.json").read_text()
+    public_receipt = adapter._public_receipt(receipt)
+    assert "must-not-persist" not in str(public_receipt)
     assert verify_evidence_manifest(run_root / "evidence-manifest.jsonl")[0]
 
 

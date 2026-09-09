@@ -166,9 +166,8 @@ class HttpObservationEvidence(BaseModel):
 def has_target_response_provenance(evidence: HttpObservationEvidence) -> bool:
     """Enforce NO_TARGET_ATTRIBUTION_WITHOUT_TARGET_PROVENANCE.
 
-    Legacy evidence remains analyzable only when it contains no explicit ASTP
-    boundary markers. This preserves established target captures while failing
-    closed for the known synthetic-proxy evidence shape.
+    Legacy evidence without explicit provenance always fails closed. Status,
+    headers, and body content are never used to infer who produced a response.
     """
     provenance = evidence.response_provenance
     if provenance is not None:
@@ -177,7 +176,7 @@ def has_target_response_provenance(evidence: HttpObservationEvidence) -> bool:
             and provenance.target_response_observed
             and not provenance.synthetic
         )
-    return not any(name.lower().startswith("x-astp-") for name in evidence.response_headers)
+    return False
 
 
 class HttpObservationFailureEvidence(BaseModel):

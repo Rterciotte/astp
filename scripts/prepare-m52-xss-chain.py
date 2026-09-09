@@ -92,7 +92,7 @@ def main() -> None:
     sqlmap = build("sqlmap.detect-bounded.v1", "http://astp-m52-lab:8080/sql?id=1")
     config = DockerDetectorConfig(
         target_network=arguments.target_network,
-        proxy_image_digest="sha256:8bd3363e8dab429137feba77ab899048aca86dc77b22e816a3c61ea6393df15e",
+        proxy_image_digest="sha256:667244c6e1a89371dc227aa6a6bd73e71f8fad8f8521911f83c680c481279f13",
         runtimes={
             detector_id: DockerDetectorRuntime(image=images[detector_id], image_digest=digest)
             for detector_id, digest in digests.items()

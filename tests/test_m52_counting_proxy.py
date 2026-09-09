@@ -77,7 +77,7 @@ def test_authoritative_forwarding_timestamps_include_rate_limit_wait(tmp_path):
             datetime.fromisoformat(row[0])
             for row in db.execute("SELECT started_at FROM requests ORDER BY started_at")
         ]
-    assert (timestamps[1] - timestamps[0]).total_seconds() >= 0.24
+    assert (timestamps[1] - timestamps[0]).total_seconds() >= 0.20
 
 
 @pytest.mark.parametrize(

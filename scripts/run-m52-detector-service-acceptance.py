@@ -44,7 +44,7 @@ def main() -> int:
     key = "astp-local-signing-key-must-be-32-bytes-long"
     adapter_config = DockerDetectorConfig(
         target_network=arguments.target_network,
-        proxy_image_digest="sha256:8bd3363e8dab429137feba77ab899048aca86dc77b22e816a3c61ea6393df15e",
+        proxy_image_digest="sha256:667244c6e1a89371dc227aa6a6bd73e71f8fad8f8521911f83c680c481279f13",
         runtimes={
             detector.detector_id: DockerDetectorRuntime(
                 image="astp/nuclei-worker:m52",

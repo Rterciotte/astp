@@ -1,7 +1,11 @@
 from datetime import UTC, datetime
 
 from astp.models import Engagement, ScopeKind, ScopePolicy, ScopeRule
-from astp.observation import HttpObservationEvidence
+from astp.observation import (
+    HttpObservationEvidence,
+    ResponseProvenance,
+    ResponseProvenanceSource,
+)
 from astp.target_discovery import CandidateKind, CandidateSafety, discover_targets_from_evidence
 
 
@@ -26,6 +30,12 @@ def test_body_preview_link_discovery_is_bounded_and_non_executing() -> None:
         response_headers={},
         body_sha256="0" * 64,
         body_preview='<a href="/a">A</a><img src="https://cdn.example.com/i.png">',
+        response_provenance=ResponseProvenance(
+            source=ResponseProvenanceSource.TARGET,
+            target_response_observed=True,
+            synthetic=False,
+            producer="target",
+        ),
         evidence_hash="1" * 64,
     )
     result = discover_targets_from_evidence(evidence, engagement, max_link_candidates=1)

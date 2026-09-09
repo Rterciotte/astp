@@ -22,7 +22,11 @@ from astp.models import (
 from astp.models import (
     TestDefinition as RuntimeTestDefinition,
 )
-from astp.observation import HttpObservationEvidence
+from astp.observation import (
+    HttpObservationEvidence,
+    ResponseProvenance,
+    ResponseProvenanceSource,
+)
 from astp.safe_test_catalog import builtin_safe_web_tests
 from astp.session_feedback import apply_session_feedback
 from astp.target_discovery import (
@@ -72,6 +76,12 @@ def evidence(method="HEAD", status=200):
         method=method,
         target="https://example.com/",
         status_code=status,
+        response_provenance=ResponseProvenance(
+            source=ResponseProvenanceSource.TARGET,
+            target_response_observed=True,
+            synthetic=False,
+            producer="target",
+        ),
         body_sha256="0" * 64,
         evidence_hash="1" * 64,
     )

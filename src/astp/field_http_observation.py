@@ -92,11 +92,9 @@ class FieldHttpObservationAdapter:
             )
 
         suffix = permit.payload.detector_run_id.removeprefix("detector-run-")
-        worker_network = f"astp-field-worker-{suffix}"
         proxy_name = f"astp-field-proxy-{suffix}"
         ledger_path = run_root / "proxy-ledger.db"
         authorization_path = run_root / "authorization.json"
-        self._checked(["docker", "network", "create", "--internal", worker_network])
         try:
             self._checked(
                 [
@@ -106,14 +104,14 @@ class FieldHttpObservationAdapter:
                     "--name",
                     proxy_name,
                     "--network",
-                    worker_network,
+                    self.config.target_network,
                     "--read-only",
                     "--cap-drop",
                     "ALL",
                     "--security-opt",
                     "no-new-privileges:true",
                     "--publish",
-                    "127.0.0.1::8081",
+                    "127.0.0.1:0:8081",
                     "--env",
                     f"ASTP_DETECTOR_RUN_KEY={self.signing_key}",
                     "--mount",
@@ -123,7 +121,6 @@ class FieldHttpObservationAdapter:
                     self.config.proxy_image,
                 ]
             )
-            self._checked(["docker", "network", "connect", self.config.target_network, proxy_name])
             self._wait_proxy_ready(proxy_name)
             proxy_port = self._proxy_port(proxy_name)
             receipt = self._observe(proxy_port, request)
@@ -132,10 +129,7 @@ class FieldHttpObservationAdapter:
                 accounting.model_dump_json(indent=2) + "\n", encoding="utf-8"
             )
             evidence = self._persist_evidence(run_root, request, permit, receipt)
-            public_receipt = {
-                key: value for key, value in receipt.items() if key not in {"body", "headers"}
-            }
-            public_receipt["headers"] = _redact_headers(receipt["headers"])
+            public_receipt = self._public_receipt(receipt)
             return DetectorAdapterResult(
                 accounting=accounting,
                 artifacts=DetectorArtifacts(
@@ -163,7 +157,6 @@ class FieldHttpObservationAdapter:
             ) from exc
         finally:
             self._run(["docker", "rm", "--force", proxy_name])
-            self._run(["docker", "network", "rm", worker_network])
 
     def _proxy_port(self, proxy_name: str) -> int:
         for _ in range(20):
@@ -273,6 +266,16 @@ class FieldHttpObservationAdapter:
                     raise
                 time.sleep(0.1)
         raise AssertionError("unreachable")
+
+    @staticmethod
+    def _public_receipt(receipt: dict) -> dict:
+        public = {key: value for key, value in receipt.items() if key not in {"body", "headers"}}
+        public["headers"] = _redact_headers(receipt["headers"])
+        public["response_chain"] = [
+            {**hop, "headers": _redact_headers(hop["headers"])}
+            for hop in receipt.get("response_chain", [])
+        ]
+        return public
 
     @staticmethod
     def _origin(target: str) -> tuple[str, str | None, int]:

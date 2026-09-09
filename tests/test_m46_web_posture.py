@@ -1,6 +1,10 @@
 from datetime import UTC, datetime
 
-from astp.observation import HttpObservationEvidence
+from astp.observation import (
+    HttpObservationEvidence,
+    ResponseProvenance,
+    ResponseProvenanceSource,
+)
 from astp.web_posture import analyze_http_posture
 
 
@@ -16,6 +20,12 @@ def test_posture_signals_are_not_confirmed_vulnerabilities():
         target="https://example.com",
         status_code=200,
         response_headers={"Server": "nginx"},
+        response_provenance=ResponseProvenance(
+            source=ResponseProvenanceSource.TARGET,
+            target_response_observed=True,
+            synthetic=False,
+            producer="target",
+        ),
         body_sha256="0",
         evidence_hash="x",
     )
