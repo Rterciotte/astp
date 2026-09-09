@@ -43,6 +43,12 @@ if (-not (Test-Path $VenvPython)) {
     exit 2
 }
 
+$BlackFiles = @(& rg --files -g "*.py" src tests workers browser scripts)
+if ($LASTEXITCODE -ne 0 -or $BlackFiles.Count -eq 0) {
+    throw "Unable to enumerate Python files for Black"
+}
+$env:BLACK_CACHE_DIR = Join-Path $RepoRoot ".black-cache"
+
 Write-Host "ASTP validation"
 Write-Host "Repository: $RepoRoot"
 Write-Host "Python:     $VenvPython"
@@ -54,7 +60,7 @@ if ($CheckOnly) {
     }
 
     Invoke-Checked "Black check" {
-        & $VenvPython -m black --check .
+        & $VenvPython -m black --workers 1 --check @BlackFiles
     }
 }
 else {
@@ -63,7 +69,7 @@ else {
     }
 
     Invoke-Checked "Black format" {
-        & $VenvPython -m black .
+        & $VenvPython -m black --workers 1 @BlackFiles
     }
 
     Invoke-Checked "Ruff verification" {

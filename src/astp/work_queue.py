@@ -15,6 +15,8 @@ class WorkQueueItem(BaseModel):
     target: str
     method: str
     requires_new_permit: bool = True
+    semantic_exclusion_clears: set[str] = Field(default_factory=set)
+    semantic_review_bound: bool = False
 
 
 class WorkQueue(BaseModel):
@@ -62,6 +64,8 @@ def build_fair_work_queue(
                     target=item.target,
                     method=item.method,
                     requires_new_permit=True,
+                    semantic_exclusion_clears=set(item.semantic_exclusion_clears),
+                    semantic_review_bound=True,
                 )
             )
             progressed = True

@@ -13,7 +13,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.detectaflow.com.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -24,7 +24,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.nuclea.com.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -35,7 +35,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.apiimf.org.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -46,7 +46,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.chequelegal.com.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -57,7 +57,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.cip-bancos.org.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -68,7 +68,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.crcp.org.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -79,7 +79,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.crt4.com.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -90,7 +90,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.nucleaassociacao.org.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -101,7 +101,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.nucleachain.com.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -112,7 +112,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.nucleaconecta.com.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -123,7 +123,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.portaldaportabilidade.org.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -134,7 +134,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.nuclea-cotas.com.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -145,7 +145,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.nucleaportabilidade.com.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -156,7 +156,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.saopauloconsig.com.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -167,7 +167,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.pds-ext.org.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -178,7 +178,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.portaldoparticipante.org.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 - effect: allow
   selector:
@@ -189,7 +189,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Escopo
     source_text: '*.portaldoconsignado.com.br'
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
   label: null
 constraints:
 - code: no_social_engineering
@@ -201,7 +201,7 @@ constraints:
     section: Política do Programa
     source_text: Engenharia social (por exemplo, tentativas de roubar cookies, páginas
       de login falsas para coletar credenciais)
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
 - code: no_dos
   effect: restrict
   value: true
@@ -210,14 +210,15 @@ constraints:
     source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
     section: Política do Programa
     source_text: Ataques de negação de serviço
-    captured_at: '2026-09-04T16:11:34.418000Z'
+    captured_at: '2026-09-07T01:06:44.431000Z'
 excluded_finding_types: []
 recommended_user_agent: null
 reviewed_max_requests_per_second: null
+semantic_exclusions: []
 source:
   source_type: authenticated_browser
   source_url: https://admin.bughunt.com.br/program/detail?65ccabbac229c14aeb82af58
   title: Núclea - Bug Bounty Program
-  captured_at: '2026-09-04T16:11:34.418000Z'
-  content_sha256: a290d8c71b885732a735c868db05d3f01baf8e7c0cea62d9eb5af07a87a5cc7a
+  captured_at: '2026-09-07T01:06:44.431000Z'
+  content_sha256: 62713916c8d367b56c1bed3b39bad4b3ebd41430f29b0c789b541914d24de56a
 issues: []

@@ -1,0 +1,1 @@
+{"request_id":"dalfox-local","permit_id":"p","action_id":"a","engagement_id":"lab","operation":"dalfox.reflected-bounded","target":"http://astp-m52-lab:8080/reflect?q=hello","parameter":"q","max_requests":20,"max_workers":1,"rate_per_second":1,"timeout_seconds":60}

@@ -13,7 +13,8 @@ from astp.http_fingerprint import fingerprint_http
 from astp.js_static_analysis import JavascriptStaticSignal, analyze_javascript_bytes
 from astp.observation import HttpObservationEvidence, verify_observation_evidence
 from astp.protocol_analyzers import analyze_protocol_posture
-from astp.signal_normalizer import NormalizedSignal, normalize_signals
+from astp.secret_exposure import SecretExposureSignal, analyze_exposed_content
+from astp.signal_normalizer import NormalizedSignal, NormalizedSignalClass, normalize_signals
 from astp.web_posture import analyze_http_posture
 
 
@@ -40,6 +41,7 @@ class EvidenceConsumerRecord(BaseModel):
     content_kind: ContentKind
     normalized_signals: list[NormalizedSignal] = Field(default_factory=list)
     javascript_signals: list[JavascriptStaticSignal] = Field(default_factory=list)
+    secret_signals: list[SecretExposureSignal] = Field(default_factory=list)
     discovered_candidates: list[DiscoveredCandidate] = Field(default_factory=list)
     body_artifact_verified: bool = False
     limitations: list[str] = Field(default_factory=list)
@@ -198,6 +200,7 @@ def consume_http_evidence(evidence_path: Path) -> EvidenceConsumerRecord:
 
     discovered: list[DiscoveredCandidate] = []
     js_signals: list[JavascriptStaticSignal] = []
+    secret_signals: list[SecretExposureSignal] = []
 
     discovered.extend(_collect_redirect_candidates(evidence))
 
@@ -220,6 +223,25 @@ def consume_http_evidence(evidence_path: Path) -> EvidenceConsumerRecord:
 
     if body is not None:
         text = body.decode("utf-8", errors="replace")
+        secret_signals = list(
+            analyze_exposed_content(body, content_type=evidence.content_type or "unknown")
+        )
+        for secret in secret_signals:
+            normalized.append(
+                NormalizedSignal(
+                    key=f"secret.{secret.kind.value}.{secret.value_sha256[:16]}",
+                    signal_class=NormalizedSignalClass.SECURITY_REVIEW,
+                    target=evidence.target,
+                    observation=(
+                        f"{secret.kind.value} candidate: {secret.redacted_value}; "
+                        "validity not tested"
+                    ),
+                    evidence_id=evidence.evidence_id,
+                    confidence=secret.confidence,
+                    eligible_for_finding_candidate=secret.confidence >= 0.7,
+                    confirmed_vulnerability=False,
+                )
+            )
         if kind is ContentKind.JAVASCRIPT:
             analysis = analyze_javascript_bytes(body)
             js_signals = analysis.signals
@@ -252,6 +274,7 @@ def consume_http_evidence(evidence_path: Path) -> EvidenceConsumerRecord:
         content_kind=kind,
         normalized_signals=normalized,
         javascript_signals=js_signals,
+        secret_signals=secret_signals,
         discovered_candidates=sorted(unique.values(), key=lambda item: item.target),
         body_artifact_verified=body_verified,
         limitations=limitations,

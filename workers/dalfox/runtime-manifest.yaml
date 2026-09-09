@@ -1,0 +1,11 @@
+tool: dalfox
+version: 2.12.0
+upstream_digest: sha256:11c1249ef35f8eb3482d180e247304b351b37da2929eecd518dd8057d2687dc7
+image: astp/dalfox-worker:m52
+image_id: sha256:4598aeb2403c27d5ecda7c9a853d88df255a2874e4cc772bfa33bcb88aa16afc
+contract: typed:dalfox.v1
+runtime_qualified: true
+field_ready: true
+nightly_enabled: false
+qualified_profiles: [dalfox.reflected-bounded]
+unqualified_profiles: [dalfox.dom-analysis]

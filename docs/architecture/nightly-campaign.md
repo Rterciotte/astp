@@ -11,7 +11,7 @@ The MVP is intentionally conservative:
 - ASTP never stores BugHunt credentials.
 - Every program detail is normalized by the existing program-intake pipeline.
 - A program with unresolved blocking policy issues is skipped with zero target requests.
-- Semantic deny guardrails are never auto-cleared.
+- Semantic deny guardrails are never auto-cleared. Target reviews are exact-target, source-revision-bound artifacts.
 - HTTP execution remains limited to the existing read-only GET observation path.
 - Every target request still receives one fresh exact ASTP permit.
 - Evidence feedback may add in-scope links for a later bounded round.
@@ -61,6 +61,29 @@ python -m astp.cli nightly-campaign `
   --output-dir .astp\campaigns
 ```
 
+If a ready program contains semantic deny guardrails, the dry run creates
+`<program-id>/semantic-review-template.yaml`. The template is bound to the synchronized
+program `source_content_sha256` and lists the exact seed targets. An operator must review
+each target against every guardrail and record each guardrail ID under either
+`semantic_exclusion_clears` or `semantic_exclusion_matches`, together with `reviewed_at`.
+Missing decisions remain blocked; a match is denied; stale, unknown or contradictory
+reviews fail closed. The review is never inferred from hostname keywords.
+
+Rerun the selected program with the reviewed file:
+
+```powershell
+python -m astp.cli nightly-campaign `
+  --catalog .astp\program-catalog.yaml `
+  --output-dir .astp\campaigns `
+  --program-id <program-id> `
+  --semantic-review-file .astp\reviews\<program-id>.yaml
+```
+
+The planner binds the exact target clearance set into the work queue. The permit broker
+re-authorizes from that queue-bound review and rejects later clearance overrides. Newly
+discovered targets are not allowed to inherit a seed target's review; they appear in the
+refreshed semantic review template and require their own explicit review before a later run.
+
 Only after the dry run shows the expected programs and blocks ambiguous policies, enable execution:
 
 ```powershell
@@ -103,3 +126,8 @@ A program can be `completed`, `planned`, `blocked`, `failed`, `no_targets` or `n
 ## Multi-site path
 
 The campaign runner is deliberately platform-neutral once a `BugBountyWorkspace` has normalized program records. Future sites should add authenticated source adapters that feed the same `discover-programs` / `program-detail` contract rather than duplicating the execution pipeline.
+## M52/M53 detector and orchestrator boundary
+
+Stored HTTP evidence now feeds the M52 secret/exposure analyzer alongside fingerprint, protocol and posture consumers. Secret values are represented only by redacted previews and hashes; pattern matches remain candidates rather than confirmed findings.
+
+The M53 orchestrator currently supports durable zero-network planning, state transitions, idempotency, recovery guards, status, reporting and manifest verification. Physical orchestrated detector execution remains blocked until the corresponding M52 runtime has immutable build provenance and field qualification.

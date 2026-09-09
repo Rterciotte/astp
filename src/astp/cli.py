@@ -32,6 +32,8 @@ from astp.ctf_analysis import CtfAnalysisResult, analyze_ctf_challenge
 from astp.ctf_mode import ChallengeDefinition, inventory_challenge
 from astp.ctf_network import ensure_ctf_http_target_authorized
 from astp.ctf_solver import CtfLocalSolveResult, run_local_ctf_solvers, verify_flag_candidates
+from astp.detector_execution import DetectorExecutionRequest
+from astp.docker_detector_adapter import DockerDetectorAdapter, DockerDetectorConfig
 from astp.evidence_bundle import export_evidence_bundle, verify_evidence_bundle
 from astp.evidence_consumers import EvidenceConsumerSummary, consume_evidence_directory
 from astp.evidence_store import SensitivityLabel, verify_evidence_manifest
@@ -73,6 +75,16 @@ from astp.observation import (
     verify_observation_evidence,
 )
 from astp.operational_lease import ProgramOperationalLease
+from astp.orchestrator import (
+    finalize_orchestrator,
+    request_stop,
+    resume_orchestrator,
+    run_orchestrator_execution,
+    start_orchestrator,
+)
+from astp.orchestrator_manifest import CampaignManifest, verify_campaign_manifest
+from astp.orchestrator_models import AutonomousCampaignConfig
+from astp.orchestrator_store import OrchestratorStore
 from astp.permit_broker import broker_queue_item_permit
 from astp.permits import (
     DEFAULT_PERMIT_TTL_SECONDS,
@@ -2784,6 +2796,13 @@ def nightly_campaign_command(
             help="Run only this catalog program ID; repeat to select multiple programs",
         ),
     ] = None,
+    semantic_review_files: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--semantic-review-file",
+            help=("Target-bound semantic deny review YAML; repeat for multiple programs"),
+        ),
+    ] = None,
 ) -> None:
     """Run a bounded multi-program Bug Bounty campaign from synchronized authenticated rules."""
     try:
@@ -2799,6 +2818,7 @@ def nightly_campaign_command(
             max_link_candidates=max_link_candidates,
             persist_body=persist_body,
             program_ids=program_ids,
+            semantic_review_paths=semantic_review_files,
         )
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -2971,6 +2991,144 @@ def evaluate_test_command(
 
     for reason in result.reasons:
         console.print(f"- {reason}")
+
+
+@app.command("orchestrator-start")
+def orchestrator_start_command(
+    campaign_id: Annotated[str, typer.Option("--campaign-id")],
+    program_id: Annotated[list[str] | None, typer.Option("--program-id")] = None,
+    all_ready: Annotated[bool, typer.Option("--all-ready")] = False,
+    root: Annotated[Path, typer.Option("--root")] = Path(".astp") / "orchestrator",
+    execute: Annotated[bool, typer.Option("--execute")] = False,
+    detector_request: Annotated[list[Path] | None, typer.Option("--detector-request")] = None,
+    docker_config: Annotated[Path | None, typer.Option("--docker-config")] = None,
+) -> None:
+    """Create a durable orchestrator campaign; defaults to a zero-network dry run."""
+    config = AutonomousCampaignConfig(
+        campaign_id=campaign_id,
+        selected_program_ids=tuple(program_id or ()),
+        include_all_ready_programs=all_ready,
+        dry_run=not execute,
+        execute=execute,
+    )
+    campaign_root = root / campaign_id
+    if execute:
+        if docker_config is None or not detector_request:
+            raise typer.BadParameter(
+                "--execute requires --docker-config and at least one typed --detector-request"
+            )
+        signing_key = os.environ.get("ASTP_DETECTOR_RUN_KEY", "")
+        if len(signing_key.encode()) < 32:
+            raise typer.BadParameter("ASTP_DETECTOR_RUN_KEY must contain at least 32 bytes")
+        try:
+            adapter_config = DockerDetectorConfig.model_validate_json(
+                docker_config.read_text(encoding="utf-8")
+            )
+            requests = tuple(
+                DetectorExecutionRequest.model_validate_json(path.read_text(encoding="utf-8"))
+                for path in detector_request
+            )
+            adapter = DockerDetectorAdapter(adapter_config, signing_key)
+            snapshot, results = run_orchestrator_execution(
+                config,
+                campaign_root,
+                requests=requests,
+                adapters=(adapter,),
+                signing_key=signing_key,
+            )
+        except (OSError, ValueError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        console.print(f"Detector runs: {len(results)}")
+        console.print(
+            "Network forwarded: "
+            f"{snapshot['counters']['requests_forwarded']} (counting proxy authoritative)"
+        )
+    else:
+        snapshot = start_orchestrator(config, campaign_root)
+    console.print(f"Campaign: {campaign_id}")
+    console.print(f"State: {snapshot['campaign']['state'].upper()}")
+    console.print(
+        "Network execution: PHYSICAL DETECTOR SERVICE"
+        if execute
+        else "Network execution: NOT PERFORMED"
+    )
+    console.print(f"Storage: {campaign_root}")
+
+
+@app.command("orchestrator-status")
+def orchestrator_status_command(
+    campaign_id: Annotated[str, typer.Argument()],
+    root: Annotated[Path, typer.Option("--root")] = Path(".astp") / "orchestrator",
+) -> None:
+    """Read durable campaign status without network activity."""
+    snapshot = OrchestratorStore(root / campaign_id / "campaign.db").snapshot(campaign_id)
+    counters = snapshot["counters"]
+    console.print(f"Campaign: {campaign_id}")
+    console.print(f"State: {snapshot['campaign']['state'].upper()}")
+    console.print(
+        "Permits issued/consumed: " f"{counters['permits_issued']}/{counters['permits_consumed']}"
+    )
+    console.print(f"Network actions: {counters['network_actions']}")
+    console.print(f"Unknown outcomes: {counters['unknown_outcomes']}")
+    console.print("Network execution: NOT PERFORMED")
+
+
+@app.command("orchestrator-stop")
+def orchestrator_stop_command(
+    campaign_id: Annotated[str, typer.Argument()],
+    root: Annotated[Path, typer.Option("--root")] = Path(".astp") / "orchestrator",
+) -> None:
+    """Request a durable graceful stop without starting new work."""
+    campaign_root = root / campaign_id
+    request_stop(OrchestratorStore(campaign_root / "campaign.db"), campaign_id, campaign_root)
+    console.print(f"Campaign {campaign_id}: PAUSED")
+
+
+@app.command("orchestrator-resume")
+def orchestrator_resume_command(
+    campaign_id: Annotated[str, typer.Argument()],
+    root: Annotated[Path, typer.Option("--root")] = Path(".astp") / "orchestrator",
+) -> None:
+    """Resume only when durable state contains no unresolved unknown outcome."""
+    campaign_root = root / campaign_id
+    try:
+        resume_orchestrator(
+            OrchestratorStore(campaign_root / "campaign.db"), campaign_id, campaign_root
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    console.print(f"Campaign {campaign_id}: RUNNING")
+
+
+@app.command("orchestrator-report")
+def orchestrator_report_command(
+    campaign_id: Annotated[str, typer.Argument()],
+    root: Annotated[Path, typer.Option("--root")] = Path(".astp") / "orchestrator",
+    partial: Annotated[bool, typer.Option("--partial")] = False,
+) -> None:
+    """Consolidate a final or explicitly partial report and immutable manifest."""
+    campaign_root = root / campaign_id
+    report = finalize_orchestrator(
+        OrchestratorStore(campaign_root / "campaign.db"),
+        campaign_id,
+        campaign_root,
+        partial=partial,
+    )
+    console.print(f"Report: {report}")
+
+
+@app.command("verify-orchestrator-campaign")
+def verify_orchestrator_campaign_command(
+    campaign_root: Annotated[Path, typer.Argument()],
+) -> None:
+    """Verify the hashes in a finalized orchestrator campaign manifest."""
+    manifest = CampaignManifest.model_validate_json(
+        (campaign_root / "campaign-manifest.json").read_text(encoding="utf-8")
+    )
+    valid = verify_campaign_manifest(manifest, campaign_root)
+    console.print(f"Campaign manifest valid: {'YES' if valid else 'NO'}")
+    if not valid:
+        raise typer.Exit(code=9)
 
 
 if __name__ == "__main__":

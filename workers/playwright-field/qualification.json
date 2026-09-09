@@ -1,0 +1,1 @@
+{"accepted":true,"dom_xss_sink_observed":true,"final_url":"http://astp-m52-lab:8080/dom","image_id":"sha256:40aa366c13c49219029f280bb446990f9bcec3e88f768fee41deb61f73a44fb4","permit_consumed_before_io":true,"proxy":{"attempted":1,"blocked_before_io":0,"forwarded":1,"responses":1},"runtime_qualified":true,"tested_at":"2026-09-09T03:16:00-03:00"}

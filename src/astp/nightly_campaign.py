@@ -5,7 +5,7 @@ import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -13,6 +13,11 @@ from astp.assessment_workflow import run_stored_assessment
 from astp.browser_intake import BrowserCapture, load_capture
 from astp.circuit_breaker import FailureCircuitBreaker
 from astp.controlled_loop import run_controlled_queue
+from astp.detector_execution import (
+    DetectorExecutionRequest,
+    DetectorExecutionService,
+    DetectorRunStatus,
+)
 from astp.evidence_store import verify_evidence_manifest
 from astp.execution_trace import append_trace_event
 from astp.feedback import apply_evidence_feedback
@@ -24,6 +29,7 @@ from astp.models import (
     ProgramOperationalAttestation,
     RiskClass,
     ScopeKind,
+    SemanticExclusionRule,
     TestDefinition,
 )
 from astp.observation import (
@@ -33,16 +39,128 @@ from astp.observation import (
     observe_http,
 )
 from astp.permit_broker import broker_queue_item_permit
-from astp.planner import ObservationPlan, build_observation_plan
+from astp.planner import (
+    ObservationPlan,
+    PlanItemStatus,
+    TargetSemanticAssessment,
+    build_observation_plan,
+)
 from astp.policy_snapshot import capture_policy_snapshot
 from astp.program_catalog import BugBountyWorkspace, ProgramSyncStatus
 from astp.program_intake import compile_program
 from astp.program_models import BugBountyProgram
+from astp.program_preflight import _capture_status
 from astp.program_runtime import create_operational_attestation
 from astp.session_ledger import initialize_session_ledger
 from astp.target_discovery import CandidateKind, CandidateSafety, TargetCandidate
 from astp.target_registry import RegistryEntry, TargetRegistry, empty_registry, save_registry
 from astp.work_queue import build_fair_work_queue
+
+
+class NightlyTargetSemanticReview(BaseModel):
+    target: str
+    semantic_exclusion_clears: set[str] = Field(default_factory=set)
+    semantic_exclusion_matches: set[str] = Field(default_factory=set)
+    reviewed_at: datetime | None = None
+    note: str | None = None
+
+
+class NightlySemanticReviewFile(BaseModel):
+    schema_version: str = "1"
+    program_id: str
+    source_content_sha256: str
+    guardrails: list[SemanticExclusionRule] = Field(default_factory=list)
+    reviews: list[NightlyTargetSemanticReview] = Field(default_factory=list)
+
+
+def _validated_semantic_assessments(
+    review: NightlySemanticReviewFile | None,
+    *,
+    program: BugBountyProgram,
+    engagement: Engagement,
+) -> dict[str, TargetSemanticAssessment]:
+    if review is None:
+        return {}
+    if review.program_id != program.id:
+        raise ValueError(
+            f"semantic review belongs to program {review.program_id!r}, expected {program.id!r}"
+        )
+    if review.source_content_sha256 != program.source.content_sha256:
+        raise ValueError(
+            "semantic review is stale: source_content_sha256 does not match the synchronized "
+            "program revision"
+        )
+
+    known_ids = {rule.id for rule in engagement.constraints.semantic_exclusions}
+    assessments: dict[str, TargetSemanticAssessment] = {}
+    for row in review.reviews:
+        target = row.target.strip()
+        if not target:
+            raise ValueError("semantic review target must not be empty")
+        if target in assessments:
+            raise ValueError(f"duplicate semantic review target: {target}")
+        contradictory = row.semantic_exclusion_clears & row.semantic_exclusion_matches
+        if contradictory:
+            raise ValueError(
+                "semantic review contains conflicting clear/match decisions for "
+                f"{target}: " + ", ".join(sorted(contradictory))
+            )
+        unknown = (row.semantic_exclusion_clears | row.semantic_exclusion_matches) - known_ids
+        if unknown:
+            raise ValueError(
+                f"semantic review for {target} contains unknown guardrail IDs: "
+                + ", ".join(sorted(unknown))
+            )
+        if (
+            row.semantic_exclusion_clears or row.semantic_exclusion_matches
+        ) and row.reviewed_at is None:
+            raise ValueError(
+                f"semantic review for {target} has decisions but no reviewed_at timestamp"
+            )
+        assessments[target] = TargetSemanticAssessment(
+            semantic_exclusion_clears=set(row.semantic_exclusion_clears),
+            semantic_exclusion_matches=set(row.semantic_exclusion_matches),
+        )
+    return assessments
+
+
+def _semantic_review_template(
+    *,
+    program: BugBountyProgram,
+    engagement: Engagement,
+    registry: TargetRegistry,
+    existing: NightlySemanticReviewFile | None = None,
+) -> NightlySemanticReviewFile:
+    existing_by_target = {row.target: row for row in existing.reviews} if existing else {}
+    reviews: list[NightlyTargetSemanticReview] = []
+    for entry in registry.entries:
+        prior = existing_by_target.get(entry.canonical_target)
+        reviews.append(
+            prior.model_copy(deep=True)
+            if prior is not None
+            else NightlyTargetSemanticReview(target=entry.canonical_target)
+        )
+    return NightlySemanticReviewFile(
+        program_id=program.id,
+        source_content_sha256=program.source.content_sha256,
+        guardrails=list(engagement.constraints.semantic_exclusions),
+        reviews=reviews,
+    )
+
+
+def _plan_semantic_block_reason(plan: ObservationPlan) -> str | None:
+    blocked = [
+        row
+        for row in plan.items
+        if row.status in {PlanItemStatus.BLOCKED_CONTEXT, PlanItemStatus.BLOCKED_POLICY}
+        and "semantic deny guardrail" in row.reason.lower()
+    ]
+    if not blocked:
+        return None
+    return (
+        f"{len(blocked)} target(s) blocked by semantic deny guardrail review; "
+        "edit semantic-review-template.yaml and rerun with --semantic-review-file"
+    )
 
 
 class NightlyProgramResult(BaseModel):
@@ -98,6 +216,60 @@ class NightlyCampaignSummary(BaseModel):
     @property
     def permits_issued(self) -> int:
         return sum(row.permits_issued for row in self.program_results)
+
+
+class NightlyDetectorOutcome(BaseModel):
+    permit_id: str
+    evidence_id: str | None = None
+    candidate_id: str | None = None
+    finding_id: str | None = None
+    attempted: int = 0
+    forwarded: int = 0
+    responses: int = 0
+    blocked_before_io: int = 0
+    failed_after_io: int = 0
+    unknown_outcomes: int = 0
+
+
+class NightlyDetectorRequestBuilder(Protocol):
+    def __call__(self, queue_item, engagement: Engagement) -> DetectorExecutionRequest: ...
+
+
+class ServiceNightlyDetectorExecutor:
+    """Nightly execution boundary backed only by DetectorExecutionService."""
+
+    def __init__(
+        self,
+        service: DetectorExecutionService,
+        request_builder: NightlyDetectorRequestBuilder,
+    ) -> None:
+        self.service = service
+        self.request_builder = request_builder
+
+    def execute(self, queue_item, engagement: Engagement) -> NightlyDetectorOutcome:
+        result = self.service.execute(self.request_builder(queue_item, engagement))
+        if result.status is DetectorRunStatus.BLOCKED_BEFORE_IO:
+            raise ValueError(result.message_redacted or "detector blocked before I/O")
+        if result.status is DetectorRunStatus.UNKNOWN_OUTCOME:
+            raise ObservationError("detector outcome is unknown and cannot be replayed blindly")
+        if result.status is DetectorRunStatus.FAILED:
+            raise ObservationError(result.message_redacted or "detector execution failed")
+        if result.authorization is None:
+            raise ValueError("completed detector run lacks authorization")
+        return NightlyDetectorOutcome(
+            permit_id=result.authorization.payload.permit_id,
+            evidence_id=(
+                result.artifacts.evidence_ids[0] if result.artifacts.evidence_ids else None
+            ),
+            candidate_id=result.candidate_id,
+            finding_id=result.finding_id,
+            attempted=result.accounting.attempted,
+            forwarded=result.accounting.forwarded,
+            responses=result.accounting.responses,
+            blocked_before_io=result.accounting.blocked_before_io,
+            failed_after_io=result.accounting.failed_after_io,
+            unknown_outcomes=result.accounting.unknown_outcomes,
+        )
 
 
 def _slug(value: str) -> str:
@@ -210,26 +382,28 @@ def _attestation_from_capture(
             note="Operational status not required by this program policy.",
         )
 
-    hint = capture.operational_status_hint
-    if requires_online and hint != "online":
+    status, source_type, evidence = _capture_status(
+        capture,
+        platform=program.platform,
+    )
+    if requires_online and status == OperationalStatus.OFFLINE:
         raise ValueError(
-            "program requires fresh ONLINE status and the authenticated capture "
-            "did not explicitly attest ONLINE"
+            "program requires ONLINE status but authenticated browser evidence "
+            "explicitly indicates OFFLINE"
         )
-    if hint == "online":
-        status = OperationalStatus.ONLINE
-    elif hint == "offline":
-        status = OperationalStatus.OFFLINE
-    else:
-        status = OperationalStatus.UNKNOWN
+    if requires_online and status != OperationalStatus.ONLINE:
+        raise ValueError(
+            "program requires fresh ONLINE status but authenticated browser evidence "
+            "does not prove the program is currently ONLINE"
+        )
 
     return create_operational_attestation(
         program,
         status=status,
-        source_type="authenticated_browser",
+        source_type=source_type or "authenticated_browser",
         observed_at=capture.captured_at,
         note=(
-            capture.operational_status_evidence
+            evidence
             or "Operational status derived conservatively from authenticated browser capture."
         ),
     )
@@ -309,6 +483,8 @@ def run_nightly_campaign(
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
     persist_body: bool = True,
     program_ids: list[str] | None = None,
+    semantic_review_paths: list[Path] | None = None,
+    detector_executor: ServiceNightlyDetectorExecutor | None = None,
 ) -> NightlyCampaignSummary:
     """Run a bounded multi-program campaign from already synchronized program rules."""
     if max_programs < 1:
@@ -323,6 +499,15 @@ def run_nightly_campaign(
         raise ValueError("permit_ttl_seconds must be between 1 and 900")
 
     workspace = load_model(catalog_path, BugBountyWorkspace)
+    semantic_reviews: dict[str, NightlySemanticReviewFile] = {}
+    for review_path in semantic_review_paths or []:
+        review = load_model(review_path, NightlySemanticReviewFile)
+        if review.program_id in semantic_reviews:
+            raise ValueError(
+                f"multiple semantic review files supplied for program {review.program_id}"
+            )
+        semantic_reviews[review.program_id] = review
+
     started = datetime.now(UTC)
     campaign_id = started.strftime("nightly-%Y%m%dT%H%M%SZ")
     campaign_root = output_directory / campaign_id
@@ -330,7 +515,7 @@ def run_nightly_campaign(
 
     key_id: str | None = None
     keys: dict[str, str] | None = None
-    if execute:
+    if execute and detector_executor is None:
         key_id, keys = _permit_keyring()
 
     selected_items = workspace.programs
@@ -364,6 +549,8 @@ def run_nightly_campaign(
                 timeout_seconds=timeout_seconds,
                 max_body_bytes=max_body_bytes,
                 persist_body=persist_body,
+                semantic_review=semantic_reviews.get(item.candidate.id),
+                detector_executor=detector_executor,
             )
         except (OSError, ValueError, TypeError, AttributeError) as exc:
             result = NightlyProgramResult(
@@ -404,6 +591,8 @@ def _run_program(
     timeout_seconds: float,
     max_body_bytes: int,
     persist_body: bool,
+    semantic_review: NightlySemanticReviewFile | None,
+    detector_executor: ServiceNightlyDetectorExecutor | None = None,
 ) -> NightlyProgramResult:
     program_id = item.candidate.id
     program_name = item.candidate.name
@@ -459,16 +648,42 @@ def _run_program(
     dump_yaml(engagement, engagement_path)
     dump_yaml(test, test_path)
 
+    registry = build_scope_seed_registry(engagement)
+    registry_path = program_root / "target-registry.yaml"
+    save_registry(registry, registry_path)
+
+    # Semantic review is an offline, target-specific policy artifact. Generate
+    # its template before the runtime ONLINE gate so an expired/missing browser
+    # attestation cannot prevent an operator from completing policy review.
+    semantic_assessments = _validated_semantic_assessments(
+        semantic_review,
+        program=program,
+        engagement=engagement,
+    )
+    semantic_template_path = program_root / "semantic-review-template.yaml"
     if engagement.constraints.semantic_exclusions:
-        ids = ", ".join(rule.id for rule in engagement.constraints.semantic_exclusions)
+        dump_yaml(
+            _semantic_review_template(
+                program=program,
+                engagement=engagement,
+                registry=registry,
+                existing=semantic_review,
+            ),
+            semantic_template_path,
+        )
+
+    if not registry.entries:
         return NightlyProgramResult(
             program_id=program_id,
             program_name=program_name,
-            status="blocked",
-            reason=f"semantic deny guardrails require explicit target review: {ids}",
+            status="no_targets",
+            reason="no HTTP seed target could be derived safely from explicit scope",
             engagement_path=str(engagement_path),
+            registry_path=str(registry_path),
         )
 
+    # ONLINE status remains mandatory before planning/execution. Moving this
+    # gate below template generation does not authorize or perform network I/O.
     try:
         attestation = _attestation_from_capture(
             program=program,
@@ -482,27 +697,18 @@ def _run_program(
             status="blocked",
             reason=str(exc),
             engagement_path=str(engagement_path),
+            registry_path=str(registry_path),
         )
 
     dump_yaml(attestation, program_root / "program-status-attestation.yaml")
-
-    registry = build_scope_seed_registry(engagement)
-    registry_path = program_root / "target-registry.yaml"
-    save_registry(registry, registry_path)
-    if not registry.entries:
-        return NightlyProgramResult(
-            program_id=program_id,
-            program_name=program_name,
-            status="no_targets",
-            reason="no HTTP seed target could be derived safely from explicit scope",
-            engagement_path=str(engagement_path),
-            registry_path=str(registry_path),
-        )
 
     initial_plan = build_observation_plan(
         registry,
         engagement,
         test,
+        semantic_target_assessments=(
+            semantic_assessments if engagement.constraints.semantic_exclusions else None
+        ),
         operational_attestation=attestation,
         requested_rps=engagement.constraints.max_requests_per_second,
     )
@@ -515,11 +721,12 @@ def _run_program(
     dump_yaml(initial_queue, program_root / "queue-round-1.yaml")
 
     if not initial_queue.items:
+        semantic_reason = _plan_semantic_block_reason(initial_plan)
         return NightlyProgramResult(
             program_id=program_id,
             program_name=program_name,
-            status="no_authorizable_actions",
-            reason="policy planning produced no authorizable GET observations",
+            status="blocked" if semantic_reason else "no_authorizable_actions",
+            reason=semantic_reason or "policy planning produced no authorizable GET observations",
             engagement_path=str(engagement_path),
             registry_path=str(registry_path),
         )
@@ -537,7 +744,8 @@ def _run_program(
             registry_path=str(registry_path),
         )
 
-    assert key_id is not None and keys is not None
+    if detector_executor is None:
+        assert key_id is not None and keys is not None
     evidence_dir = program_root / "evidence"
     evidence_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = program_root / "evidence-manifest.jsonl"
@@ -549,6 +757,9 @@ def _run_program(
     trace_path = program_root / "execution-trace.jsonl"
 
     observed_targets: set[str] = set()
+    detector_evidence_ids: set[str] = set()
+    detector_candidate_ids: set[str] = set()
+    detector_finding_ids: set[str] = set()
     network_actions = 0
     permits_issued = 0
     stop_reason = "queue exhausted"
@@ -563,6 +774,9 @@ def _run_program(
             registry,
             engagement,
             test,
+            semantic_target_assessments=(
+                semantic_assessments if engagement.constraints.semantic_exclusions else None
+            ),
             operational_attestation=attestation,
             requested_rps=engagement.constraints.max_requests_per_second,
         )
@@ -584,6 +798,33 @@ def _run_program(
 
         def executor(queue_item, _session_id=session_id):
             nonlocal permits_issued, network_actions, registry
+            if detector_executor is not None:
+                outcome = detector_executor.execute(queue_item, engagement)
+                permits_issued += 1
+                network_actions += 1
+                observed_targets.add(queue_item.target)
+                if outcome.evidence_id:
+                    detector_evidence_ids.add(outcome.evidence_id)
+                if outcome.candidate_id:
+                    detector_candidate_ids.add(outcome.candidate_id)
+                if outcome.finding_id:
+                    detector_finding_ids.add(outcome.finding_id)
+                append_trace_event(
+                    trace_path,
+                    "detector.completed",
+                    queue_id=queue_item.queue_id,
+                    permit_id=outcome.permit_id,
+                    evidence_id=outcome.evidence_id,
+                    message=(
+                        f"attempted={outcome.attempted};forwarded={outcome.forwarded};"
+                        f"responses={outcome.responses};blocked={outcome.blocked_before_io};"
+                        f"failed={outcome.failed_after_io};unknown={outcome.unknown_outcomes}"
+                    ),
+                )
+                return (
+                    outcome.permit_id,
+                    outcome.evidence_id or f"no-evidence-{queue_item.queue_id}",
+                )
             receipt = broker_queue_item_permit(
                 queue_item,
                 engagement,
@@ -592,7 +833,6 @@ def _run_program(
                 key_id=key_id,
                 ttl_seconds=permit_ttl_seconds,
                 operational_attestation=attestation,
-                semantic_exclusion_clears=set(),
                 requested_rps=engagement.constraints.max_requests_per_second,
             )
             permits_issued += 1
@@ -640,6 +880,16 @@ def _run_program(
             )
             registry = feedback.registry
             save_registry(registry, registry_path)
+            if engagement.constraints.semantic_exclusions:
+                dump_yaml(
+                    _semantic_review_template(
+                        program=program,
+                        engagement=engagement,
+                        registry=registry,
+                        existing=semantic_review,
+                    ),
+                    semantic_template_path,
+                )
             return receipt.permit.payload.permit_id, observation.evidence.evidence_id
 
         try:
@@ -707,6 +957,8 @@ def _run_program(
         test=test,
         output_directory=assessment_dir,
         operational_attestation=attestation,
+        # Stored assessment may discover new targets. Keep its legacy global semantic
+        # clearance empty so offline replanning cannot authorize an unreviewed target.
         semantic_exclusion_clears=set(),
         requested_rps=engagement.constraints.max_requests_per_second,
         excluded_finding_terms=set(
@@ -726,8 +978,8 @@ def _run_program(
         observed_targets=sorted(observed_targets),
         network_actions=network_actions,
         permits_issued=permits_issued,
-        evidence_records=assessment.evidence_records,
+        evidence_records=assessment.evidence_records + len(detector_evidence_ids),
         normalized_signals=assessment.normalized_signals,
-        finding_candidates=assessment.finding_candidates,
-        correlated_findings=assessment.correlated_findings,
+        finding_candidates=assessment.finding_candidates + len(detector_candidate_ids),
+        correlated_findings=assessment.correlated_findings + len(detector_finding_ids),
     )

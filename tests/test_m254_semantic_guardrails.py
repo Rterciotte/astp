@@ -220,3 +220,152 @@ def test_resync_preserves_review_only_when_source_issue_is_unchanged(tmp_path) -
         if "Universidade Smart Fit" in (issue.source_text or "")
     )
     assert len(second.semantic_exclusions) == 1
+
+
+def test_planner_target_semantic_assessment_is_exact_target_bound() -> None:
+    from datetime import datetime
+
+    from astp.planner import PlanItemStatus, TargetSemanticAssessment, build_observation_plan
+    from astp.target_discovery import CandidateKind, CandidateSafety, TargetCandidate
+    from astp.target_registry import RegistryEntry, TargetRegistry
+
+    engagement = compile_program(_reviewed_program())
+    now = datetime.now(UTC)
+    targets = ["https://smartfit.com.br/", "https://other.smartfit.com.br/"]
+    entries = []
+    for index, target in enumerate(targets):
+        candidate = TargetCandidate(
+            id=f"candidate-{index}",
+            canonical_target=target,
+            display_target=target,
+            kind=CandidateKind.LINK,
+            safety=CandidateSafety.READY_FOR_POLICY,
+            in_scope=True,
+            same_origin=True,
+            requires_new_permit=True,
+            requires_semantic_assessment=True,
+            executable=False,
+            reason="test",
+            provenance=(),
+            discovered_at=now,
+        )
+        entries.append(
+            RegistryEntry(
+                canonical_target=target,
+                candidate_ids=[candidate.id],
+                provenance=[],
+                latest_candidate=candidate,
+                first_seen_at=now,
+                last_seen_at=now,
+            )
+        )
+    registry = TargetRegistry(engagement_id=engagement.id, updated_at=now, entries=entries)
+    test = ASTPTestDefinition(
+        id="observation",
+        title="Observation",
+        category="discovery",
+        risk_class=RiskClass.SAFE_ACTIVE,
+    )
+    all_clear = {rule.id for rule in engagement.constraints.semantic_exclusions}
+
+    plan = build_observation_plan(
+        registry,
+        engagement,
+        test,
+        semantic_target_assessments={
+            targets[0]: TargetSemanticAssessment(semantic_exclusion_clears=all_clear)
+        },
+        now=now,
+    )
+
+    assert plan.items[0].status == PlanItemStatus.AUTHORIZABLE
+    assert plan.items[0].semantic_exclusion_clears == all_clear
+    assert plan.items[1].status == PlanItemStatus.BLOCKED_CONTEXT
+    assert plan.items[1].semantic_exclusion_clears == set()
+
+
+def test_planner_target_semantic_match_never_becomes_authorizable() -> None:
+    from datetime import datetime
+
+    from astp.planner import PlanItemStatus, TargetSemanticAssessment, build_observation_plan
+    from astp.target_discovery import CandidateKind, CandidateSafety, TargetCandidate
+    from astp.target_registry import RegistryEntry, TargetRegistry
+
+    engagement = compile_program(_reviewed_program())
+    now = datetime.now(UTC)
+    target = "https://smartfit.com.br/"
+    candidate = TargetCandidate(
+        id="candidate-match",
+        canonical_target=target,
+        display_target=target,
+        kind=CandidateKind.LINK,
+        safety=CandidateSafety.READY_FOR_POLICY,
+        in_scope=True,
+        same_origin=True,
+        requires_new_permit=True,
+        requires_semantic_assessment=True,
+        executable=False,
+        reason="test",
+        provenance=(),
+        discovered_at=now,
+    )
+    registry = TargetRegistry(
+        engagement_id=engagement.id,
+        updated_at=now,
+        entries=[
+            RegistryEntry(
+                canonical_target=target,
+                candidate_ids=[candidate.id],
+                provenance=[],
+                latest_candidate=candidate,
+                first_seen_at=now,
+                last_seen_at=now,
+            )
+        ],
+    )
+    test = ASTPTestDefinition(
+        id="observation",
+        title="Observation",
+        category="discovery",
+        risk_class=RiskClass.SAFE_ACTIVE,
+    )
+    matched = engagement.constraints.semantic_exclusions[0].id
+
+    plan = build_observation_plan(
+        registry,
+        engagement,
+        test,
+        semantic_target_assessments={
+            target: TargetSemanticAssessment(semantic_exclusion_matches={matched})
+        },
+        now=now,
+    )
+
+    assert plan.items[0].status == PlanItemStatus.BLOCKED_POLICY
+    assert plan.items[0].semantic_exclusion_matches == {matched}
+
+
+def test_planner_rejects_global_and_target_semantic_review_mix() -> None:
+    from astp.planner import TargetSemanticAssessment, build_observation_plan
+    from astp.target_registry import empty_registry
+
+    engagement = compile_program(_reviewed_program())
+    test = ASTPTestDefinition(
+        id="observation",
+        title="Observation",
+        category="discovery",
+        risk_class=RiskClass.SAFE_ACTIVE,
+    )
+
+    try:
+        build_observation_plan(
+            empty_registry(engagement.id),
+            engagement,
+            test,
+            semantic_exclusion_clears=set(),
+            semantic_target_assessments={"https://example.test/": TargetSemanticAssessment()},
+        )
+    except ValueError as exc:
+        assert "cannot be combined" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")

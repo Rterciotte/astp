@@ -1,0 +1,9 @@
+tool: zap
+profile: passive-field
+image: astp/zap-field-worker:m52
+image_id: sha256:e77f08387c00cee78d3590dadbf660a042e6b7442e5cc7a2ff0bda8571ef968a
+contract: typed:zap.passive-field.v1
+runtime_qualified: false
+field_ready: false
+nightly_enabled: false
+blocker: daemon API did not become ready within the bounded 45-second startup window

@@ -148,6 +148,30 @@ def test_nightly_campaign_isolates_expected_program_failure(
     assert completed.status == "completed"
 
 
+def test_nightly_campaign_forwards_service_executor_to_each_program(tmp_path, monkeypatch) -> None:
+    workspace = _workspace("program-one")
+    _stub_campaign_io(monkeypatch, workspace)
+    sentinel = object()
+    recorded = {}
+
+    def fake_run_program(**kwargs):
+        recorded.update(kwargs)
+        return _completed_result(kwargs["item"])
+
+    monkeypatch.setattr(campaign_module, "_run_program", fake_run_program)
+    summary = campaign_module.run_nightly_campaign(
+        catalog_path=tmp_path / "catalog.yaml",
+        output_directory=tmp_path / "campaigns",
+        execute=True,
+        detector_executor=sentinel,
+    )
+
+    assert summary.completed == 1
+    assert recorded["detector_executor"] is sentinel
+    assert recorded["key_id"] is None
+    assert recorded["keys"] is None
+
+
 def test_nightly_campaign_program_ids_process_only_selected_program(
     tmp_path,
     monkeypatch,
@@ -290,3 +314,255 @@ def test_nightly_campaign_without_program_ids_preserves_catalog_behavior(
         "program-two",
         "program-three",
     ]
+
+
+def test_semantic_review_file_is_bound_to_program_revision() -> None:
+    from astp.models import Constraints, SemanticExclusionKind, SemanticExclusionRule
+    from astp.nightly_campaign import NightlySemanticReviewFile, _validated_semantic_assessments
+    from astp.program_models import BugBountyProgram, ProgramSourceSnapshot
+
+    program = BugBountyProgram(
+        id="program-one",
+        name="Program one",
+        platform="bughunt",
+        source=ProgramSourceSnapshot(
+            source_type="authenticated_browser",
+            content_sha256="a" * 64,
+        ),
+    )
+    engagement = Engagement(
+        id="eng",
+        name="eng",
+        scope=ScopePolicy(),
+        constraints=Constraints(
+            semantic_exclusions=[
+                SemanticExclusionRule(
+                    id="semex-a",
+                    kind=SemanticExclusionKind.ORGANIZATION_FAMILY,
+                    value="Excluded org",
+                )
+            ]
+        ),
+    )
+    stale = NightlySemanticReviewFile(
+        program_id="program-one",
+        source_content_sha256="b" * 64,
+    )
+
+    with pytest.raises(ValueError, match="stale"):
+        _validated_semantic_assessments(stale, program=program, engagement=engagement)
+
+
+def test_semantic_review_requires_timestamp_for_explicit_decision() -> None:
+    from astp.models import Constraints, SemanticExclusionKind, SemanticExclusionRule
+    from astp.nightly_campaign import (
+        NightlySemanticReviewFile,
+        NightlyTargetSemanticReview,
+        _validated_semantic_assessments,
+    )
+    from astp.program_models import BugBountyProgram, ProgramSourceSnapshot
+
+    program = BugBountyProgram(
+        id="program-one",
+        name="Program one",
+        platform="bughunt",
+        source=ProgramSourceSnapshot(
+            source_type="authenticated_browser",
+            content_sha256="a" * 64,
+        ),
+    )
+    engagement = Engagement(
+        id="eng",
+        name="eng",
+        scope=ScopePolicy(),
+        constraints=Constraints(
+            semantic_exclusions=[
+                SemanticExclusionRule(
+                    id="semex-a",
+                    kind=SemanticExclusionKind.ORGANIZATION_FAMILY,
+                    value="Excluded org",
+                )
+            ]
+        ),
+    )
+    review = NightlySemanticReviewFile(
+        program_id="program-one",
+        source_content_sha256="a" * 64,
+        reviews=[
+            NightlyTargetSemanticReview(
+                target="https://example.test/",
+                semantic_exclusion_clears={"semex-a"},
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="reviewed_at"):
+        _validated_semantic_assessments(review, program=program, engagement=engagement)
+
+
+def test_semantic_review_rejects_unknown_and_conflicting_guardrail_ids() -> None:
+    from astp.models import Constraints, SemanticExclusionKind, SemanticExclusionRule
+    from astp.nightly_campaign import (
+        NightlySemanticReviewFile,
+        NightlyTargetSemanticReview,
+        _validated_semantic_assessments,
+    )
+    from astp.program_models import BugBountyProgram, ProgramSourceSnapshot
+
+    program = BugBountyProgram(
+        id="program-one",
+        name="Program one",
+        platform="bughunt",
+        source=ProgramSourceSnapshot(
+            source_type="authenticated_browser",
+            content_sha256="a" * 64,
+        ),
+    )
+    engagement = Engagement(
+        id="eng",
+        name="eng",
+        scope=ScopePolicy(),
+        constraints=Constraints(
+            semantic_exclusions=[
+                SemanticExclusionRule(
+                    id="semex-a",
+                    kind=SemanticExclusionKind.ORGANIZATION_FAMILY,
+                    value="Excluded org",
+                )
+            ]
+        ),
+    )
+    conflicting = NightlySemanticReviewFile(
+        program_id="program-one",
+        source_content_sha256="a" * 64,
+        reviews=[
+            NightlyTargetSemanticReview(
+                target="https://example.test/",
+                semantic_exclusion_clears={"semex-a"},
+                semantic_exclusion_matches={"semex-a"},
+                reviewed_at=datetime(2026, 9, 6, 23, 59, tzinfo=UTC),
+            )
+        ],
+    )
+    unknown = NightlySemanticReviewFile(
+        program_id="program-one",
+        source_content_sha256="a" * 64,
+        reviews=[
+            NightlyTargetSemanticReview(
+                target="https://example.test/",
+                semantic_exclusion_clears={"semex-unknown"},
+                reviewed_at=datetime(2026, 9, 6, 23, 59, tzinfo=UTC),
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="conflicting"):
+        _validated_semantic_assessments(conflicting, program=program, engagement=engagement)
+    with pytest.raises(ValueError, match="unknown guardrail"):
+        _validated_semantic_assessments(unknown, program=program, engagement=engagement)
+
+
+def test_semantic_review_valid_clear_becomes_target_assessment() -> None:
+    from astp.models import Constraints, SemanticExclusionKind, SemanticExclusionRule
+    from astp.nightly_campaign import (
+        NightlySemanticReviewFile,
+        NightlyTargetSemanticReview,
+        _validated_semantic_assessments,
+    )
+    from astp.program_models import BugBountyProgram, ProgramSourceSnapshot
+
+    program = BugBountyProgram(
+        id="program-one",
+        name="Program one",
+        platform="bughunt",
+        source=ProgramSourceSnapshot(
+            source_type="authenticated_browser",
+            content_sha256="a" * 64,
+        ),
+    )
+    engagement = Engagement(
+        id="eng",
+        name="eng",
+        scope=ScopePolicy(),
+        constraints=Constraints(
+            semantic_exclusions=[
+                SemanticExclusionRule(
+                    id="semex-a",
+                    kind=SemanticExclusionKind.ORGANIZATION_FAMILY,
+                    value="Excluded org",
+                )
+            ]
+        ),
+    )
+    review = NightlySemanticReviewFile(
+        program_id="program-one",
+        source_content_sha256="a" * 64,
+        reviews=[
+            NightlyTargetSemanticReview(
+                target="https://example.test/",
+                semantic_exclusion_clears={"semex-a"},
+                reviewed_at=datetime(2026, 9, 6, 23, 59, tzinfo=UTC),
+            )
+        ],
+    )
+
+    assessments = _validated_semantic_assessments(review, program=program, engagement=engagement)
+
+    assert assessments["https://example.test/"].semantic_exclusion_clears == {"semex-a"}
+
+
+def test_nightly_uses_bughunt_operational_affordance_for_online_gate(tmp_path, monkeypatch) -> None:
+    from astp.browser_intake import (
+        BrowserCapture,
+        BrowserOperationalSignal,
+        write_capture,
+    )
+    from astp.models import OperationalStatus
+
+    capture_path = tmp_path / "capture.json"
+    write_capture(
+        BrowserCapture(
+            url="https://admin.bughunt.com.br/program/detail?smartfit",
+            text="Grupo Smart Fit\nPublicado há 6 meses\nSubmeter Relatório",
+            operational_signals=[
+                BrowserOperationalSignal(
+                    kind="submission_control",
+                    evidence="button.btn-primary: Submeter Relatório",
+                    visible=True,
+                    enabled=True,
+                ),
+                BrowserOperationalSignal(
+                    kind="published_marker",
+                    evidence="Publicado há 6 meses",
+                    visible=True,
+                ),
+            ],
+            captured_at=datetime(2026, 9, 7, 0, 0, tzinfo=UTC),
+        ),
+        capture_path,
+    )
+
+    recorded: dict[str, object] = {}
+
+    def fake_attestation(program, **kwargs):
+        recorded.update(kwargs)
+        return SimpleNamespace(id="attestation-test")
+
+    monkeypatch.setattr(
+        campaign_module,
+        "create_operational_attestation",
+        fake_attestation,
+    )
+
+    result = campaign_module._attestation_from_capture(
+        program=SimpleNamespace(platform="bughunt"),
+        capture_path=capture_path,
+        engagement=SimpleNamespace(
+            program=SimpleNamespace(requires_online=True),
+        ),
+    )
+
+    assert result.id == "attestation-test"
+    assert recorded["status"] == OperationalStatus.ONLINE
+    assert recorded["source_type"] == "authenticated_browser_bughunt_operational_affordance"
+    assert "Submeter Relatório" in str(recorded["note"])

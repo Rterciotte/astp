@@ -1,0 +1,9 @@
+tool: playwright
+profile: field-navigation
+image: astp/playwright-field-worker:m52
+image_id: sha256:40aa366c13c49219029f280bb446990f9bcec3e88f768fee41deb61f73a44fb4
+contract: typed:browser.field-navigate.v1
+qualification_scope: astp-m52-local-lab-only
+runtime_qualified: true
+field_ready: true
+nightly_enabled: false

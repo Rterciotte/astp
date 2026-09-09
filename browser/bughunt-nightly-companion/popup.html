@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>ASTP BugHunt Nightly</title>
+  <style>
+    body { font: 13px system-ui, sans-serif; width: 340px; padding: 12px; }
+    input { width: 100%; box-sizing: border-box; margin: 6px 0 10px; padding: 7px; }
+    button { width: 100%; padding: 8px; cursor: pointer; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #f4f4f4; padding: 8px; }
+  </style>
+</head>
+<body>
+  <strong>ASTP BugHunt Nightly</strong>
+  <p>Usa a sessão BugHunt já autenticada. A extensão não recebe nem armazena sua senha.</p>
+  <label for="token">Intake token</label>
+  <input id="token" type="password" autocomplete="off">
+  <button id="start">Sincronizar todos os programas</button>
+  <pre id="status">Carregando...</pre>
+  <script src="popup.js"></script>
+</body>
+</html>

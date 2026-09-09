@@ -1,0 +1,17 @@
+id: astp-lab-cve-2099-0001
+
+info:
+  name: ASTP deterministic CVE-like acceptance fixture
+  author: astp
+  severity: info
+  description: Matches only the local ASTP lab header.
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/cve-fixture"
+    matchers:
+      - type: word
+        part: header
+        words:
+          - "CVE-2099-0001-vulnerable"

@@ -1,0 +1,14 @@
+{
+  "request_id": "m52-nuclei-negative",
+  "permit_id": "qualification-permit-consumed",
+  "action_id": "qualification-action-negative",
+  "engagement_id": "m52-local-lab",
+  "operation": "external.nuclei.safe",
+  "target": "http://astp-m52-lab:8080",
+  "template_ids": ["astp-lab-cve-2099-0001"],
+  "max_requests": 1,
+  "max_concurrency": 1,
+  "rate_per_second": 1,
+  "timeout_seconds": 15,
+  "arguments": ["-code", "dangerous"]
+}

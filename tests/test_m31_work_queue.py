@@ -28,3 +28,13 @@ def test_queue_round_robins_programs_and_keeps_permit_boundary() -> None:
     )
     assert [item.engagement_id for item in queue.items] == ["a", "b", "a"]
     assert all(item.requires_new_permit for item in queue.items)
+
+
+def test_queue_preserves_plan_bound_semantic_clearance() -> None:
+    plan = _plan("a", ["https://a/1"])
+    plan.items[0].semantic_exclusion_clears = {"semex-a", "semex-b"}
+
+    queue = build_fair_work_queue([plan], max_active_programs=1)
+
+    assert queue.items[0].semantic_exclusion_clears == {"semex-a", "semex-b"}
+    assert queue.items[0].semantic_review_bound is True

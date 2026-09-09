@@ -1,0 +1,1 @@
+{"request_id":"browser-local","permit_id":"p","action_id":"a","engagement_id":"lab","operation":"browser.field-navigate","target":"http://astp-m52-lab:8080/dom","timeout_seconds":30,"profile":"dom-proof"}

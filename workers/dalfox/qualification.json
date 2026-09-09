@@ -1,0 +1,1 @@
+{"accepted":true,"candidate_detected":true,"duration_seconds":5.2,"image_id":"sha256:4598aeb2403c27d5ecda7c9a853d88df255a2874e4cc772bfa33bcb88aa16afc","profile":"dalfox.reflected-bounded","proxy":{"attempted":8,"blocked_before_io":2,"forwarded":6,"responses":6},"runtime_qualified":true,"target":"http://astp-m52-lab:8080/reflect?q=hello","tested_at":"2026-09-09T03:17:25-03:00"}

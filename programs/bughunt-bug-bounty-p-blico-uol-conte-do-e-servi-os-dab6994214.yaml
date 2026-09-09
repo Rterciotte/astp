@@ -13,7 +13,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://mail.uol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -24,7 +24,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://bmail.uol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -35,7 +35,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://webmailpro.uol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -46,7 +46,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://email.bol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -57,7 +57,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://webmail.uolhost.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -68,7 +68,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://cal.webmailmailpro.uol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -79,7 +79,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://email.uol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -90,7 +90,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://conta.uol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -101,7 +101,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://cal.bmail.uol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -112,7 +112,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://cal.mail.uol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -123,7 +123,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://meupainelhost.uol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -134,7 +134,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://meupainelhost-api.uol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -145,7 +145,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://ne10.uol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -156,7 +156,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://caras.uol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -167,7 +167,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://noticiasdatv.uol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -178,7 +178,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: https://brasilescola.uol.com.br
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 - effect: allow
   selector:
@@ -189,7 +189,7 @@ scope:
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Escopo
     source_text: '*.service.uol.com.br'
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   label: null
 constraints:
 - code: own_accounts_only
@@ -201,7 +201,7 @@ constraints:
     section: Política do Programa
     source_text: Interaja apenas com contas que você possui ou com permissão explícita
       do titular da conta.
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
 - code: no_dos
   effect: restrict
   value: true
@@ -212,13 +212,13 @@ constraints:
       um endereço de e-mail, tenha ciência que há uma lista de provedores não aceitos,
     source_text: Qualquer atividade que possa levar à interrupção do nosso serviço
       (ex. DoS).
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
   - source_type: authenticated_browser
     source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
     section: Esse cadastro irá fornecer um acesso de visitante para você. Ao fornecer
       um endereço de e-mail, tenha ciência que há uma lista de provedores não aceitos,
     source_text: Negação de serviço.
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
 - code: no_social_engineering
   effect: restrict
   value: true
@@ -228,7 +228,7 @@ constraints:
     section: Esse cadastro irá fornecer um acesso de visitante para você. Ao fornecer
       um endereço de e-mail, tenha ciência que há uma lista de provedores não aceitos,
     source_text: Engenharia social (incluindo phishing) na nossa equipe ou terceiros.
-    captured_at: '2026-09-04T16:11:30.635000Z'
+    captured_at: '2026-09-07T01:06:40.393000Z'
 excluded_finding_types:
 - clickjacking
 - self_xss
@@ -236,13 +236,14 @@ excluded_finding_types:
 - tabnabbing
 - missing_security_headers
 recommended_user_agent: null
-reviewed_max_requests_per_second: null
+reviewed_max_requests_per_second: 1.0
+semantic_exclusions: []
 source:
   source_type: authenticated_browser
   source_url: https://admin.bughunt.com.br/program/detail?664f9902a0bc47d5fe78ba67
   title: Bug Bounty público - UOL Conteúdo e Serviços
-  captured_at: '2026-09-04T16:11:30.635000Z'
-  content_sha256: b9e61873a3df2a53e9b477ceaca0bdbefc7b64b6a46d18d2de43b4d1b2e452a9
+  captured_at: '2026-09-07T01:06:40.393000Z'
+  content_sha256: 6cc59f92737c375649329116dd205b39a2934872a3146d4afcceac21ce0a8fa1
 issues:
 - code: qualitative_rate_limit
   message: Program restricts high-traffic automation but does not provide a numeric
@@ -250,4 +251,10 @@ issues:
   source_text: Uso de ferramentas automatizadas que podem gerar tráfego significativo
     e possivelmente prejudicar o funcionamento de nossa aplicação.
   blocking: true
-  resolution: null
+  resolution:
+    resolution_type: operator_constraint
+    reviewed_at: '2026-09-07T00:51:03.036015Z'
+    note: Operator-selected conservative execution limit; the source program did not
+      publish this numeric rate.
+    operator_value: 1.0
+    added_denies: []

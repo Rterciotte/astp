@@ -19,6 +19,13 @@ class PlanItemStatus(str, Enum):
     REJECTED_DISCOVERY = "rejected_discovery"
 
 
+class TargetSemanticAssessment(BaseModel):
+    """Explicit semantic deny-guardrail assessment bound to one exact target."""
+
+    semantic_exclusion_clears: set[str] = Field(default_factory=set)
+    semantic_exclusion_matches: set[str] = Field(default_factory=set)
+
+
 class ObservationPlanItem(BaseModel):
     id: str
     target: str
@@ -28,6 +35,7 @@ class ObservationPlanItem(BaseModel):
     reason: str
     source_candidate_ids: list[str] = Field(default_factory=list)
     semantic_exclusion_clears: set[str] = Field(default_factory=set)
+    semantic_exclusion_matches: set[str] = Field(default_factory=set)
     requires_new_permit: bool = True
     permit_id: str | None = None
 
@@ -46,13 +54,29 @@ def build_observation_plan(
     test: TestDefinition,
     *,
     semantic_exclusion_clears: set[str] | None = None,
+    semantic_target_assessments: dict[str, TargetSemanticAssessment] | None = None,
     operational_attestation: ProgramOperationalAttestation | None = None,
     operational_lease: ProgramOperationalLease | None = None,
     requested_rps: float | None = None,
     now: datetime | None = None,
 ) -> ObservationPlan:
+    """Build a non-executing plan.
+
+    ``semantic_exclusion_clears`` is retained for backward-compatible workflows that
+    deliberately apply one reviewed clearance set to the whole registry.
+    ``semantic_target_assessments`` is the safer target-bound form used by nightly
+    campaigns. The two forms are intentionally mutually exclusive so a global
+    clearance cannot silently override target-specific review.
+    """
+    if semantic_exclusion_clears is not None and semantic_target_assessments is not None:
+        raise ValueError(
+            "global semantic_exclusion_clears cannot be combined with "
+            "semantic_target_assessments"
+        )
+
     current = now or datetime.now(UTC)
-    clears = set(semantic_exclusion_clears or set())
+    global_clears = set(semantic_exclusion_clears or set())
+    assessments = semantic_target_assessments or {}
     items: list[ObservationPlanItem] = []
 
     for index, entry in enumerate(registry.entries, start=1):
@@ -69,6 +93,14 @@ def build_observation_plan(
             )
             continue
 
+        if semantic_target_assessments is not None:
+            assessment = assessments.get(entry.canonical_target, TargetSemanticAssessment())
+            clears = set(assessment.semantic_exclusion_clears)
+            matches = set(assessment.semantic_exclusion_matches)
+        else:
+            clears = set(global_clears)
+            matches = set()
+
         request = AuthorizationRequest(
             target=entry.canonical_target,
             http_method="GET",
@@ -76,7 +108,7 @@ def build_observation_plan(
             program_operational_attestation=operational_attestation,
             program_operational_lease=operational_lease,
             semantic_exclusion_clears=clears,
-            semantic_exclusion_matches=set(),
+            semantic_exclusion_matches=matches,
             now=current,
         )
         result = authorize_test(engagement, test, request)
@@ -106,6 +138,7 @@ def build_observation_plan(
                 reason=reason,
                 source_candidate_ids=list(entry.candidate_ids),
                 semantic_exclusion_clears=clears,
+                semantic_exclusion_matches=matches,
             )
         )
 

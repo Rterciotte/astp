@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "ASTP BugHunt Nightly Companion",
+  "version": "0.1.0",
+  "description": "Authenticated, read-only BugHunt program discovery and detail capture for ASTP.",
+  "permissions": ["tabs", "scripting", "storage"],
+  "host_permissions": [
+    "https://admin.bughunt.com.br/*",
+    "http://127.0.0.1:8765/*"
+  ],
+  "background": {"service_worker": "background.js"},
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ASTP BugHunt Nightly"
+  }
+}

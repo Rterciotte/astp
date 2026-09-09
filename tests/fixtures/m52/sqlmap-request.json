@@ -1,0 +1,1 @@
+{"request_id":"sqlmap-local","permit_id":"p","action_id":"a","engagement_id":"lab","operation":"sqlmap.detect-bounded.v1","target":"http://astp-m52-lab:8080/sql?id=1","parameter":"id","method":"GET","level":1,"risk":1,"max_requests":50,"timeout_seconds":60}

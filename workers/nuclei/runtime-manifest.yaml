@@ -1,0 +1,17 @@
+schema_version: "1"
+engine: nuclei
+tool_version: "3.4.10"
+upstream_image: "projectdiscovery/nuclei@sha256:aeb5ea2db32a252b8135707d2ad0e89b90e19a18ea7816d38759bc51efb46b97"
+templates_revision: "astp-m52-lab-v1"
+templates_sha256: "2410e6998ccfc63a3c890bdfdb8ab8e55a71d0d416bd21add669a276d94eaf27"
+local_image_id: "sha256:8074909a9b3bf948c9b75103df1367690b8bb0a039e4658e6616aea4205d3459"
+qualified_for: "m52-local-lab-only"
+field_ready: true
+nightly_enabled: false
+qualification_required:
+  - exact-target-negative
+  - arbitrary-arguments-negative
+  - permit-before-io
+  - bounded-output
+  - local-lab-detection
+accounting_source: "ASTP counting proxy: 1 attempted, 1 forwarded, 1 response"

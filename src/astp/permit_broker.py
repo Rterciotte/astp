@@ -43,6 +43,19 @@ def broker_queue_item_permit(
     if not item.requires_new_permit:
         raise ValueError("queue item does not require a new permit")
 
+    supplied_clears = None if semantic_exclusion_clears is None else set(semantic_exclusion_clears)
+    if item.semantic_review_bound:
+        queue_clears = set(item.semantic_exclusion_clears)
+        if supplied_clears is not None and supplied_clears != queue_clears:
+            raise ValueError(
+                "semantic exclusion clearance override does not match the queue-bound review"
+            )
+        effective_clears = queue_clears
+    else:
+        # Backward compatibility for legacy/manual queue artifacts that predate
+        # queue-bound semantic review. They still undergo full broker re-authorization.
+        effective_clears = set(supplied_clears or set())
+
     current = now or datetime.now(UTC)
     request = AuthorizationRequest(
         target=item.target,
@@ -50,7 +63,7 @@ def broker_queue_item_permit(
         requested_requests_per_second=requested_rps,
         program_operational_attestation=operational_attestation,
         program_operational_lease=operational_lease,
-        semantic_exclusion_clears=set(semantic_exclusion_clears or set()),
+        semantic_exclusion_clears=effective_clears,
         semantic_exclusion_matches=set(),
         now=current,
     )

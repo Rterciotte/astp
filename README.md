@@ -8,6 +8,17 @@ You do not need to be an experienced security professional to understand the wor
 
 > **Important:** ASTP does not give permission to test a system. You must already have authorization from the owner, a bug bounty program, a lab, or a CTF's rules. When in doubt, do not execute a network action.
 
+## M52/M53 detector and orchestrator preview
+
+ASTP now models detector capabilities, policy decisions, proof ceilings, bounded tool jobs, secret analysis, discovery, differential authorization and exact OAST correlation. It also exposes a durable zero-network orchestrator dry run:
+
+```powershell
+python -m astp.cli orchestrator-start --campaign-id nightly-plan --all-ready
+python -m astp.cli orchestrator-status nightly-plan
+```
+
+Physical unattended execution remains disabled until each external runtime is built, digest-pinned and field-qualified. A declared capability is never presented as an available runtime.
+
 ## What ASTP does
 
 In plain language, ASTP can:
