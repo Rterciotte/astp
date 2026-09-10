@@ -137,6 +137,15 @@ def test_ambiguous_or_duplicate_result_blocks():
     assert runner.parse_result(text, "", 0) == "BLOCKED"
 
 
+def test_stderr_transcript_cannot_duplicate_or_spoof_stdout_result():
+    stderr = "prompt ASTP_AUTODEV_RESULT=BLOCKED\nASTP_AUTODEV_RESULT=CONTINUE"
+    assert runner.parse_result("ASTP_AUTODEV_RESULT=CONTINUE\n", stderr, 0) == "CONTINUE"
+
+
+def test_stderr_marker_without_stdout_result_blocks():
+    assert runner.parse_result("", "ASTP_AUTODEV_RESULT=CONTINUE", 0) == "BLOCKED"
+
+
 def test_explicit_usage_limit_and_generic_error_differ():
     assert runner.parse_result("", "Codex usage limit reached", 1) == "USAGE_LIMIT"
     assert runner.parse_result("", "connection failed", 1) == "BLOCKED"
@@ -160,6 +169,57 @@ def test_non_usage_failures_never_wait_for_reset(error):
 def test_usage_limit_waits_without_invented_timestamp(repo):
     state = execute(repo, "USAGE_LIMIT")
     assert state["status"] == "WAITING_FOR_RESET" and state["resume_after"] is None
+
+
+def test_continue_preserves_same_milestone_and_work_for_next_wake(repo):
+    runtime = repo / ".astp/autonomous-dev"
+    state = runner.initialize(repo, runtime)
+    state["milestone"] = "M1"
+    runner.atomic_json(runtime / "state.json", state)
+    work = repo / "partial-m1.txt"
+    work.write_text("preserve me\n", encoding="utf-8")
+    first = runner.run_once(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        invoke=fake_invoke("CONTINUE"),
+        validate=fake_validate(True),
+    )
+    assert first["status"] == "READY" and first["milestone"] == "M1"
+    assert work.read_text(encoding="utf-8") == "preserve me\n"
+    second = runner.run_once(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        invoke=fake_invoke("CONTINUE"),
+        validate=fake_validate(True),
+    )
+    assert second["status"] == "READY" and second["milestone"] == "M1"
+    assert second["attempt"] == 2
+
+
+@pytest.mark.parametrize(
+    ("marker", "expected"),
+    [("HUMAN_GATE", "HUMAN_GATE"), ("BLOCKED", "BLOCKED"), ("FAILED", "BLOCKED")],
+)
+def test_explicit_stop_results_have_fail_closed_semantics(repo, marker, expected):
+    assert execute(repo, marker)["status"] == expected
+
+
+def test_continue_with_nonzero_exit_blocks(repo):
+    runtime = repo / ".astp/autonomous-dev"
+    runner.initialize(repo, runtime)
+    state = runner.run_once(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        invoke=fake_invoke("CONTINUE", code=1),
+        validate=fake_validate(True),
+    )
+    assert state["status"] == "BLOCKED"
 
 
 def test_human_gate_and_complete_are_terminal_noops(repo):

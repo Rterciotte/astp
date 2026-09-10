@@ -39,6 +39,15 @@ TRANSITIONS = {
     "COMPLETE": set(),
 }
 MARKERS = {"MILESTONE_COMPLETE", "CONTINUE", "USAGE_LIMIT", "HUMAN_GATE", "BLOCKED", "FAILED"}
+RESULT_ACTIONS = {
+    "MILESTONE_COMPLETE": "VALIDATE",
+    "CONTINUE": "RESUME_SAME_MILESTONE",
+    "USAGE_LIMIT": "WAIT_FOR_RESET",
+    "HUMAN_GATE": "STOP_FOR_HUMAN",
+    "BLOCKED": "BLOCK",
+    # FAILED carries no structured proof that autonomous repair is safe.
+    "FAILED": "BLOCK",
+}
 AUTONOMOUS_MILESTONES = tuple(f"M{number}" for number in range(1, 9))
 MARKER_RE = re.compile(r"(?m)^ASTP_AUTODEV_RESULT=([A-Z_]+)\s*$")
 USAGE_PATTERNS = (
@@ -321,7 +330,9 @@ class RunnerLock:
 
 
 def parse_result(stdout: str, stderr: str, exit_code: int) -> str:
-    markers = MARKER_RE.findall(stdout + "\n" + stderr)
+    # stdout is the result channel. Codex diagnostic stderr can contain an
+    # echoed prompt/transcript with marker-shaped text and is never authoritative.
+    markers = MARKER_RE.findall(stdout)
     if len(markers) == 1 and markers[0] in MARKERS:
         marker = markers[0]
         if exit_code == 0 or marker in {"USAGE_LIMIT", "HUMAN_GATE", "BLOCKED", "FAILED"}:
@@ -488,15 +499,16 @@ def run_once(
         )
         result = parse_result(stdout, stderr, code)
         append_history(history, "CODEX_FINISHED", run_id=current_run, exit_code=code, result=result)
-        if result == "USAGE_LIMIT":
+        action = RESULT_ACTIONS[result]
+        if action == "WAIT_FOR_RESET":
             state = transition(state_path, state, "WAITING_FOR_RESET", reason="Codex usage limit")
             state["resume_after"] = None
             atomic_json(state_path, state)
-        elif result == "HUMAN_GATE":
+        elif action == "STOP_FOR_HUMAN":
             state = transition(state_path, state, "HUMAN_GATE", reason="human review required")
-        elif result == "CONTINUE":
+        elif action == "RESUME_SAME_MILESTONE":
             state = transition(state_path, state, "READY", reason="Codex requested next wake-up")
-        elif result == "MILESTONE_COMPLETE":
+        elif action == "VALIDATE":
             state = transition(state_path, state, "VALIDATING")
             append_history(history, "VALIDATION_STARTED", run_id=current_run)
             passed = validate(

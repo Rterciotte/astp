@@ -43,6 +43,12 @@ exit fail closed. No trustworthy reset timestamp is exposed, so usage limits
 set `resume_after` to null. The scheduler may try once on its next hourly wake;
 there is no polling loop.
 
+Only stdout is the authoritative result channel. Diagnostic stderr may contain
+an echoed prompt or transcript and cannot supply, duplicate, or spoof a result
+marker. `CONTINUE` with exit zero returns to `READY` on the same milestone and
+preserves partial work. `FAILED` remains blocked because V1 has no structured
+safe-repair subtype; ambiguity fails closed.
+
 ## Scheduler and verification
 
 The installer refuses replacement, enforces at least one hour, prevents
