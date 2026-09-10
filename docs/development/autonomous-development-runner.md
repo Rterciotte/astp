@@ -27,7 +27,9 @@ resulting HEAD and `COMPLETE`. Failure returns to `READY` for repair.
 The verified independent CLI is `codex-cli 0.154.0` at
 `C:\Program Files\nodejs\codex.cmd`; the inaccessible WindowsApps executable is
 not used. Execution uses stdin, explicit cwd, captured stdout/stderr/exit,
-timeout, and stateless ephemeral sessions.
+timeout, and stateless ephemeral sessions. In this CLI version the approval
+option is global and therefore precedes `exec`; a regression test protects this
+ordering.
 
 Exactly one final marker is accepted:
 
@@ -44,6 +46,9 @@ The installer refuses replacement, enforces at least one hour, prevents
 overlap, uses limited privileges, and immediately disables the named task.
 Installation never authorizes enabling. Inspect with `status.ps1`; remove only
 `ASTP-Autonomous-Development` with `remove-task.ps1`.
+Use `run.ps1 -ValidateEnvironmentOnly` to verify the repository, Git, venv,
+fixed Codex path, runtime write access, and lock lifecycle without invoking a
+model.
 
 Unit tests cover state, transitions, locks, recovery, redaction, protocol,
 terminal behavior, HEAD divergence, safety flags, and scheduler policy.

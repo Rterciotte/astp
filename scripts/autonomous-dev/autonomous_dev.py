@@ -351,24 +351,32 @@ ASTP_AUTODEV_RESULT=MILESTONE_COMPLETE|CONTINUE|USAGE_LIMIT|HUMAN_GATE|BLOCKED|F
 """
 
 
-def invoke_codex(
-    command: Sequence[str], repo: Path, prompt: str, log_root: Path, timeout: int
-) -> tuple[int, str, str]:
-    stdout_path, stderr_path = log_root / "codex.stdout.log", log_root / "codex.stderr.log"
-    argv = [
+def build_codex_argv(
+    command: Sequence[str], repo: Path, sandbox: str = "workspace-write"
+) -> list[str]:
+    if sandbox not in {"read-only", "workspace-write"}:
+        raise RunnerError("unsafe Codex sandbox")
+    return [
         *command,
+        "--ask-for-approval",
+        "never",
         "exec",
         "-",
         "-C",
         str(repo),
         "--sandbox",
-        "workspace-write",
-        "--ask-for-approval",
-        "never",
+        sandbox,
         "--ephemeral",
         "--color",
         "never",
     ]
+
+
+def invoke_codex(
+    command: Sequence[str], repo: Path, prompt: str, log_root: Path, timeout: int
+) -> tuple[int, str, str]:
+    stdout_path, stderr_path = log_root / "codex.stdout.log", log_root / "codex.stderr.log"
+    argv = build_codex_argv(command, repo)
     try:
         completed = subprocess.run(
             argv,
@@ -520,9 +528,36 @@ def run_once(
         lock.release()
 
 
+def validate_environment(repo: Path, runtime: Path, config: dict) -> dict:
+    executable = Path(config["codex_executable"])
+    expected = Path(r"C:\Program Files\nodejs\codex.cmd")
+    if executable.resolve() != expected.resolve() or not executable.is_file():
+        raise RunnerError("independent Codex executable is unavailable or substituted")
+    python = repo / ".venv" / "Scripts" / "python.exe"
+    if not python.is_file():
+        raise RunnerError("repository virtualenv Python is unavailable")
+    head = git(repo, "rev-parse", "HEAD")
+    runtime.mkdir(parents=True, exist_ok=True)
+    probe = runtime / f"environment-probe-{secrets.token_hex(4)}.tmp"
+    atomic_text(probe, "local-only\n")
+    probe.unlink()
+    lock = RunnerLock(runtime / "runner.lock")
+    lock.acquire(run_id())
+    lock.release()
+    return {
+        "status": "ENVIRONMENT_READY",
+        "repo": str(repo),
+        "head": head,
+        "python": str(python),
+        "codex": str(executable),
+        "user": os.environ.get("USERNAME", "unknown"),
+        "model_invoked": False,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="ASTP autonomous local-development runner")
-    parser.add_argument("command", choices=("initialize", "status", "run"))
+    parser.add_argument("command", choices=("initialize", "status", "environment", "run"))
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--runtime", type=Path)
     parser.add_argument("--codex-timeout", type=int, default=3600)
@@ -535,6 +570,8 @@ def main() -> int:
             state = initialize(repo, runtime)
         elif args.command == "status":
             state = load_state(runtime / "state.json")
+        elif args.command == "environment":
+            state = validate_environment(repo, runtime, config)
         else:
             state = run_once(
                 repo,

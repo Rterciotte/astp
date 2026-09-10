@@ -142,6 +142,21 @@ def test_explicit_usage_limit_and_generic_error_differ():
     assert runner.parse_result("", "connection failed", 1) == "BLOCKED"
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        "authentication required",
+        "DNS lookup failed",
+        "TLS handshake failed",
+        "CODEX_TIMEOUT",
+        "internal server error",
+        "malformed response",
+    ],
+)
+def test_non_usage_failures_never_wait_for_reset(error):
+    assert runner.parse_result("", error, 1) == "BLOCKED"
+
+
 def test_usage_limit_waits_without_invented_timestamp(repo):
     state = execute(repo, "USAGE_LIMIT")
     assert state["status"] == "WAITING_FOR_RESET" and state["resume_after"] is None
@@ -234,6 +249,22 @@ def test_prompt_and_invocation_use_data_not_shell(repo, tmp_path):
     assert "Never push" in prompt and str(repo) in prompt
     source = SCRIPT.read_text(encoding="utf-8")
     assert "shell=False" in source and '"-C"' in source and "str(repo)" in source
+
+
+def test_codex_global_approval_flag_precedes_exec(repo):
+    argv = runner.build_codex_argv([r"C:\Program Files\nodejs\codex.cmd"], repo)
+    assert argv.index("--ask-for-approval") < argv.index("exec")
+    assert argv[argv.index("--ask-for-approval") + 1] == "never"
+
+
+def test_environment_validation_is_local_and_rejects_substitution(repo, monkeypatch):
+    config = runner.load_config(SCRIPT.parent / "config.json")
+    monkeypatch.setattr(Path, "is_file", lambda path: True)
+    result = runner.validate_environment(repo, repo / ".astp/autonomous-dev", config)
+    assert result["status"] == "ENVIRONMENT_READY" and result["model_invoked"] is False
+    config["codex_executable"] = str(repo / "codex.cmd")
+    with pytest.raises(runner.RunnerError, match="substituted"):
+        runner.validate_environment(repo, repo / ".astp/autonomous-dev", config)
 
 
 def test_corrupt_state_fails_closed(tmp_path):
