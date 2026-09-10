@@ -73,17 +73,25 @@ def _entropy(value: str) -> float:
     )
 
 
+def secret_signal_identity(
+    kind: SecretKind, value_sha256: str, *, context_class: str
+) -> tuple[SecretKind, str, str]:
+    """Return a stable privacy-preserving identity for one logical secret signal."""
+    return kind, value_sha256, context_class.strip().lower()
+
+
 def analyze_exposed_content(
     data: bytes, *, content_type: str = "text/plain"
 ) -> tuple[SecretExposureSignal, ...]:
     text = data.decode("utf-8", errors="replace")
     signals: list[SecretExposureSignal] = []
-    seen: set[tuple[SecretKind, str]] = set()
+    context_class = content_type.strip().lower()
+    seen: set[tuple[SecretKind, str, str]] = set()
     for kind, pattern, confidence in _PATTERNS:
         for match in pattern.finditer(text):
             value = match.group(1) if match.lastindex else match.group(0)
             digest = hashlib.sha256(value.encode()).hexdigest()
-            key = (kind, digest)
+            key = secret_signal_identity(kind, digest, context_class=context_class)
             if key in seen or value.lower() in {"changeme", "example", "your_api_key_here"}:
                 continue
             seen.add(key)
@@ -98,11 +106,13 @@ def analyze_exposed_content(
             )
     for token in re.findall(r"\b[A-Za-z0-9+/=_-]{32,128}\b", text):
         digest = hashlib.sha256(token.encode()).hexdigest()
-        if (
-            _entropy(token) >= 4.2
-            and not token.isdigit()
-            and (SecretKind.HIGH_ENTROPY, digest) not in seen
-        ):
+        key = secret_signal_identity(
+            SecretKind.HIGH_ENTROPY,
+            digest,
+            context_class=context_class,
+        )
+        if _entropy(token) >= 4.2 and not token.isdigit() and key not in seen:
+            seen.add(key)
             signals.append(
                 SecretExposureSignal(
                     kind=SecretKind.HIGH_ENTROPY,
