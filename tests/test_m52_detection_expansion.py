@@ -39,6 +39,24 @@ def test_not_mentioned_is_not_denied_for_ready_detector():
     assert decision.allowed and decision.code is DetectorDecisionCode.ALLOWED
 
 
+def test_positive_budget_allows_capability_to_run_with_reduced_ceiling():
+    capability = _cap("astp.http-observation-field.v1")
+
+    decision = decide_detector(capability, _context(remaining_requests=1))
+
+    assert capability.maximum_default_requests == 30
+    assert decision.allowed and decision.code is DetectorDecisionCode.ALLOWED
+
+
+def test_zero_budget_remains_fail_closed():
+    decision = decide_detector(
+        _cap("astp.http-observation-field.v1"), _context(remaining_requests=0)
+    )
+
+    assert not decision.allowed
+    assert decision.code is DetectorDecisionCode.BLOCKED_BUDGET
+
+
 def test_explicit_and_general_denials_propagate():
     capability = _cap("astp.http-posture.v1")
     assert (

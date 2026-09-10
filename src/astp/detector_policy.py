@@ -93,10 +93,8 @@ def decide_detector(
         return result(
             DetectorDecisionCode.BLOCKED_PREREQUISITE, "qualified browser runtime is unavailable"
         )
-    if capability.maximum_default_requests > context.remaining_requests:
-        return result(
-            DetectorDecisionCode.BLOCKED_BUDGET, "detector request ceiling exceeds remaining budget"
-        )
+    if context.remaining_requests <= 0:
+        return result(DetectorDecisionCode.BLOCKED_BUDGET, "no request budget remains")
     if context.disposition is MentionDisposition.REQUIRES_CONTEXT:
         return result(
             DetectorDecisionCode.REQUIRES_REVIEW, "policy requires additional factual context"

@@ -34,9 +34,11 @@ class FakeAdapter:
     detector_ids: frozenset[str]
     calls: int = 0
     fail: DetectorAdapterError | None = None
+    permit_max_requests: int | None = None
 
     def execute(self, request, permit, run_root: Path) -> DetectorAdapterResult:
         self.calls += 1
+        self.permit_max_requests = permit.payload.max_requests
         assert (run_root / "authorization.json").exists()
         assert permit.payload.detector_run_id
         if self.fail:
@@ -120,6 +122,25 @@ def test_stale_revision_blocks_before_adapter_and_reservation(tmp_path) -> None:
     assert adapter.calls == 0
     with sqlite3.connect(tmp_path / "detector-budgets.db") as db:
         assert db.execute("SELECT count(*) FROM reservations").fetchone()[0] == 0
+
+
+def test_execution_reduces_permit_to_single_remaining_request(tmp_path) -> None:
+    adapter = FakeAdapter(frozenset({"nuclei.astp-lab-cve.v1"}))
+    service = DetectorExecutionService(tmp_path, "test-signing-key", (adapter,))
+    context = DetectorPolicyContext(target_in_scope=True, remaining_requests=1)
+    request = _request(
+        policy_context=context,
+        global_remaining=1,
+        program_remaining=1,
+        detector_remaining=1,
+    )
+
+    result = service.execute(request)
+
+    assert result.status is DetectorRunStatus.COMPLETED
+    assert result.authorization is not None
+    assert result.authorization.payload.max_requests == 1
+    assert adapter.permit_max_requests == 1
 
 
 def test_forwarded_without_response_is_unknown_and_never_retryable(tmp_path) -> None:
