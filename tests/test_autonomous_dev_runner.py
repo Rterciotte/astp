@@ -187,6 +187,39 @@ def test_validation_failure_returns_ready_for_repair(repo):
     assert state["status"] == "READY" and not state["last_validation"]["passed"]
 
 
+def test_authorized_milestone_progresses_only_after_validation(repo):
+    runtime = repo / ".astp/autonomous-dev"
+    state = runner.initialize(repo, runtime)
+    state["milestone"] = "M1"
+    runner.atomic_json(runtime / "state.json", state)
+    result = runner.run_once(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        invoke=fake_invoke("MILESTONE_COMPLETE"),
+        validate=fake_validate(True),
+    )
+    assert result["status"] == "READY" and result["milestone"] == "M2"
+
+
+def test_m8_completion_stops_at_m9_human_gate(repo):
+    runtime = repo / ".astp/autonomous-dev"
+    state = runner.initialize(repo, runtime)
+    state["milestone"] = "M8"
+    runner.atomic_json(runtime / "state.json", state)
+    result = runner.run_once(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        invoke=fake_invoke("MILESTONE_COMPLETE"),
+        validate=fake_validate(True),
+    )
+    assert result["status"] == "HUMAN_GATE" and result["milestone"] == "M9"
+    assert result["last_exit_reason"] == "PRE_PUSH_REVIEW_REQUIRED"
+
+
 def test_head_divergence_blocks_before_invocation(repo):
     runtime = repo / ".astp/autonomous-dev"
     state = runner.initialize(repo, runtime)

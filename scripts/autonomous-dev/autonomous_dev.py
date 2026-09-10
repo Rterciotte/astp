@@ -31,7 +31,7 @@ TRANSITIONS = {
     "UNINITIALIZED": {"READY", "BLOCKED"},
     "READY": {"RUNNING", "BLOCKED"},
     "RUNNING": {"READY", "VALIDATING", "WAITING_FOR_RESET", "HUMAN_GATE", "BLOCKED"},
-    "VALIDATING": {"READY", "COMPLETE", "BLOCKED"},
+    "VALIDATING": {"READY", "HUMAN_GATE", "COMPLETE", "BLOCKED"},
     "WAITING_FOR_RESET": {"RUNNING", "BLOCKED"},
     "RECOVERING": {"READY", "BLOCKED"},
     "HUMAN_GATE": set(),
@@ -39,6 +39,7 @@ TRANSITIONS = {
     "COMPLETE": set(),
 }
 MARKERS = {"MILESTONE_COMPLETE", "CONTINUE", "USAGE_LIMIT", "HUMAN_GATE", "BLOCKED", "FAILED"}
+AUTONOMOUS_MILESTONES = tuple(f"M{number}" for number in range(1, 9))
 MARKER_RE = re.compile(r"(?m)^ASTP_AUTODEV_RESULT=([A-Z_]+)\s*$")
 USAGE_PATTERNS = (
     re.compile(r"\busage limit\b", re.IGNORECASE),
@@ -507,9 +508,41 @@ def run_once(
                 state["head"] = git(repo, "rev-parse", "HEAD")
                 atomic_json(state_path, state)
                 append_history(history, "CHECKPOINT_SAVED", run_id=current_run, head=state["head"])
-                state = transition(
-                    state_path, state, "COMPLETE", reason="validated milestone complete"
-                )
+                completed_milestone = state["milestone"]
+                if completed_milestone in AUTONOMOUS_MILESTONES:
+                    number = int(completed_milestone[1:])
+                    if number == 8:
+                        state["milestone"] = "M9"
+                        atomic_json(state_path, state)
+                        state = transition(
+                            state_path,
+                            state,
+                            "HUMAN_GATE",
+                            reason="PRE_PUSH_REVIEW_REQUIRED",
+                        )
+                    else:
+                        state["milestone"] = f"M{number + 1}"
+                        atomic_json(state_path, state)
+                        state = transition(
+                            state_path,
+                            state,
+                            "READY",
+                            reason=f"{completed_milestone} validated; next milestone ready",
+                        )
+                    append_history(
+                        history,
+                        "MILESTONE_COMPLETED",
+                        run_id=current_run,
+                        milestone=completed_milestone,
+                        next_milestone=state["milestone"],
+                    )
+                else:
+                    state = transition(
+                        state_path,
+                        state,
+                        "COMPLETE",
+                        reason="validated milestone complete",
+                    )
                 append_history(history, "VALIDATION_PASSED", run_id=current_run)
             else:
                 state = transition(

@@ -21,6 +21,9 @@ completion claim.
 Persisted and current Git HEAD must match before invocation. Codex completion
 is provisional: validation runs outside Codex, and only a pass records the
 resulting HEAD and `COMPLETE`. Failure returns to `READY` for repair.
+For operator-authorized M1–M8, a validation pass advances atomically to the
+next milestone. M8 advances only to `M9 / HUMAN_GATE` with reason
+`PRE_PUSH_REVIEW_REQUIRED`; later scheduler wakes are no-ops.
 
 ## CLI and result protocol
 
