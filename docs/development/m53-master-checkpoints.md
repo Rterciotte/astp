@@ -75,4 +75,25 @@ nine unique run IDs and permits, zero reuse, one physical 429, two retries,
 zero blind replay and zero orphan containers. Full validation passed with 798
 tests. No real target traffic occurred.
 
-Remaining roadmap: M5–M8.
+## M5 — complete local A-H acceptance
+
+Status: implemented and physically accepted; pending local checkpoint commit.
+
+The acceptance report is reconstructed from durable artifacts instead of a
+parallel expected-value narrative. It emits every required per-program field
+for exactly A-H and independently rejects unauthorized or out-of-scope I/O,
+permit reuse, blind replay, accounting mismatch, policy/semantic block I/O,
+direct proxy fallback, sensitive signing-key leakage and Docker orphans.
+
+Physical campaign: `.astp/physical/m53-m5-acceptance-v3`.
+
+Program-specific acceptance proved policy-zero-I/O for B; semantic exclusion
+before review and allowed execution after review for C; derived bounded
+exhaustion for D; offline-to-online readiness for E; durable invalidation of
+F's revision-1 lease, permit and plan before revision-2 launch; fresh retry
+authority after G's worker crash; and H's physical 429 persisted backoff while
+other programs progressed. The campaign manifest verifies offline.
+
+Marker: `M53_LOCAL_AH_ACCEPTANCE_PASS`.
+
+Remaining roadmap: M6–M8.

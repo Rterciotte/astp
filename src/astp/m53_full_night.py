@@ -475,7 +475,7 @@ def _run_scheduler_controlled_execution(
 
     execution_leases = {
         program_id: [issue_execution_lease(program_id, "1")]
-        for program_id in ("A", "C", "D", "G", "H")
+        for program_id in ("A", "C", "D", "F", "G", "H")
     }
     service = DetectorExecutionService(
         root,
@@ -496,7 +496,7 @@ def _run_scheduler_controlled_execution(
                 revision="1",
                 lease_id=(
                     execution_leases[program_id][0].id
-                    if program_id != "B" and program_id not in {"E", "F"}
+                    if program_id != "B" and program_id != "E"
                     else None
                 ),
                 fairness_rank="ACHDFGEB".index(program_id),
@@ -509,7 +509,7 @@ def _run_scheduler_controlled_execution(
                         required_revision="1",
                         required_lease_id=(
                             execution_leases[program_id][0].id
-                            if program_id not in {"B", "E", "F"}
+                            if program_id not in {"B", "E"}
                             else None
                         ),
                     )
@@ -634,7 +634,31 @@ def _run_scheduler_controlled_execution(
         raise RuntimeError(f"scheduler restart failed: {restarted.stderr}")
     scheduler = DurableNightScheduler(scheduler.path)
     execution_leases["E"] = [issue_execution_lease("E", "1")]
-    execution_leases["F"] = [issue_execution_lease("F", "2")]
+    stale_f_lease = execution_leases["F"][0]
+    stale_f_engagement, stale_f_attestation = execution_authorities[stale_f_lease.id]
+    stale_now = datetime.now(UTC)
+    stale_f_permit = issue_execution_permit(
+        stale_f_engagement,
+        TestDefinition(
+            id="night-F-stale-plan",
+            title="Stale revision plan that must never launch",
+            category="verification",
+            risk_class=RiskClass.SAFE_ACTIVE,
+        ),
+        AuthorizationRequest(
+            target=by_program["F"].target,
+            http_method="GET",
+            requested_requests_per_second=1,
+            program_operational_attestation=stale_f_attestation,
+            program_operational_lease=stale_f_lease,
+            operational_lease_store_path=str(execution_lease_store.path),
+            now=stale_now,
+        ),
+        signing_key,
+        now=stale_now,
+    )
+    execution_lease_store.revoke(stale_f_lease.id)
+    execution_leases["F"].append(issue_execution_lease("F", "2"))
     for program_id in ("G", "H"):
         previous = execution_leases[program_id][-1]
         engagement, attestation = execution_authorities[previous.id]
@@ -648,7 +672,7 @@ def _run_scheduler_controlled_execution(
         execution_authorities[renewed.id] = (engagement, attestation)
         execution_leases[program_id].append(renewed)
     scheduler.set_ready("E", ready=True, lease_id=execution_leases["E"][0].id)
-    scheduler.replace_revision("F", "2", execution_leases["F"][0].id)
+    scheduler.replace_revision("F", "2", execution_leases["F"][-1].id)
     scheduler.set_ready("F", ready=True)
     scheduler.replace_lease("G", execution_leases["G"][-1].id)
     scheduler.replace_lease("H", execution_leases["H"][-1].id)
@@ -675,6 +699,24 @@ def _run_scheduler_controlled_execution(
     }
     (root / "scheduler-trace.json").write_text(
         json.dumps(trace, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    (root / "revision-invalidation.json").write_text(
+        json.dumps(
+            {
+                "program_id": "F",
+                "stale_revision": "1",
+                "current_revision": "2",
+                "stale_lease_id": stale_f_lease.id,
+                "stale_lease_state": "revoked",
+                "stale_permit_id": stale_f_permit.payload.permit_id,
+                "stale_plan_launched": False,
+                "fresh_lease_id": execution_leases["F"][-1].id,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
     )
     _verify_scheduler_execution_trace(trace, tuple(results))
     durable_leases = json.loads(execution_lease_store.path.read_text(encoding="utf-8"))["leases"]
@@ -897,6 +939,25 @@ def run_full_night(
     pass1_blocked = sum(row["accounting"]["blocked_before_io"] for row in pass1_results)
     pass1_failed_after_io = sum(row["accounting"]["failed_after_io"] for row in pass1_results)
     pass1_consumed = sum(row["status"] != "blocked_before_io" for row in pass1_results)
+    orphan_query = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "--all",
+            "--filter",
+            "name=astp-proxy-",
+            "--filter",
+            "name=astp-worker-process-",
+            "--format",
+            "{{.ID}}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if orphan_query.returncode:
+        raise RuntimeError("could not independently reconcile local detector containers")
+    orphan_workers = len([line for line in orphan_query.stdout.splitlines() if line.strip()])
     report = FullNightReport(
         campaign_id=campaign_id,
         logical_duration_hours=max(scheduler_trace["logical_hours"]),
@@ -942,6 +1003,7 @@ def run_full_night(
         responses_received=pass1_responses + extra_responses,
         blocked_before_io=pass1_blocked,
         failed_after_io=pass1_failed_after_io,
+        orphan_workers_remaining=orphan_workers,
         finding_candidates=len(advanced_results),
         findings_reproduced=sum(
             row["proof_after"] in {"reproduced", "confirmed"} for row in advanced_results
@@ -984,5 +1046,8 @@ def run_full_night(
     (root / "full-night-report.json").write_text(
         report.model_dump_json(indent=2) + "\n", encoding="utf-8"
     )
+    from astp.m53_ah_acceptance import build_ah_acceptance
+
+    build_ah_acceptance(root)
     _hash_manifest(root)
     return report

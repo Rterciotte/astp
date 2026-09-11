@@ -22,8 +22,8 @@ Qualified overlay counting-proxy digest:
 
 M3 commit: `ac4c387`.
 
-M4 implementation, physical acceptance and full validation are complete,
-pending the local checkpoint commit. Marker:
+M4 implementation, physical acceptance and full validation are complete.
+Commit: `7355b3d`. Marker:
 `M53_HIGH_4_SCHEDULER_NIGHT_PASS`. The scheduler directly controlled nine
 physical dispatches across T+0/T+2/T+5/T+8. Each dispatch used a program-bound
 real lease and upstream signed permit. H's target 429/Retry-After survived the
@@ -34,10 +34,20 @@ derived D exhaustion, derived deadline drain, manifest PASS and zero orphans.
 Full validation: 798 passed. Qualified local proxy digest:
 `sha256:b7e6656eab2b2902b9c2a1553fe74f28418e4347343af832091d8ffcb80fbea7`.
 
-Next exact action after the M4 commit: start M5 complete local A–H acceptance
-using only the M1–M4 authorization, lease, scheduler, worker, proxy, evidence
-and recovery paths. Produce the required per-program fields and independent
-global invariants; do not restore the legacy pass1 retry executor.
+M5 complete local A–H acceptance is implemented and physically accepted,
+pending full validation and the local checkpoint commit. Marker:
+`M53_LOCAL_AH_ACCEPTANCE_PASS`. Authoritative campaign:
+`.astp/physical/m53-m5-acceptance-v3`. All eight program rows are reconstructed
+from durable scheduler, lease, permit, detector result, proof and accounting
+artifacts. B launched no run/I/O; C's independent semantic exclusion oracle
+blocked before review and allowed after review; D exhausted from bounded state;
+E transitioned offline-to-online; F revoked its revision-1 lease/permit/plan
+before revision-2 execution; G and H retried with fresh authority and H's
+persisted backoff. All ten global violation counters are zero, manifest PASS,
+and the independent Docker orphan query returned zero.
+
+Next exact action after the M5 commit: perform M6 comprehensive pre-push audit
+across M1-M5, without implementing unrelated features and without push.
 
 Local Docker state available for M3: daemon running, network `astp-m2-local`,
 container `astp-m52-lab`, qualified worker/proxy images present. These are local
