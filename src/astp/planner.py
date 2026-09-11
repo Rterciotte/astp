@@ -57,6 +57,7 @@ def build_observation_plan(
     semantic_target_assessments: dict[str, TargetSemanticAssessment] | None = None,
     operational_attestation: ProgramOperationalAttestation | None = None,
     operational_lease: ProgramOperationalLease | None = None,
+    operational_lease_store_path: str | None = None,
     requested_rps: float | None = None,
     now: datetime | None = None,
 ) -> ObservationPlan:
@@ -107,6 +108,7 @@ def build_observation_plan(
             requested_requests_per_second=requested_rps,
             program_operational_attestation=operational_attestation,
             program_operational_lease=operational_lease,
+            operational_lease_store_path=operational_lease_store_path,
             semantic_exclusion_clears=clears,
             semantic_exclusion_matches=matches,
             now=current,

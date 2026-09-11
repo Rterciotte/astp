@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from enum import Enum
+from pathlib import Path
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
@@ -18,7 +20,7 @@ from astp.models import (
     TestDefinition,
     _match_rule,
 )
-from astp.operational_lease import ProgramOperationalLease, lease_is_valid
+from astp.operational_lease import OperationalLeaseStore, ProgramOperationalLease
 
 
 class CheckStatus(str, Enum):
@@ -44,6 +46,7 @@ class AuthorizationRequest(BaseModel):
     semantic_exclusion_matches: set[str] = Field(default_factory=set)
     program_operational_attestation: ProgramOperationalAttestation | None = None
     program_operational_lease: ProgramOperationalLease | None = None
+    operational_lease_store_path: str | None = None
     now: datetime | None = None
 
 
@@ -268,8 +271,17 @@ def _check_program_operational_gate(
     if current >= valid_until:
         lease = request.program_operational_lease
         if lease is not None:
-            valid, lease_reason = lease_is_valid(lease, engagement, attestation, now=current)
-            if valid:
+            if request.operational_lease_store_path is None:
+                lease_reason = "durable operational lease authority is required"
+            else:
+                try:
+                    OperationalLeaseStore(Path(request.operational_lease_store_path)).require_valid(
+                        lease, engagement, attestation, now=current
+                    )
+                    lease_reason = None
+                except (OSError, ValueError, json.JSONDecodeError) as exc:
+                    lease_reason = str(exc)
+            if lease_reason is None:
                 checks.append(
                     AuthorizationCheck(
                         name="program_operational_status",
