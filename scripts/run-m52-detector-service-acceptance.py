@@ -2,19 +2,44 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
-from astp.detector_execution import DetectorExecutionRequest
-from astp.detector_policy import DetectorPolicyContext, MentionDisposition, decide_detector
+from astp.browser_intake import BrowserCapture
 from astp.detector_registry import builtin_detector_registry
 from astp.docker_detector_adapter import (
     DockerDetectorAdapter,
     DockerDetectorConfig,
     DockerDetectorRuntime,
 )
+from astp.m53_auth_chain import derive_local_authorized_detector_request
 from astp.orchestrator import run_orchestrator_execution
 from astp.orchestrator_models import AutonomousCampaignConfig
-from astp.orchestrator_scheduler import rank_opportunity
+
+
+def _captures(now: datetime) -> tuple[BrowserCapture, BrowserCapture]:
+    detail_url = "http://local-bughunt.test/program/detail?id=local-m52"
+    return (
+        BrowserCapture(
+            url="http://local-bughunt.test/programs",
+            text="Programas timeline\nMostrando 1 programa\nPublicado há 1 minuto",
+            links=[{"text": "Local M52", "href": detail_url}],
+            captured_at=now,
+        ),
+        BrowserCapture(
+            url=detail_url,
+            title="Local M52",
+            text="""
+Política do programa
+Lista de escopo do programa
+## Escopo
+- http://astp-m52-lab:8080/
+É proibido realizar ataques quando o programa estiver offline.
+Recomendamos o User Agent: ASTP local acceptance.
+""",
+            captured_at=now,
+        ),
+    )
 
 
 def main() -> int:
@@ -24,84 +49,61 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--prepare-cli-inputs", action="store_true")
     arguments = parser.parse_args()
+    arguments.output.mkdir(parents=True, exist_ok=True)
     detector = next(
         item for item in builtin_detector_registry() if item.detector_id == "nuclei.astp-lab-cve.v1"
     )
-    context = DetectorPolicyContext(
-        disposition=MentionDisposition.EXPLICITLY_ALLOWED,
-        target_in_scope=True,
-        remaining_requests=10,
-    )
-    target = "http://astp-m52-lab:8080"
-    opportunity = rank_opportunity(
-        detector,
-        program_id="local-program",
-        target=target,
-        signals=("cve-fixture",),
-        decision=decide_detector(detector, context),
-        remaining_budget=10,
-    )
     key = "astp-local-signing-key-must-be-32-bytes-long"
+    now = datetime.now(UTC)
+    listing, detail = _captures(now)
+    request, broker = derive_local_authorized_detector_request(
+        root=arguments.output / "authorization-chain",
+        campaign_id="physical-service-1",
+        listing_capture=listing,
+        detail_capture=detail,
+        target="http://astp-m52-lab:8080/",
+        detector=detector,
+        runtime_digest=arguments.runtime_digest,
+        signing_key=key,
+        now=now,
+    )
     adapter_config = DockerDetectorConfig(
         target_network=arguments.target_network,
         proxy_image_digest="sha256:667244c6e1a89371dc227aa6a6bd73e71f8fad8f8521911f83c680c481279f13",
         runtimes={
             detector.detector_id: DockerDetectorRuntime(
-                image="astp/nuclei-worker:m52",
-                image_digest=arguments.runtime_digest,
+                image="astp/nuclei-worker:m52", image_digest=arguments.runtime_digest
             )
         },
         timeout_seconds=30,
     )
-    adapter = DockerDetectorAdapter(adapter_config, key)
-    request = DetectorExecutionRequest(
-        campaign_id="physical-service-1",
-        campaign_active=True,
-        program_id="local-program",
-        program_revision="rev-1",
-        current_program_revision="rev-1",
-        target=target,
-        opportunity=opportunity,
-        detector=detector,
-        runtime_id="nuclei",
-        runtime_digest=arguments.runtime_digest,
-        runtime_qualification_digest=arguments.runtime_digest,
-        lease_current=True,
-        target_in_scope=True,
-        semantic_review_complete=True,
-        policy_context=context,
-        global_remaining=10,
-        program_remaining=10,
-        detector_remaining=10,
-        max_rps=1.0,
-        proof_requirement=detector.proof_requirement,
-    )
     if arguments.prepare_cli_inputs:
-        arguments.output.mkdir(parents=True, exist_ok=True)
         (arguments.output / "docker-config.json").write_text(
             adapter_config.model_dump_json(indent=2) + "\n", encoding="utf-8"
         )
         (arguments.output / "detector-request.json").write_text(
             request.model_dump_json(indent=2) + "\n", encoding="utf-8"
         )
-        print(json.dumps({"prepared": True, "output": str(arguments.output)}))
+        print(json.dumps({"prepared": True, "permit_id": broker.permit.payload.permit_id}))
         return 0
+
+    adapter = DockerDetectorAdapter(adapter_config, key)
     snapshot, results = run_orchestrator_execution(
         AutonomousCampaignConfig(
             campaign_id="physical-service-1",
-            selected_program_ids=("local-program",),
+            selected_program_ids=(request.program_id,),
             dry_run=False,
             execute=True,
         ),
-        arguments.output,
+        arguments.output / "orchestrator",
         requests=(request,),
         adapters=(adapter,),
         signing_key=key,
     )
     result = results[0]
     print(result.model_dump_json(indent=2))
-    print(snapshot)
-    return 0 if result.status == "completed" else 1
+    print(json.dumps(snapshot, default=str))
+    return 0 if result.status == "completed" and result.accounting.forwarded > 0 else 1
 
 
 if __name__ == "__main__":

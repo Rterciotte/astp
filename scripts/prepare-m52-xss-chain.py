@@ -9,6 +9,7 @@ from astp.detector_execution import DetectorExecutionRequest
 from astp.detector_policy import DetectorPolicyContext, MentionDisposition, decide_detector
 from astp.detector_registry import builtin_detector_registry
 from astp.docker_detector_adapter import DockerDetectorConfig, DockerDetectorRuntime
+from astp.models import Engagement, ScopePolicy
 from astp.orchestrator_scheduler import rank_opportunity
 
 
@@ -73,7 +74,7 @@ def main() -> None:
             runtime_id=detector.required_runtime or detector.engine,
             runtime_digest=digests[detector_id],
             runtime_qualification_digest=digests[detector_id],
-            lease_current=True,
+            engagement=Engagement(id="local-engagement", name="Local", scope=ScopePolicy()),
             target_in_scope=True,
             semantic_review_complete=True,
             policy_context=context,
