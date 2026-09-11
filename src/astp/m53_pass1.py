@@ -92,6 +92,21 @@ def run_m53_pass1_execution(
     adapter: TypedDetectorAdapter,
     signing_key: str | bytes,
 ) -> tuple[dict, tuple[DetectorRunResult, ...], M53Pass1Report]:
+    raise RuntimeError(
+        "legacy pass1 execution is disabled; use scheduler-controlled full-night execution"
+    )
+
+
+def _retired_run_m53_pass1_execution(
+    config: AutonomousCampaignConfig,
+    root: Path,
+    *,
+    requests: tuple[DetectorExecutionRequest, ...],
+    adapter: TypedDetectorAdapter,
+    signing_key: str | bytes,
+) -> tuple[dict, tuple[DetectorRunResult, ...], M53Pass1Report]:
+    """Retained temporarily as non-routed migration reference; never call."""
+    raise RuntimeError("retired legacy implementation cannot execute")
     start_orchestrator(config, root)
     store = OrchestratorStore(root / "campaign.db")
     stale_boundary = {("F", 1)}

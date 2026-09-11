@@ -96,4 +96,15 @@ other programs progressed. The campaign manifest verifies offline.
 
 Marker: `M53_LOCAL_AH_ACCEPTANCE_PASS`.
 
-Remaining roadmap: M6–M8.
+## M6/M7 — pre-push audit and HIGH remediation
+
+The comprehensive local audit found one HIGH alternate execution path: the CLI
+could still route non-accelerated local physical acceptance through the legacy
+pass1 executor. M7 closed it at both CLI and direct-call boundaries. Regression
+tests prove rejection happens before campaign state or adapter execution. The
+post-remediation audit is CRITICAL=0, HIGH=0, MEDIUM=0, LOW=1 (dead-code cleanup
+only). See `docs/development/m53-pre-push-audit.md`.
+
+Marker: `M53_PRE_PUSH_AUDIT_PASS`.
+
+Remaining roadmap: M8.

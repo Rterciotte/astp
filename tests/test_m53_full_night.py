@@ -140,6 +140,8 @@ def test_local_physical_modes_require_explicit_acceptance_environment(tmp_path) 
             "--platform",
             "local-bughunt",
             "--all-ready",
+            "--root",
+            str(tmp_path / "campaigns"),
             "--execute",
             "--docker-config",
             str(tmp_path / "missing.json"),
@@ -148,6 +150,29 @@ def test_local_physical_modes_require_explicit_acceptance_environment(tmp_path) 
     )
     assert result.exit_code != 0
     assert "ASTP_ACCEPTANCE_MODE=local-only" in result.output
+
+
+def test_local_physical_mode_rejects_legacy_pass1_execution_path(tmp_path) -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "orchestrator-start",
+            "--campaign-id",
+            "blocked-legacy",
+            "--platform",
+            "local-bughunt",
+            "--all-ready",
+            "--execute",
+            "--docker-config",
+            str(tmp_path / "unused.json"),
+        ],
+        env={
+            "ASTP_ACCEPTANCE_MODE": "local-only",
+            "ASTP_DETECTOR_RUN_KEY": "x" * 32,
+        },
+    )
+    assert result.exit_code != 0
+    assert not (tmp_path / "campaigns" / "blocked-legacy").exists()
 
 
 def test_docker_runtime_rejects_retagged_image_before_launch(tmp_path, monkeypatch) -> None:

@@ -54,7 +54,6 @@ from astp.lifecycle import (
     verify_audit_chain,
 )
 from astp.m53_chaos import ChaosPoint, consolidate_chaos, inject_chaos, recover_chaos
-from astp.m53_pass1 import run_m53_pass1_execution
 from astp.method_strategy import choose_observation_method
 from astp.models import (
     ApprovalArtifact,
@@ -3026,6 +3025,11 @@ def orchestrator_start_command(
             raise typer.BadParameter(
                 "local-bughunt physical execution requires ASTP_ACCEPTANCE_MODE=local-only"
             )
+        if platform == "local-bughunt" and not accelerated_night:
+            raise typer.BadParameter(
+                "local-bughunt physical execution requires --accelerated-night; "
+                "the legacy pass1 executor is not an authorized execution path"
+            )
         if docker_config is None or (not detector_request and platform != "local-bughunt"):
             raise typer.BadParameter(
                 "--execute requires --docker-config and at least one typed --detector-request"
@@ -3071,22 +3075,13 @@ def orchestrator_start_command(
                     for path in detector_request or []
                 )
             adapter = DockerDetectorAdapter(adapter_config, signing_key)
-            if platform == "local-bughunt":
-                snapshot, results, _ = run_m53_pass1_execution(
-                    config,
-                    campaign_root,
-                    requests=requests,
-                    adapter=adapter,
-                    signing_key=signing_key,
-                )
-            else:
-                snapshot, results = run_orchestrator_execution(
-                    config,
-                    campaign_root,
-                    requests=requests,
-                    adapters=(adapter,),
-                    signing_key=signing_key,
-                )
+            snapshot, results = run_orchestrator_execution(
+                config,
+                campaign_root,
+                requests=requests,
+                adapters=(adapter,),
+                signing_key=signing_key,
+            )
         except (OSError, ValueError) as exc:
             raise typer.BadParameter(str(exc)) from exc
         console.print(f"Detector runs: {len(results)}")

@@ -46,8 +46,17 @@ before revision-2 execution; G and H retried with fresh authority and H's
 persisted backoff. All ten global violation counters are zero, manifest PASS,
 and the independent Docker orphan query returned zero.
 
-Next exact action after the M5 commit: perform M6 comprehensive pre-push audit
-across M1-M5, without implementing unrelated features and without push.
+M5 commit: `a1f2241`.
+
+M6 comprehensive audit found HIGH-01: the non-accelerated local-bughunt CLI
+could still route physical work through the legacy pass1 executor. M7 remediation
+now fails closed in the CLI and direct entry point, with regression coverage.
+Post-remediation severity is CRITICAL=0, HIGH=0, MEDIUM=0, LOW=1 (unreachable
+legacy body cleanup only). Pending full validation and local M6/M7 commit.
+Marker: `M53_PRE_PUSH_AUDIT_PASS`.
+
+Next exact action after the M6/M7 commit: M8 final release-candidate validation,
+local-only and without push/deploy/tag.
 
 Local Docker state available for M3: daemon running, network `astp-m2-local`,
 container `astp-m52-lab`, qualified worker/proxy images present. These are local
