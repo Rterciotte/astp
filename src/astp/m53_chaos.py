@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import hashlib
 import json
-import socket
 import sqlite3
 import subprocess
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 
 from astp.counting_proxy import ProxyAccounting
+from astp.detector_execution import DetectorAccounting
+from astp.docker_detector_adapter import DockerDetectorAdapter
 
 
 class ChaosPoint(StrEnum):
@@ -57,6 +57,11 @@ class ChaosRecoveryResult(BaseModel):
     duplicate_evidence: int = 0
     duplicate_findings: int = 0
     orphan_workers_remaining: int = 0
+    worker_launched: bool = False
+    permit_id: str | None = None
+    detector_run_id: str | None = None
+    evidence_recovered: bool = False
+    replayed: bool = False
     passed: bool
 
 
@@ -111,22 +116,6 @@ def _identifiers(campaign_id: str, point: ChaosPoint, attempt: int = 1) -> tuple
     return f"action-{digest[:12]}", f"run-{digest[12:24]}", f"permit-{digest[24:36]}"
 
 
-def _physical_request(
-    target: str, accounting: ProxyAccounting, request_id: str, *, finish: bool
-) -> None:
-    parsed = urlsplit(target)
-    path = parsed.path or "/"
-    accounting.start(request_id, "permit", "run", "GET", target, "forwarding")
-    with socket.create_connection((parsed.hostname, parsed.port or 80), timeout=5) as client:
-        client.sendall(f"GET {path} HTTP/1.0\r\nHost: {parsed.netloc}\r\n\r\n".encode())
-        if finish:
-            response = b""
-            while chunk := client.recv(65536):
-                response += chunk
-            status = int(response.split(b" ", 2)[1])
-            accounting.finish(request_id, "response_received", status, 0, len(response))
-
-
 def inject_chaos(
     root: Path, campaign_id: str, point: ChaosPoint, *, target: str | None, enabled: bool
 ) -> None:
@@ -149,74 +138,21 @@ def inject_chaos(
         {"action_id": action_id, "run_id": run_id, "permit_id": permit_id, "state": "injected"},
     )
     _write(root / "budget-reservation.json", {"run_id": run_id, "reserved": 4, "state": "reserved"})
-    ledger = ProxyAccounting(root / "proxy-ledger.db")
-    if point is ChaosPoint.AFTER_WORKER_LAUNCH_BEFORE_FIRST_PROXY_IO:
-        name = f"astp-chaos-{run_id.removeprefix('run-')}"
-        subprocess.run(
-            [
-                "docker",
-                "run",
-                "-d",
-                "--name",
-                name,
-                "--network",
-                "none",
-                "--label",
-                f"astp.chaos.campaign={campaign_id}",
-                "--entrypoint",
-                "/bin/sh",
-                "astp/nuclei-worker:m52",
-                "-c",
-                "sleep 300",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
+    physical_points = {
+        ChaosPoint.AFTER_WORKER_LAUNCH_BEFORE_FIRST_PROXY_IO,
+        ChaosPoint.AFTER_FIRST_REQUEST_FORWARDED_BEFORE_RESPONSE_KNOWN,
+        ChaosPoint.AFTER_RESPONSE_BEFORE_EVIDENCE_PERSIST,
+        ChaosPoint.DURING_PHYSICAL_DETECTOR_RUN,
+    }
+    if point in physical_points:
+        raise ValueError(
+            "physical chaos must be injected by DockerDetectorAdapter lifecycle faults"
         )
-        _write(root / "orphan-worker.json", {"container": name})
-    elif point is ChaosPoint.AFTER_FIRST_REQUEST_FORWARDED_BEFORE_RESPONSE_KNOWN:
-        if not target:
-            raise ValueError("physical target is required")
-        _physical_request(target + "/slow", ledger, "request-1", finish=False)
-    elif point is ChaosPoint.AFTER_RESPONSE_BEFORE_EVIDENCE_PERSIST:
-        if not target:
-            raise ValueError("physical target is required")
-        _physical_request(target + "/cve-fixture", ledger, "request-1", finish=True)
-        _write(root / "worker-receipt.json", {"request_id": "request-1", "matched": True})
-    elif point is ChaosPoint.AFTER_EVIDENCE_BEFORE_PROOF:
+    if point is ChaosPoint.AFTER_EVIDENCE_BEFORE_PROOF:
         _write(root / "evidence.json", {"evidence_id": "evidence-stable", "durable": True})
     elif point is ChaosPoint.AFTER_PROOF_BEFORE_FINDING:
         _write(root / "evidence.json", {"evidence_id": "evidence-stable", "durable": True})
         _write(root / "proof.json", {"proof_id": "proof-stable", "state": "confirmed"})
-    elif point is ChaosPoint.DURING_PHYSICAL_DETECTOR_RUN:
-        if not target:
-            raise ValueError("physical target is required")
-        name = f"astp-chaos-{run_id.removeprefix('run-')}"
-        subprocess.run(
-            [
-                "docker",
-                "run",
-                "-d",
-                "--name",
-                name,
-                "--network",
-                "none",
-                "--label",
-                f"astp.chaos.campaign={campaign_id}",
-                "--entrypoint",
-                "/bin/sh",
-                "astp/ffuf-worker:m52",
-                "-c",
-                "sleep 300",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        _write(root / "orphan-worker.json", {"container": name})
-        _physical_request(target + "/cve-fixture", ledger, "request-1", finish=True)
-        _physical_request(target + "/health", ledger, "request-2", finish=True)
-        _physical_request(target + "/slow", ledger, "request-3", finish=False)
     elif point is ChaosPoint.DURING_FINAL_REPORT_OR_MANIFEST_WRITE:
         _write(root / "detector-complete.json", {"network_complete": True})
         (root / "campaign-report.json.tmp").write_text("interrupted")
@@ -279,6 +215,59 @@ def recover_chaos(root: Path) -> ChaosRecoveryResult:
         fresh_permit=fresh,
         unknown_outcomes=unknown,
         passed=True,
+    )
+    _write(root / "recovery-result.json", result.model_dump(mode="json"))
+    return result
+
+
+def recover_physical_detector_chaos(root: Path, point: ChaosPoint) -> ChaosRecoveryResult:
+    """Reconcile one real detector fault exclusively from its durable artifacts."""
+    run_roots = list((root / "orchestrator" / "runs").glob("detector-run-*"))
+    if len(run_roots) != 1:
+        raise ValueError("physical chaos recovery requires exactly one durable detector run")
+    run_root = run_roots[0]
+    authorization = json.loads((run_root / "authorization.json").read_text(encoding="utf-8"))
+    ledger_path = run_root / "proxy-ledger.db"
+    try:
+        accounting = DockerDetectorAdapter._accounting(ledger_path)
+    except sqlite3.OperationalError:
+        if point is not ChaosPoint.AFTER_PERMIT_PERSISTED_BEFORE_WORKER_LAUNCH:
+            raise
+        accounting = DetectorAccounting()
+    worker_launched = (run_root / "worker-lifecycle.json").is_file()
+    intermediate = run_root / "normalized-intermediate.json"
+    evidence_recovered = False
+    if intermediate.is_file():
+        normalized = json.loads(intermediate.read_text(encoding="utf-8"))
+        _write(root / "recovered-evidence.json", normalized)
+        evidence_recovered = True
+    expected = EXPECTED[point]
+    if point is ChaosPoint.AFTER_PERMIT_PERSISTED_BEFORE_WORKER_LAUNCH:
+        passed = not worker_launched and accounting.forwarded == 0
+    elif point is ChaosPoint.AFTER_WORKER_LAUNCH_BEFORE_FIRST_PROXY_IO:
+        passed = worker_launched and accounting.forwarded == 0
+    elif point is ChaosPoint.AFTER_FIRST_REQUEST_FORWARDED_BEFORE_RESPONSE_KNOWN:
+        passed = accounting.forwarded == 1 and accounting.unknown_outcomes == 1
+    elif point is ChaosPoint.AFTER_RESPONSE_BEFORE_EVIDENCE_PERSIST:
+        passed = accounting.forwarded == accounting.responses == 1
+    elif point is ChaosPoint.AFTER_EVIDENCE_BEFORE_PROOF:
+        passed = accounting.responses == 1 and evidence_recovered
+    else:
+        raise ValueError("fault point is not produced by the physical detector adapter")
+    result = ChaosRecoveryResult(
+        chaos_point=point,
+        recovery_class=expected,
+        network_before_crash=accounting.forwarded,
+        network_after_recovery=accounting.forwarded,
+        retry=accounting.forwarded == 0,
+        fresh_permit=False,
+        unknown_outcomes=accounting.unknown_outcomes,
+        worker_launched=worker_launched,
+        permit_id=authorization["payload"]["permit_id"],
+        detector_run_id=authorization["payload"]["detector_run_id"],
+        evidence_recovered=evidence_recovered,
+        replayed=False,
+        passed=passed,
     )
     _write(root / "recovery-result.json", result.model_dump(mode="json"))
     return result

@@ -44,6 +44,27 @@ def test_chaos_cli_requires_acceptance_environment(tmp_path):
 
 
 @pytest.mark.parametrize(
+    "point",
+    [
+        ChaosPoint.AFTER_WORKER_LAUNCH_BEFORE_FIRST_PROXY_IO,
+        ChaosPoint.AFTER_FIRST_REQUEST_FORWARDED_BEFORE_RESPONSE_KNOWN,
+        ChaosPoint.AFTER_RESPONSE_BEFORE_EVIDENCE_PERSIST,
+        ChaosPoint.DURING_PHYSICAL_DETECTOR_RUN,
+    ],
+)
+def test_physical_chaos_cannot_use_legacy_direct_target_or_manual_accounting(tmp_path, point):
+    with pytest.raises(ValueError, match="DockerDetectorAdapter lifecycle faults"):
+        inject_chaos(
+            tmp_path,
+            "campaign",
+            point,
+            target="http://astp-m52-lab:8080",
+            enabled=True,
+        )
+    assert not (tmp_path / "proxy-ledger.db").exists()
+
+
+@pytest.mark.parametrize(
     ("point", "classification", "retry"),
     [
         (

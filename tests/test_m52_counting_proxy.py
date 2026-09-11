@@ -4,7 +4,7 @@ from http.client import HTTPConnection
 
 import pytest
 
-from astp.counting_proxy import CountingProxy, RunningCountingProxy
+from astp.counting_proxy import AcceptanceProxyFault, CountingProxy, RunningCountingProxy
 from astp.detector_run_permit import DetectorRunPermitPayload, issue_detector_run_permit
 from astp.m52_acceptance_lab import LocalAcceptanceLab
 
@@ -59,6 +59,7 @@ def test_proxy_forwards_exact_origin_and_enforces_budget_before_io(tmp_path):
         "responses_received": 2,
         "requests_blocked_before_io": 1,
         "requests_failed_after_io": 0,
+        "unknown_outcomes": 0,
         "request_bytes": 0,
         "response_bytes": 24,
     }
@@ -154,3 +155,32 @@ def test_proxy_rejects_wrong_execution_context_binding(tmp_path, field, wrong):
     kwargs = {f"expected_{field}": wrong}
     with pytest.raises(ValueError, match="binding mismatch"):
         CountingProxy(_permit("http://example.test"), KEY, tmp_path / "ledger.db", **kwargs)
+
+
+class InjectedProcessExit(BaseException):
+    pass
+
+
+@pytest.mark.parametrize(
+    ("fault", "attempted", "forwarded", "unknown"),
+    [
+        (AcceptanceProxyFault.AFTER_WORKER_LAUNCH_BEFORE_FIRST_IO, 0, 0, 0),
+        (AcceptanceProxyFault.AFTER_FIRST_PROXY_FORWARD, 1, 1, 1),
+    ],
+)
+def test_acceptance_fault_boundaries_are_derived_from_proxy_ledger(
+    tmp_path, monkeypatch, fault, attempted, forwarded, unknown
+):
+    ledger = tmp_path / f"{fault.value}.db"
+    proxy = CountingProxy(_permit("http://example.test"), KEY, ledger, acceptance_fault=fault)
+    monkeypatch.setattr(
+        "astp.counting_proxy.os._exit", lambda _code: (_ for _ in ()).throw(InjectedProcessExit())
+    )
+
+    with pytest.raises(InjectedProcessExit):
+        proxy.forward("GET", "http://example.test/", {}, b"")
+
+    summary = proxy.accounting.summary()
+    assert summary["requests_attempted"] == attempted
+    assert summary["requests_forwarded"] == forwarded
+    assert summary["unknown_outcomes"] == unknown

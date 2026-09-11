@@ -61,7 +61,13 @@ class OrchestratorDetectorJournal:
         if result.status is DetectorRunStatus.UNKNOWN_OUTCOME:
             self.store.transition_action(result.action_id, ActionState.UNKNOWN_OUTCOME)
         elif result.status is DetectorRunStatus.BLOCKED_BEFORE_IO:
-            self.store.transition_action(result.action_id, ActionState.BLOCKED)
+            current = self.store.action_state(result.action_id)
+            terminal = (
+                ActionState.FAILED
+                if current in {ActionState.STARTING, ActionState.EXECUTING}
+                else ActionState.BLOCKED
+            )
+            self.store.transition_action(result.action_id, terminal)
             self.store.increment(request.campaign_id, "failed_before_io")
             self.store.increment(request.campaign_id, "permits_revoked")
             return

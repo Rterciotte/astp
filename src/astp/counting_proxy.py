@@ -8,6 +8,7 @@ import sqlite3
 import threading
 import time
 from datetime import UTC, datetime
+from enum import StrEnum
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar, Self
@@ -20,6 +21,11 @@ HOP_HEADERS = {"connection", "proxy-connection", "keep-alive", "transfer-encodin
 PROVENANCE_HEADER = "X-ASTP-Response-Provenance"
 SYNTHETIC_HEADER = "X-ASTP-Response-Synthetic"
 BOUNDARY_REASON_HEADER = "X-ASTP-Boundary-Reason"
+
+
+class AcceptanceProxyFault(StrEnum):
+    AFTER_WORKER_LAUNCH_BEFORE_FIRST_IO = "after_worker_launch_before_first_io"
+    AFTER_FIRST_PROXY_FORWARD = "after_first_proxy_forward"
 
 
 class ProxyAccounting:
@@ -109,10 +115,15 @@ class ProxyAccounting:
             ).fetchone()
         return {
             "requests_attempted": sum(rows.values()),
-            "requests_forwarded": rows.get("response_received", 0) + rows.get("failed_after_io", 0),
+            "requests_forwarded": (
+                rows.get("forwarding", 0)
+                + rows.get("response_received", 0)
+                + rows.get("failed_after_io", 0)
+            ),
             "responses_received": rows.get("response_received", 0),
             "requests_blocked_before_io": rows.get("blocked_before_io", 0),
             "requests_failed_after_io": rows.get("failed_after_io", 0),
+            "unknown_outcomes": rows.get("forwarding", 0),
             "request_bytes": int(byte_row[0]),
             "response_bytes": int(byte_row[1]),
         }
@@ -128,6 +139,7 @@ class CountingProxy:
         expected_campaign_id: str | None = None,
         expected_program_id: str | None = None,
         expected_detector_id: str | None = None,
+        acceptance_fault: AcceptanceProxyFault | None = None,
     ):
         self._signing_key = signing_key
         self.permit = permit.verify(signing_key)
@@ -146,6 +158,7 @@ class CountingProxy:
         )
         self.last_forwarded = 0.0
         self.circuit_failures = 0
+        self.acceptance_fault = acceptance_fault
 
     def _request_id(self) -> str:
         with self.lock:
@@ -197,6 +210,8 @@ class CountingProxy:
     def forward(
         self, method: str, target: str, headers: dict[str, str], body: bytes
     ) -> tuple[int, dict[str, str], bytes, str]:
+        if self.acceptance_fault is AcceptanceProxyFault.AFTER_WORKER_LAUNCH_BEFORE_FIRST_IO:
+            os._exit(86)
         request_id, denial = self.authorize(method, target)
         payload = self.permit.payload
         if denial:
@@ -233,6 +248,8 @@ class CountingProxy:
                 target,
                 "forwarding",
             )
+            if self.acceptance_fault is AcceptanceProxyFault.AFTER_FIRST_PROXY_FORWARD:
+                os._exit(86)
             with self.lock:
                 self.last_forwarded = time.monotonic()
             parsed = urlsplit(target)
@@ -373,7 +390,15 @@ def main() -> None:
     if len(signing_key.encode()) < 32:
         raise SystemExit("detector-run signing key must contain at least 32 bytes")
     permit = SignedDetectorRunPermit.model_validate_json(permit_path.read_text(encoding="utf-8"))
-    proxy = CountingProxy(permit, signing_key, ledger_path)
+    fault_value = os.environ.get("ASTP_ACCEPTANCE_PROXY_FAULT")
+    fault = None
+    if fault_value:
+        if os.environ.get("ASTP_ACCEPTANCE_MODE") != "local-only":
+            raise SystemExit("proxy fault injection requires local-only acceptance mode")
+        if urlsplit(permit.payload.allowed_origin).hostname != "astp-m52-lab":
+            raise SystemExit("proxy fault injection is restricted to the synthetic local lab")
+        fault = AcceptanceProxyFault(fault_value)
+    proxy = CountingProxy(permit, signing_key, ledger_path, acceptance_fault=fault)
     ProxyHandler.proxy = proxy
     ThreadingHTTPServer(("0.0.0.0", 8081), ProxyHandler).serve_forever()
 

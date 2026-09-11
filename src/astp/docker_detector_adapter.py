@@ -4,6 +4,7 @@ import json
 import sqlite3
 import subprocess
 import time
+from enum import StrEnum
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -46,14 +47,35 @@ FIELD_IMAGES = {
 }
 
 
+class DockerLifecycleFaultPoint(StrEnum):
+    BEFORE_WORKER_LAUNCH = "before_worker_launch"
+    AFTER_WORKER_LAUNCH_BEFORE_FIRST_IO = "after_worker_launch_before_first_io"
+    AFTER_FIRST_PROXY_FORWARD = "after_first_proxy_forward"
+    AFTER_PROXY_RESULT_BEFORE_EVIDENCE_NORMALIZATION = (
+        "after_proxy_result_before_evidence_normalization"
+    )
+    AFTER_EVIDENCE_NORMALIZATION_BEFORE_PERSISTENCE = (
+        "after_evidence_normalization_before_persistence"
+    )
+
+
 class DockerDetectorAdapter:
     """Fixed-contract Docker adapter; callers can never supply command arguments."""
 
     detector_ids = frozenset(FIELD_IMAGES)
 
-    def __init__(self, config: DockerDetectorConfig, signing_key: str) -> None:
+    def __init__(
+        self,
+        config: DockerDetectorConfig,
+        signing_key: str,
+        *,
+        acceptance_fault: DockerLifecycleFaultPoint | None = None,
+    ) -> None:
         self.config = config
         self.signing_key = signing_key
+        self.acceptance_fault = acceptance_fault
+        if acceptance_fault is not None and config.target_network != "astp-m2-local":
+            raise ValueError("Docker lifecycle faults are restricted to the local acceptance lab")
 
     @staticmethod
     def _run(argv: list[str], *, timeout: int = 30) -> subprocess.CompletedProcess[str]:
@@ -179,6 +201,20 @@ class DockerDetectorAdapter:
                     "no-new-privileges:true",
                     "--env",
                     f"ASTP_DETECTOR_RUN_KEY={self.signing_key}",
+                    *(
+                        [
+                            "--env",
+                            "ASTP_ACCEPTANCE_MODE=local-only",
+                            "--env",
+                            f"ASTP_ACCEPTANCE_PROXY_FAULT={self.acceptance_fault.value}",
+                        ]
+                        if self.acceptance_fault
+                        in {
+                            DockerLifecycleFaultPoint.AFTER_WORKER_LAUNCH_BEFORE_FIRST_IO,
+                            DockerLifecycleFaultPoint.AFTER_FIRST_PROXY_FORWARD,
+                        }
+                        else []
+                    ),
                     "--mount",
                     f"type=bind,src={authorization_path.resolve()},dst=/run/astp/permit.json,readonly",
                     "--mount",
@@ -188,6 +224,14 @@ class DockerDetectorAdapter:
             )
             self._checked(["docker", "network", "connect", self.config.target_network, proxy_name])
             time.sleep(0.25)
+            if self.acceptance_fault is DockerLifecycleFaultPoint.BEFORE_WORKER_LAUNCH:
+                raise DetectorAdapterError(
+                    "chaos_before_worker_launch",
+                    accounting=DetectorAccounting(),
+                    network_started=False,
+                    retryable=True,
+                    blocked_before_io=True,
+                )
             worker_argv = [
                 "docker",
                 "run",
@@ -213,6 +257,21 @@ class DockerDetectorAdapter:
                 f"type=bind,src={request_path.resolve()},dst=/run/astp/request.json,readonly",
                 runtime.image,
             ]
+            (run_root / "worker-lifecycle.json").write_text(
+                json.dumps(
+                    {
+                        "state": "launching",
+                        "image": runtime.image,
+                        "image_digest": runtime.image_digest,
+                        "network": worker_network,
+                        "proxy": "http://astp-counting-proxy:8081",
+                        "direct_target_network_attached": False,
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
             try:
                 completed = self._run(worker_argv, timeout=self.config.timeout_seconds + 20)
             except subprocess.TimeoutExpired as exc:
@@ -226,6 +285,22 @@ class DockerDetectorAdapter:
                     network_started=True,
                     retryable=True,
                 ) from exc
+            (run_root / "worker-lifecycle.json").write_text(
+                json.dumps(
+                    {
+                        "state": "exited",
+                        "returncode": completed.returncode,
+                        "image": runtime.image,
+                        "image_digest": runtime.image_digest,
+                        "network": worker_network,
+                        "proxy": "http://astp-counting-proxy:8081",
+                        "direct_target_network_attached": False,
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
             accounting = self._accounting(ledger_path)
             (run_root / "proxy-ledger-summary.json").write_text(
                 accounting.model_dump_json(indent=2) + "\n", encoding="utf-8"
@@ -237,11 +312,64 @@ class DockerDetectorAdapter:
                 raise DetectorAdapterError(
                     "worker_failure",
                     accounting=accounting,
+                    network_started=accounting.forwarded > 0,
+                    retryable=accounting.forwarded == 0,
+                )
+            if accounting.unknown_outcomes:
+                return DetectorAdapterResult(
+                    accounting=accounting,
+                    artifacts=DetectorArtifacts(
+                        worker_receipt=receipt,
+                        raw_output_path=str(run_root / "worker-stdout.txt"),
+                    ),
+                    proof_state=ProofStateV2.OBSERVED,
+                    requirement_satisfied=False,
                     network_started=True,
-                    retryable=accounting.forwarded == accounting.responses,
+                    response_uncertain=True,
+                )
+            if accounting.attempted == 0 and receipt.get("network_io_performed"):
+                raise DetectorAdapterError(
+                    "worker_io_unaccounted",
+                    accounting=accounting,
+                    network_started=False,
+                    retryable=True,
+                    blocked_before_io=True,
+                )
+            if (
+                self.acceptance_fault
+                is DockerLifecycleFaultPoint.AFTER_PROXY_RESULT_BEFORE_EVIDENCE_NORMALIZATION
+            ):
+                raise DetectorAdapterError(
+                    "chaos_after_proxy_result",
+                    accounting=accounting,
+                    network_started=accounting.forwarded > 0,
+                    retryable=False,
                 )
             evidence_id = f"evidence-{suffix}"
             state, satisfied, finding_id = self._normalize(request, receipt, suffix)
+            if (
+                self.acceptance_fault
+                is DockerLifecycleFaultPoint.AFTER_EVIDENCE_NORMALIZATION_BEFORE_PERSISTENCE
+            ):
+                (run_root / "normalized-intermediate.json").write_text(
+                    json.dumps(
+                        {
+                            "evidence_id": evidence_id,
+                            "proof_state": state.value,
+                            "requirement_satisfied": satisfied,
+                            "finding_id": finding_id,
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                raise DetectorAdapterError(
+                    "chaos_after_evidence_normalization",
+                    accounting=accounting,
+                    network_started=accounting.forwarded > 0,
+                    retryable=False,
+                )
             return DetectorAdapterResult(
                 accounting=accounting,
                 artifacts=DetectorArtifacts(

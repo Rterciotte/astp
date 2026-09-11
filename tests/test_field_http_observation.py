@@ -247,6 +247,7 @@ def test_budget_and_rate_are_authoritative_in_proxy(target, tmp_path) -> None:
         "responses_received": 1,
         "requests_blocked_before_io": 1,
         "requests_failed_after_io": 0,
+        "unknown_outcomes": 0,
         "request_bytes": 0,
         "response_bytes": 17,
     }
