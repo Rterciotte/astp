@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -33,6 +34,21 @@ def fake_invoke(marker, code=0):
         logs.joinpath("codex.stdout.log").write_text(stdout, encoding="utf-8")
         logs.joinpath("codex.stderr.log").write_text("", encoding="utf-8")
         return code, stdout, ""
+
+    return invoke
+
+
+def structured_invoke(marker, reason, resumable, mutate=None):
+    def invoke(_command, repo, _prompt, logs, _timeout):
+        if mutate:
+            mutate(repo)
+        stdout = (
+            f"ASTP_AUTODEV_RESULT={marker}\nASTP_AUTODEV_REASON={reason}\n"
+            f"ASTP_AUTODEV_RESUMABLE={'true' if resumable else 'false'}\n"
+        )
+        logs.joinpath("codex.stdout.log").write_text(stdout, encoding="utf-8")
+        logs.joinpath("codex.stderr.log").write_text("", encoding="utf-8")
+        return 0, stdout, ""
 
     return invoke
 
@@ -220,6 +236,97 @@ def test_continue_with_nonzero_exit_blocks(repo):
         validate=fake_validate(True),
     )
     assert state["status"] == "BLOCKED"
+
+
+def test_structured_recoverable_block_returns_ready_without_immediate_retry(repo):
+    runtime = repo / ".astp/autonomous-dev"
+    runner.initialize(repo, runtime)
+    state = runner.run_once(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        invoke=structured_invoke("BLOCKED", "LOCAL_TOOL_TRANSIENT", True),
+        validate=fake_validate(True),
+    )
+    assert state["status"] == "READY" and state["attempt"] == 1
+
+
+@pytest.mark.parametrize(
+    "stdout",
+    [
+        "ASTP_AUTODEV_RESULT=BLOCKED\n",
+        "ASTP_AUTODEV_RESULT=BLOCKED\nASTP_AUTODEV_REASON=UNKNOWN\nASTP_AUTODEV_RESUMABLE=true\n",
+        "ASTP_AUTODEV_RESULT=BLOCKED\nASTP_AUTODEV_REASON=LOCAL_TOOL_TRANSIENT\nASTP_AUTODEV_REASON=LOCAL_VALIDATION_REPAIR\nASTP_AUTODEV_RESUMABLE=true\n",
+        "ASTP_AUTODEV_RESULT=BLOCKED\nASTP_AUTODEV_REASON=LOCAL_TOOL_TRANSIENT\nASTP_AUTODEV_RESUMABLE=yes\n",
+        "ASTP_AUTODEV_RESULT=BLOCKED\nASTP_AUTODEV_REASON=SAFETY_POLICY\nASTP_AUTODEV_RESUMABLE=true\n",
+    ],
+)
+def test_unsafe_or_malformed_block_metadata_fails_closed(repo, stdout):
+    runtime = repo / ".astp/autonomous-dev"
+    runner.initialize(repo, runtime)
+
+    def invoke(*_args):
+        return 0, stdout, ""
+
+    state = runner.run_once(
+        repo, runtime, ["fake"], ["validate"], invoke=invoke, validate=fake_validate(True)
+    )
+    assert state["status"] == "BLOCKED"
+
+
+def test_owned_tracked_diff_resumes_and_foreign_change_blocks(repo):
+    runtime = repo / ".astp/autonomous-dev"
+    runner.initialize(repo, runtime)
+
+    def mutate(target):
+        (target / "README.md").write_text("owned\n", encoding="utf-8")
+
+    first = runner.run_once(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        invoke=structured_invoke("CONTINUE", "PARTIAL_WORK_CHECKPOINTED", True, mutate),
+        validate=fake_validate(True),
+    )
+    assert first["status"] == "READY"
+    second = runner.run_once(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        invoke=fake_invoke("CONTINUE"),
+        validate=fake_validate(True),
+    )
+    assert second["status"] == "READY"
+    (repo / "README.md").write_text("foreign change\n", encoding="utf-8")
+    third = runner.run_once(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        invoke=fake_invoke("CONTINUE"),
+        validate=fake_validate(True),
+    )
+    assert third["status"] == "BLOCKED"
+
+
+def test_untracked_files_do_not_enter_owned_work(repo):
+    runtime = repo / ".astp/autonomous-dev"
+    runner.initialize(repo, runtime)
+    (repo / "preexisting-untracked.txt").write_text("untouched\n", encoding="utf-8")
+    state = runner.run_once(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        invoke=fake_invoke("CONTINUE"),
+        validate=fake_validate(True),
+    )
+    owned = json.loads((runtime / "owned-work.json").read_text(encoding="utf-8"))
+    assert state["status"] == "READY" and owned["tracked_paths"] == []
+    assert (repo / "preexisting-untracked.txt").read_text(encoding="utf-8") == "untouched\n"
 
 
 def test_human_gate_and_complete_are_terminal_noops(repo):

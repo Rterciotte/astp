@@ -49,6 +49,15 @@ marker. `CONTINUE` with exit zero returns to `READY` on the same milestone and
 preserves partial work. `FAILED` remains blocked because V1 has no structured
 safe-repair subtype; ambiguity fails closed.
 
+Structured V1.2 results may add one `ASTP_AUTODEV_REASON=<STABLE_CODE>` and one
+`ASTP_AUTODEV_RESUMABLE=true|false` line. Only explicitly allowlisted local
+repair reasons can return a structured `BLOCKED` result to `READY`; missing,
+unknown, duplicate, malformed, human, safety, policy, Git-integrity, and network
+reasons remain stopped. The runner fingerprints the tracked binary Git diff,
+path set, baseline HEAD, milestone, and producing run in ignored
+`owned-work.json`. A later wake resumes only an exact match; new tracked changes
+or HEAD divergence block. Untracked files are never adopted or modified.
+
 ## Scheduler and verification
 
 The installer refuses replacement, enforces at least one hour, prevents

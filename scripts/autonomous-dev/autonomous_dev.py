@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -50,6 +51,13 @@ RESULT_ACTIONS = {
 }
 AUTONOMOUS_MILESTONES = tuple(f"M{number}" for number in range(1, 9))
 MARKER_RE = re.compile(r"(?m)^ASTP_AUTODEV_RESULT=([A-Z_]+)\s*$")
+REASON_RE = re.compile(r"(?m)^ASTP_AUTODEV_REASON=([A-Z0-9_]+)\s*$")
+RESUMABLE_RE = re.compile(r"(?m)^ASTP_AUTODEV_RESUMABLE=(true|false)\s*$")
+RECOVERABLE_REASONS = {
+    "PARTIAL_WORK_CHECKPOINTED",
+    "LOCAL_VALIDATION_REPAIR",
+    "LOCAL_TOOL_TRANSIENT",
+}
 USAGE_PATTERNS = (
     re.compile(r"\busage limit\b", re.IGNORECASE),
     re.compile(r"\bquota (?:is )?exceeded\b", re.IGNORECASE),
@@ -329,18 +337,73 @@ class RunnerLock:
         self.release()
 
 
-def parse_result(stdout: str, stderr: str, exit_code: int) -> str:
+@dataclass(frozen=True)
+class ProtocolResult:
+    result: str
+    reason: str | None = None
+    resumable: bool = False
+    valid_metadata: bool = True
+
+
+def parse_protocol(stdout: str, stderr: str, exit_code: int) -> ProtocolResult:
     # stdout is the result channel. Codex diagnostic stderr can contain an
     # echoed prompt/transcript with marker-shaped text and is never authoritative.
     markers = MARKER_RE.findall(stdout)
     if len(markers) == 1 and markers[0] in MARKERS:
         marker = markers[0]
         if exit_code == 0 or marker in {"USAGE_LIMIT", "HUMAN_GATE", "BLOCKED", "FAILED"}:
-            return marker
+            reasons = REASON_RE.findall(stdout)
+            resumable_values = RESUMABLE_RE.findall(stdout)
+            metadata_lines = re.findall(r"(?m)^ASTP_AUTODEV_(?:REASON|RESUMABLE)=.*$", stdout)
+            valid_metadata = len(reasons) <= 1 and len(resumable_values) <= 1
+            valid_metadata = valid_metadata and len(metadata_lines) == len(reasons) + len(
+                resumable_values
+            )
+            if not valid_metadata:
+                return ProtocolResult("BLOCKED", "MALFORMED_METADATA", False, False)
+            reason = reasons[0] if reasons else None
+            resumable = resumable_values == ["true"]
+            return ProtocolResult(marker, reason, resumable)
     combined = stdout + "\n" + stderr
     if exit_code != 0 and any(pattern.search(combined) for pattern in USAGE_PATTERNS):
-        return "USAGE_LIMIT"
-    return "BLOCKED"
+        return ProtocolResult("USAGE_LIMIT", "CLI_USAGE_LIMIT", False)
+    return ProtocolResult("BLOCKED", "PROTOCOL_OR_PROCESS_FAILURE", False, False)
+
+
+def parse_result(stdout: str, stderr: str, exit_code: int) -> str:
+    return parse_protocol(stdout, stderr, exit_code).result
+
+
+def tracked_work_snapshot(repo: Path, milestone: str, provenance_run_id: str) -> dict:
+    names = [line for line in git(repo, "diff", "--name-only", "HEAD", "--").splitlines() if line]
+    diff = git(repo, "diff", "--binary", "HEAD", "--")
+    return {
+        "schema_version": 1,
+        "baseline_head": git(repo, "rev-parse", "HEAD"),
+        "milestone": milestone,
+        "tracked_paths": sorted(names),
+        "diff_sha256": hashlib.sha256(diff.encode("utf-8")).hexdigest(),
+        "provenance_run_id": provenance_run_id,
+    }
+
+
+def verify_owned_work(repo: Path, runtime: Path, state: dict) -> None:
+    path = runtime / "owned-work.json"
+    current = tracked_work_snapshot(repo, state["milestone"], state.get("last_run_id") or "none")
+    if not current["tracked_paths"]:
+        return
+    if not path.exists():
+        raise RunnerError("unexpected tracked working-tree modifications")
+    owned = json.loads(path.read_text(encoding="utf-8"))
+    for field in ("baseline_head", "milestone", "tracked_paths", "diff_sha256"):
+        if owned.get(field) != current.get(field):
+            raise RunnerError("tracked working tree diverged from owned milestone checkpoint")
+
+
+def checkpoint_owned_work(repo: Path, runtime: Path, state: dict, current_run: str) -> dict:
+    owned = tracked_work_snapshot(repo, state["milestone"], current_run)
+    atomic_json(runtime / "owned-work.json", owned)
+    return owned
 
 
 def build_prompt(repo: Path, runtime: Path, state: dict) -> str:
@@ -355,11 +418,13 @@ Authoritative durable sources, in order:
 6. repository AGENTS.md, tests, and documentation
 
 Do not assume conversational memory. Continue ONLY milestone {state['milestone']}.
+Partial tracked work recorded in owned-work.json belongs to this same milestone: inspect and continue it. Do not adopt unrelated changes. Do not return BLOCKED merely because runner-owned partial work is present.
 Local source edits, tests, local containers, local fake-platform acceptance and coherent local commits are allowed.
 Never push, deploy, tag, access a real bug-bounty target, expand scope, acquire credentials, or weaken policy, permit, lease, provenance, semantic-review, counting-proxy, or budget controls.
 Never commit .astp runtime, credentials, field artifacts, OVERLAY.txt, or unrelated files.
 Output exactly one final marker on its own line:
 ASTP_AUTODEV_RESULT=MILESTONE_COMPLETE|CONTINUE|USAGE_LIMIT|HUMAN_GATE|BLOCKED|FAILED
+For BLOCKED, also output exactly one ASTP_AUTODEV_REASON=<STABLE_CODE> and ASTP_AUTODEV_RESUMABLE=true|false. BLOCKED is reserved for a concrete blocker. CONTINUE means safe progress exists but the milestone is unfinished. HUMAN_GATE is only for a genuine operator decision.
 """
 
 
@@ -480,6 +545,12 @@ def run_once(
             return state
         if state["status"] not in {"READY", "WAITING_FOR_RESET"}:
             raise RunnerError(f"state cannot be invoked: {state['status']}")
+        try:
+            verify_owned_work(repo, runtime, state)
+        except (RunnerError, OSError, json.JSONDecodeError) as exc:
+            state = transition(state_path, state, "BLOCKED", reason=str(exc))
+            append_history(history, "OWNED_WORK_REJECTED", run_id=current_run, reason=str(exc))
+            return state
         state = transition(state_path, state, "RUNNING")
         state.update(
             {
@@ -497,16 +568,28 @@ def run_once(
         code, stdout, stderr = invoke(
             codex_command, repo, build_prompt(repo, runtime, state), log_root, codex_timeout
         )
-        result = parse_result(stdout, stderr, code)
-        append_history(history, "CODEX_FINISHED", run_id=current_run, exit_code=code, result=result)
+        protocol = parse_protocol(stdout, stderr, code)
+        result = protocol.result
+        append_history(
+            history,
+            "CODEX_FINISHED",
+            run_id=current_run,
+            exit_code=code,
+            result=result,
+            reason=protocol.reason,
+            resumable=protocol.resumable,
+        )
         action = RESULT_ACTIONS[result]
         if action == "WAIT_FOR_RESET":
+            checkpoint_owned_work(repo, runtime, state, current_run)
             state = transition(state_path, state, "WAITING_FOR_RESET", reason="Codex usage limit")
             state["resume_after"] = None
             atomic_json(state_path, state)
         elif action == "STOP_FOR_HUMAN":
+            checkpoint_owned_work(repo, runtime, state, current_run)
             state = transition(state_path, state, "HUMAN_GATE", reason="human review required")
         elif action == "RESUME_SAME_MILESTONE":
+            checkpoint_owned_work(repo, runtime, state, current_run)
             state = transition(state_path, state, "READY", reason="Codex requested next wake-up")
         elif action == "VALIDATE":
             state = transition(state_path, state, "VALIDATING")
@@ -517,6 +600,9 @@ def run_once(
             state["last_validation"] = {"passed": passed, "at": utc_now(), "run_id": current_run}
             atomic_json(state_path, state)
             if passed:
+                owned_path = runtime / "owned-work.json"
+                if owned_path.exists():
+                    owned_path.unlink()
                 state["head"] = git(repo, "rev-parse", "HEAD")
                 atomic_json(state_path, state)
                 append_history(history, "CHECKPOINT_SAVED", run_id=current_run, head=state["head"])
@@ -557,12 +643,36 @@ def run_once(
                     )
                 append_history(history, "VALIDATION_PASSED", run_id=current_run)
             else:
+                checkpoint_owned_work(repo, runtime, state, current_run)
                 state = transition(
                     state_path, state, "READY", reason="validation failed; repair next wake-up"
                 )
                 append_history(history, "VALIDATION_FAILED", run_id=current_run)
         else:
-            state = transition(state_path, state, "BLOCKED", reason=f"Codex result {result}")
+            recoverable = (
+                result == "BLOCKED"
+                and protocol.valid_metadata
+                and protocol.resumable
+                and protocol.reason in RECOVERABLE_REASONS
+            )
+            if recoverable:
+                checkpoint_owned_work(repo, runtime, state, current_run)
+                state = transition(
+                    state_path, state, "READY", reason=f"recoverable blocker: {protocol.reason}"
+                )
+                append_history(
+                    history,
+                    "RECOVERABLE_BLOCK_CHECKPOINTED",
+                    run_id=current_run,
+                    reason=protocol.reason,
+                )
+            else:
+                state = transition(
+                    state_path,
+                    state,
+                    "BLOCKED",
+                    reason=f"Codex result {result}: {protocol.reason or 'MISSING_REASON'}",
+                )
         atomic_text(
             runtime / "LAST_RUN.md",
             f"# Last run\n\n- Run: `{current_run}`\n- Result: `{result}`\n- Exit: `{code}`\n- Updated: `{utc_now()}`\n",
