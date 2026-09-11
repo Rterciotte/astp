@@ -74,6 +74,28 @@ def execute(repo, marker, *, validation=True):
     )
 
 
+def continuous_config(**overrides):
+    config = runner.load_config(SCRIPT.parent / "config.json")
+    config.update(overrides)
+    return config
+
+
+def queued_invoke(items):
+    queue = list(items)
+
+    def invoke(_command, repo, _prompt, logs, _timeout):
+        marker, mutate = queue.pop(0)
+        if mutate:
+            mutate(repo)
+        stdout = f"ASTP_AUTODEV_RESULT={marker}\n"
+        logs.joinpath("codex.stdout.log").write_text(stdout, encoding="utf-8")
+        logs.joinpath("codex.stderr.log").write_text("", encoding="utf-8")
+        return 0, stdout, ""
+
+    invoke.remaining = queue
+    return invoke
+
+
 def test_initialize_creates_valid_runtime_state(repo):
     state = runner.initialize(repo)
     runner.validate_state(state)
@@ -327,6 +349,154 @@ def test_untracked_files_do_not_enter_owned_work(repo):
     owned = json.loads((runtime / "owned-work.json").read_text(encoding="utf-8"))
     assert state["status"] == "READY" and owned["tracked_paths"] == []
     assert (repo / "preexisting-untracked.txt").read_text(encoding="utf-8") == "untouched\n"
+
+
+def test_continuous_continue_invokes_again_immediately_and_usage_stops(repo):
+    runtime = repo / ".astp/autonomous-dev"
+    runner.initialize(repo, runtime)
+    counter = {"n": 0}
+
+    def progress(target):
+        counter["n"] += 1
+        (target / "README.md").write_text(f"progress {counter['n']}\n", encoding="utf-8")
+
+    invoke = queued_invoke([("CONTINUE", progress), ("USAGE_LIMIT", None)])
+    state = runner.run_continuous(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        continuous_config(),
+        invoke=invoke,
+        validate=fake_validate(True),
+    )
+    assert state["status"] == "WAITING_FOR_RESET" and state["session_iterations"] == 2
+    assert not invoke.remaining
+
+
+def test_three_no_progress_results_stop_session(repo):
+    runtime = repo / ".astp/autonomous-dev"
+    runner.initialize(repo, runtime)
+    invoke = queued_invoke([("CONTINUE", None)] * 3)
+    state = runner.run_continuous(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        continuous_config(),
+        invoke=invoke,
+        validate=fake_validate(True),
+    )
+    assert state["status"] == "BLOCKED" and state["last_exit_reason"] == "NO_PROGRESS_LIMIT"
+    assert state["session_iterations"] == 3
+
+
+def test_milestone_completion_advances_and_invokes_next_milestone(repo):
+    runtime = repo / ".astp/autonomous-dev"
+    state = runner.initialize(repo, runtime)
+    state["milestone"] = "M1"
+    runner.atomic_json(runtime / "state.json", state)
+
+    def commit_progress(target):
+        (target / "README.md").write_text("completed M1\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README.md"], cwd=target, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "complete M1"], cwd=target, check=True)
+
+    state = runner.run_continuous(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        continuous_config(),
+        invoke=queued_invoke([("MILESTONE_COMPLETE", commit_progress), ("USAGE_LIMIT", None)]),
+        validate=fake_validate(True),
+    )
+    assert state["milestone"] == "M2" and state["status"] == "WAITING_FOR_RESET"
+    assert state["session_iterations"] == 2
+
+
+def test_m8_completion_stops_continuous_session_at_human_gate(repo):
+    runtime = repo / ".astp/autonomous-dev"
+    state = runner.initialize(repo, runtime)
+    state["milestone"] = "M8"
+    runner.atomic_json(runtime / "state.json", state)
+    state = runner.run_continuous(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        continuous_config(),
+        invoke=queued_invoke([("MILESTONE_COMPLETE", None)]),
+        validate=fake_validate(True),
+    )
+    assert state["milestone"] == "M9" and state["status"] == "HUMAN_GATE"
+
+
+def test_invocation_ceiling_and_single_invocation_debug_mode(repo):
+    runtime = repo / ".astp/autonomous-dev"
+    runner.initialize(repo, runtime)
+    state = runner.run_continuous(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        continuous_config(max_invocations_per_session=1),
+        invoke=queued_invoke([("CONTINUE", None)]),
+        validate=fake_validate(True),
+    )
+    assert state["status"] == "READY" and state["session_iterations"] == 1
+
+    runtime2 = repo / ".astp/single"
+    runner.initialize(repo, runtime2)
+    state = runner.run_continuous(
+        repo,
+        runtime2,
+        ["fake"],
+        ["validate"],
+        continuous_config(continuous_mode=False),
+        invoke=fake_invoke("CONTINUE"),
+        validate=fake_validate(True),
+    )
+    assert state["attempt"] == 1 and "session_id" not in state
+
+
+def test_fake_continuous_session_acceptance_sequence(repo):
+    runtime = repo / ".astp/autonomous-dev"
+    state = runner.initialize(repo, runtime)
+    state["milestone"] = "M1"
+    runner.atomic_json(runtime / "state.json", state)
+    counter = {"n": 0}
+
+    def progress(target):
+        counter["n"] += 1
+        (target / "README.md").write_text(f"progress {counter['n']}\n", encoding="utf-8")
+
+    def complete(target):
+        progress(target)
+        subprocess.run(["git", "add", "README.md"], cwd=target, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "M1 checkpoint"], cwd=target, check=True)
+
+    invoke = queued_invoke(
+        [
+            ("CONTINUE", progress),
+            ("CONTINUE", progress),
+            ("MILESTONE_COMPLETE", complete),
+            ("CONTINUE", progress),
+            ("USAGE_LIMIT", None),
+        ]
+    )
+    state = runner.run_continuous(
+        repo,
+        runtime,
+        ["fake"],
+        ["validate"],
+        continuous_config(),
+        invoke=invoke,
+        validate=fake_validate(True),
+    )
+    assert state["status"] == "WAITING_FOR_RESET"
+    assert state["milestone"] == "M2" and state["session_iterations"] == 5
+    assert not invoke.remaining
 
 
 def test_human_gate_and_complete_are_terminal_noops(repo):

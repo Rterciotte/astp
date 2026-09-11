@@ -9,6 +9,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -176,11 +177,24 @@ def load_config(path: Path) -> dict:
         "deploy_allowed",
         "real_target_network_allowed",
         "allow_local_commits",
+        "continuous_mode",
+        "max_session_minutes",
+        "max_invocations_per_session",
+        "max_continue_without_progress",
+        "min_scheduler_interval_minutes",
     }
     if set(config) < required or config["schema_version"] != 1:
         raise RunnerError("invalid configuration schema")
     if config["wake_interval_hours"] < 1:
         raise RunnerError("wake interval must be at least one hour")
+    if not 1 <= config["max_session_minutes"] < 300:
+        raise RunnerError("continuous session limit must be below five hours")
+    if not 1 <= config["max_invocations_per_session"] <= 256:
+        raise RunnerError("invalid invocation ceiling")
+    if not 1 <= config["max_continue_without_progress"] <= 10:
+        raise RunnerError("invalid no-progress ceiling")
+    if config["min_scheduler_interval_minutes"] < 60:
+        raise RunnerError("scheduler interval must remain at least hourly")
     if config["codex_timeout_seconds"] < 60 or config["validation_timeout_seconds"] < 60:
         raise RunnerError("timeouts must be at least 60 seconds")
     if config.get("logs_retention_runs", 0) < 1 or config.get("max_log_bytes", 0) < 1024:
@@ -387,6 +401,21 @@ def tracked_work_snapshot(repo: Path, milestone: str, provenance_run_id: str) ->
     }
 
 
+def progress_fingerprint(repo: Path, runtime: Path, state: dict) -> str:
+    owned = tracked_work_snapshot(repo, state["milestone"], state.get("last_run_id") or "none")
+    next_task = (
+        (runtime / "NEXT_TASK.md").read_bytes() if (runtime / "NEXT_TASK.md").exists() else b""
+    )
+    payload = {
+        "head": owned["baseline_head"],
+        "milestone": state["milestone"],
+        "paths": owned["tracked_paths"],
+        "diff": owned["diff_sha256"],
+        "next_task": hashlib.sha256(next_task).hexdigest(),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
 def verify_owned_work(repo: Path, runtime: Path, state: dict) -> None:
     path = runtime / "owned-work.json"
     current = tracked_work_snapshot(repo, state["milestone"], state.get("last_run_id") or "none")
@@ -570,6 +599,9 @@ def run_once(
         )
         protocol = parse_protocol(stdout, stderr, code)
         result = protocol.result
+        state["last_codex_result"] = result
+        state["last_codex_reason"] = protocol.reason
+        atomic_json(state_path, state)
         append_history(
             history,
             "CODEX_FINISHED",
@@ -683,6 +715,123 @@ def run_once(
         lock.release()
 
 
+def run_continuous(
+    repo: Path,
+    runtime: Path,
+    codex_command: Sequence[str],
+    validation_command: Sequence[str],
+    config: dict,
+    *,
+    invoke: Callable = invoke_codex,
+    validate: Callable = run_validation,
+) -> dict:
+    if not config["continuous_mode"]:
+        return run_once(
+            repo,
+            runtime,
+            codex_command,
+            validation_command,
+            codex_timeout=config["codex_timeout_seconds"],
+            validation_timeout=config["validation_timeout_seconds"],
+            invoke=invoke,
+            validate=validate,
+        )
+    session_id = run_id().replace("autodev-", "autodev-session-", 1)
+    session_lock = RunnerLock(runtime / "session.lock")
+    session_lock.acquire(session_id)
+    history = runtime / "history.jsonl"
+    started = time.monotonic()
+    deadline_seconds = config["max_session_minutes"] * 60
+    iterations = 0
+    no_progress = 0
+    append_history(history, "CONTINUOUS_SESSION_STARTED", session_id=session_id)
+    try:
+        while True:
+            state = load_state(runtime / "state.json")
+            if state["status"] in TERMINAL_NOOP or state["status"] == "BLOCKED":
+                break
+            if (
+                iterations >= config["max_invocations_per_session"]
+                or time.monotonic() - started >= deadline_seconds
+            ):
+                state["last_exit_reason"] = "continuous session safety ceiling reached"
+                atomic_json(runtime / "state.json", state)
+                append_history(
+                    history, "SESSION_LIMIT_REACHED", session_id=session_id, iterations=iterations
+                )
+                break
+            before = progress_fingerprint(repo, runtime, state)
+            iterations += 1
+            state.update(
+                session_id=session_id,
+                session_started_at=utc_now(),
+                session_iterations=iterations,
+                no_progress_count=no_progress,
+                session_deadline=f"local ceiling: {config['max_session_minutes']} minutes",
+            )
+            atomic_json(runtime / "state.json", state)
+            append_history(
+                history,
+                "CODEX_ITERATION_STARTED",
+                session_id=session_id,
+                iteration=iterations,
+                milestone=state["milestone"],
+                progress_before=before,
+            )
+            iteration_started = time.monotonic()
+            state = run_once(
+                repo,
+                runtime,
+                codex_command,
+                validation_command,
+                codex_timeout=config["codex_timeout_seconds"],
+                validation_timeout=config["validation_timeout_seconds"],
+                invoke=invoke,
+                validate=validate,
+            )
+            after = progress_fingerprint(repo, runtime, state)
+            progressed = before != after
+            no_progress = 0 if progressed else no_progress + 1
+            state["session_iterations"] = iterations
+            state["no_progress_count"] = no_progress
+            atomic_json(runtime / "state.json", state)
+            append_history(
+                history,
+                "CODEX_ITERATION_FINISHED",
+                session_id=session_id,
+                iteration=iterations,
+                milestone=state["milestone"],
+                result=state.get("last_codex_result"),
+                reason=state.get("last_codex_reason"),
+                duration_seconds=round(time.monotonic() - iteration_started, 3),
+                progress_before=before,
+                progress_after=after,
+                no_progress_count=no_progress,
+            )
+            append_history(
+                history,
+                "PROGRESS_DETECTED" if progressed else "NO_PROGRESS_DETECTED",
+                session_id=session_id,
+                iteration=iterations,
+                no_progress_count=no_progress,
+            )
+            if state["status"] != "READY":
+                break
+            if no_progress >= config["max_continue_without_progress"]:
+                state = transition(
+                    runtime / "state.json", state, "BLOCKED", reason="NO_PROGRESS_LIMIT"
+                )
+                break
+            if state.get("last_codex_result") == "BLOCKED":
+                break
+        return state
+    finally:
+        append_history(
+            history, "CONTINUOUS_SESSION_FINISHED", session_id=session_id, iterations=iterations
+        )
+        session_lock.release()
+
+
 def validate_environment(repo: Path, runtime: Path, config: dict) -> dict:
     executable = Path(config["codex_executable"])
     expected = Path(r"C:\Program Files\nodejs\codex.cmd")
@@ -728,7 +877,7 @@ def main() -> int:
         elif args.command == "environment":
             state = validate_environment(repo, runtime, config)
         else:
-            state = run_once(
+            state = run_continuous(
                 repo,
                 runtime,
                 [config["codex_executable"]],
@@ -739,8 +888,12 @@ def main() -> int:
                     str(repo / "scripts" / "validate.ps1"),
                     "-CheckOnly",
                 ],
-                codex_timeout=max(60, min(args.codex_timeout, config["codex_timeout_seconds"])),
-                validation_timeout=config["validation_timeout_seconds"],
+                {
+                    **config,
+                    "codex_timeout_seconds": max(
+                        60, min(args.codex_timeout, config["codex_timeout_seconds"])
+                    ),
+                },
             )
         print(json.dumps(state, ensure_ascii=False, indent=2))
         return 0 if state["status"] not in {"BLOCKED"} else 2

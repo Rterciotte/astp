@@ -8,6 +8,11 @@
   "logs_retention_runs": 50,
   "max_log_bytes": 10485760,
   "allow_local_commits": true,
+  "continuous_mode": true,
+  "max_session_minutes": 285,
+  "max_invocations_per_session": 64,
+  "max_continue_without_progress": 3,
+  "min_scheduler_interval_minutes": 60,
   "push_allowed": false,
   "deploy_allowed": false,
   "real_target_network_allowed": false

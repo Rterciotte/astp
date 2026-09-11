@@ -73,3 +73,14 @@ terminal behavior, HEAD divergence, safety flags, and scheduler policy.
 `acceptance.py` runs CASE 1–10 with fake Codex and temporary local Git repos.
 Finish with `scripts/validate.ps1`, `git diff --check`, and tree review. No real
 scheduler, external target, push, or deploy is required.
+
+## Continuous sessions
+
+V1.3 treats Task Scheduler as an hourly wake/recovery mechanism. One process
+holds `session.lock` and invokes successive ephemeral Codex iterations after
+meaningful `CONTINUE` progress or a validated milestone advance. Defaults are
+285 minutes, 64 invocations, and three consecutive no-progress results. The
+progress fingerprint covers Git HEAD, milestone, owned tracked paths/diff, and
+NEXT_TASK content; logs and timestamps do not count. Usage limit, human gate,
+unsafe result, M9, ownership/HEAD failure, no-progress, or a session ceiling
+ends the loop. Recoverable BLOCKED exits for the scheduler rather than spinning.
