@@ -48,11 +48,13 @@ Recomendamos o User Agent: ASTP local acceptance.
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target-network", required=True)
+    parser.add_argument("--campaign-id", default="physical-service-1")
     parser.add_argument("--runtime-digest", required=True)
     parser.add_argument(
         "--proxy-digest",
         default="sha256:359f7b593714ccbe692f16b9127b771cd5d6e272f52037e8e5663aa0b98f0589",
     )
+    parser.add_argument("--proxy-image", default="astp/counting-proxy:m52")
     parser.add_argument("--fault", choices=[point.value for point in DockerLifecycleFaultPoint])
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--prepare-cli-inputs", action="store_true")
@@ -66,7 +68,7 @@ def main() -> int:
     listing, detail = _captures(now)
     request, broker = derive_local_authorized_detector_request(
         root=arguments.output / "authorization-chain",
-        campaign_id="physical-service-1",
+        campaign_id=arguments.campaign_id,
         listing_capture=listing,
         detail_capture=detail,
         target="http://astp-m52-lab:8080/",
@@ -77,6 +79,7 @@ def main() -> int:
     )
     adapter_config = DockerDetectorConfig(
         target_network=arguments.target_network,
+        proxy_image=arguments.proxy_image,
         proxy_image_digest=arguments.proxy_digest,
         runtimes={
             detector.detector_id: DockerDetectorRuntime(
@@ -99,7 +102,7 @@ def main() -> int:
     adapter = DockerDetectorAdapter(adapter_config, key, acceptance_fault=fault)
     snapshot, results = run_orchestrator_execution(
         AutonomousCampaignConfig(
-            campaign_id="physical-service-1",
+            campaign_id=arguments.campaign_id,
             selected_program_ids=(request.program_id,),
             dry_run=False,
             execute=True,
@@ -121,6 +124,9 @@ def main() -> int:
         ),
         DockerLifecycleFaultPoint.AFTER_FIRST_PROXY_FORWARD: (
             ChaosPoint.AFTER_FIRST_REQUEST_FORWARDED_BEFORE_RESPONSE_KNOWN
+        ),
+        DockerLifecycleFaultPoint.WORKER_CRASH_AFTER_TARGET_RESPONSE: (
+            ChaosPoint.DURING_PHYSICAL_DETECTOR_RUN
         ),
         DockerLifecycleFaultPoint.AFTER_PROXY_RESULT_BEFORE_EVIDENCE_NORMALIZATION: (
             ChaosPoint.AFTER_RESPONSE_BEFORE_EVIDENCE_PERSIST
@@ -160,7 +166,10 @@ def main() -> int:
         DockerLifecycleFaultPoint.AFTER_WORKER_LAUNCH_BEFORE_FIRST_IO,
     }:
         passed = result.accounting.forwarded == 0
-    elif fault is DockerLifecycleFaultPoint.AFTER_FIRST_PROXY_FORWARD:
+    elif fault in {
+        DockerLifecycleFaultPoint.AFTER_FIRST_PROXY_FORWARD,
+        DockerLifecycleFaultPoint.WORKER_CRASH_AFTER_TARGET_RESPONSE,
+    }:
         passed = result.status == "unknown_outcome" and result.accounting.unknown_outcomes == 1
     else:
         passed = result.accounting.forwarded == result.accounting.responses == 1

@@ -11,23 +11,19 @@ M2 validation: Ruff/Black/compile/CLI PASS; pytest 782 passed. Physical ledger:
 attempted=1, forwarded=1, responses=1, evidence=1, proof=reproduced. No external
 target traffic, push, deploy, or tag.
 
-Current milestone: M3, not complete. The legacy `_physical_request`, direct
-socket, manual physical accounting, sleeping worker, and auxiliary requests
-have been removed/disabled. Typed local-only lifecycle faults now exist in the
-Docker adapter and counting proxy. Five physical boundaries passed against the
-isolated lab: before launch 0/0; after launch before I/O 0/0; after first
-forward 1/0/UNKNOWN=1; after proxy result 1/1; after normalization 1/1 with
-idempotent evidence recovery. Both zero-I/O cases used a fresh detector run ID
-and permit on safe retry. No worker/proxy/network orphan remained.
+M3 implementation and physical acceptance are complete, pending only the local
+checkpoint commit. Marker: `M53_HIGH_3_PHYSICAL_CHAOS_PASS`. The eight-point
+matrix passed 8/8 against the isolated lab with nine unique permits, zero reuse,
+two safe retries with fresh permits, six forwarded requests, four responses,
+two UNKNOWN outcomes, durable proof/evidence reconstruction, manifest PASS,
+no blind replay, no direct worker target-network attachment and zero orphans.
+Qualified overlay counting-proxy digest:
+`sha256:c02a0835e263aae276ce6a05efc6a1cbbd835748f31765049ef1dc11c3bcf6d3`.
 
-Next exact implementation step: finish the remaining M3 scenarios without
-shortcuts: a true worker crash mid-run (named worker + deterministic kill after
-the proxy ledger records first forward), process restart/reopen, and report/
-proof reconstruction from a completed physical run. Add aggregate physical
-reporting and independent Docker/container assertions for direct-network
-isolation/orphan cleanup. Re-run proxy qualification for digest
-`sha256:359f7b593714ccbe692f16b9127b771cd5d6e272f52037e8e5663aa0b98f0589`,
-then full validation and the final M3 commit.
+Next exact implementation step after the M3 commit: begin M4 and replace the
+declarative full-night acceptance with scheduler/state-derived accelerated time,
+real leases/revision invalidation, durable 429 backoff, fresh-permit worker
+retry, derived branch exhaustion, process restart and deadline drain.
 
 Local Docker state available for M3: daemon running, network `astp-m2-local`,
 container `astp-m52-lab`, qualified worker/proxy images present. These are local

@@ -26,6 +26,7 @@ BOUNDARY_REASON_HEADER = "X-ASTP-Boundary-Reason"
 class AcceptanceProxyFault(StrEnum):
     AFTER_WORKER_LAUNCH_BEFORE_FIRST_IO = "after_worker_launch_before_first_io"
     AFTER_FIRST_PROXY_FORWARD = "after_first_proxy_forward"
+    HOLD_AFTER_TARGET_RESPONSE = "hold_after_target_response"
 
 
 class ProxyAccounting:
@@ -276,6 +277,8 @@ class CountingProxy:
             response = connection.getresponse()
             response_body = response.read(1_048_576)
             response_headers = dict(response.getheaders())
+            if self.acceptance_fault is AcceptanceProxyFault.HOLD_AFTER_TARGET_RESPONSE:
+                time.sleep(300)
             response_headers[PROVENANCE_HEADER] = "target"
             response_headers[SYNTHETIC_HEADER] = "false"
             with self.lock:

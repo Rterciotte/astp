@@ -33,5 +33,23 @@ forwarded=1, responses=1, evidence=1, proof=`reproduced`. Missing permit and
 revision drift both block before adapter invocation; the broader suite covers
 offline/policy/scope/semantic/budget/method/runtime negative gates.
 
-Remaining roadmap: M3–M8. The legacy full-night driver is intentionally handled
+## M3 — physical chaos and durable recovery
+
+Status: `M53_HIGH_3_PHYSICAL_CHAOS_PASS`
+
+The eight-point chaos matrix now launches qualified detector workers only
+through the Docker counting-proxy boundary and isolated synthetic lab. Faults
+cover pre-launch, launched-before-I/O, first-forward, response-before-evidence,
+normalized-evidence-before-persistence, proof/finding recovery, a real named
+worker kill after the target response, and interrupted report generation.
+Each scenario runs in a separate process and campaign. Host-side recovery
+reopens the durable result and proxy ledger without replaying completed work.
+The final physical acceptance passed 8/8 with nine unique permits, zero permit
+reuse, two safe fresh-permit retries, two UNKNOWN outcomes, zero duplicate
+evidence/findings, and zero orphan worker/proxy containers. Independent
+container lifecycle artifacts confirm workers never attach directly to the
+target network. Aggregate counts, evidence, proof states, and findings are
+derived from SQLite ledgers and durable detector results rather than constants.
+
+Remaining roadmap: M4–M8. The legacy full-night driver is intentionally handled
 in M4, where lease and scheduler state must be produced by the nightly engine.

@@ -1,0 +1,2 @@
+FROM astp/counting-proxy:m52
+COPY src/astp/counting_proxy.py /app/astp/counting_proxy.py

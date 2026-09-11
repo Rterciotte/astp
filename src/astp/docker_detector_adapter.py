@@ -51,6 +51,7 @@ class DockerLifecycleFaultPoint(StrEnum):
     BEFORE_WORKER_LAUNCH = "before_worker_launch"
     AFTER_WORKER_LAUNCH_BEFORE_FIRST_IO = "after_worker_launch_before_first_io"
     AFTER_FIRST_PROXY_FORWARD = "after_first_proxy_forward"
+    WORKER_CRASH_AFTER_TARGET_RESPONSE = "worker_crash_after_target_response"
     AFTER_PROXY_RESULT_BEFORE_EVIDENCE_NORMALIZATION = (
         "after_proxy_result_before_evidence_normalization"
     )
@@ -174,6 +175,7 @@ class DockerDetectorAdapter:
         suffix = permit.payload.detector_run_id.removeprefix("detector-run-")
         worker_network = f"astp-worker-{suffix}"
         proxy_name = f"astp-proxy-{suffix}"
+        worker_name: str | None = None
         request_path = run_root / "request.json"
         ledger_path = run_root / "proxy-ledger.db"
         request_path.write_text(
@@ -206,12 +208,19 @@ class DockerDetectorAdapter:
                             "--env",
                             "ASTP_ACCEPTANCE_MODE=local-only",
                             "--env",
-                            f"ASTP_ACCEPTANCE_PROXY_FAULT={self.acceptance_fault.value}",
+                            "ASTP_ACCEPTANCE_PROXY_FAULT="
+                            + (
+                                "hold_after_target_response"
+                                if self.acceptance_fault
+                                is DockerLifecycleFaultPoint.WORKER_CRASH_AFTER_TARGET_RESPONSE
+                                else self.acceptance_fault.value
+                            ),
                         ]
                         if self.acceptance_fault
                         in {
                             DockerLifecycleFaultPoint.AFTER_WORKER_LAUNCH_BEFORE_FIRST_IO,
                             DockerLifecycleFaultPoint.AFTER_FIRST_PROXY_FORWARD,
+                            DockerLifecycleFaultPoint.WORKER_CRASH_AFTER_TARGET_RESPONSE,
                         }
                         else []
                     ),
@@ -273,6 +282,75 @@ class DockerDetectorAdapter:
                 encoding="utf-8",
             )
             try:
+                if (
+                    self.acceptance_fault
+                    is DockerLifecycleFaultPoint.WORKER_CRASH_AFTER_TARGET_RESPONSE
+                ):
+                    worker_name = f"astp-worker-process-{suffix}"
+                    self._checked(
+                        [
+                            "docker",
+                            "run",
+                            "--detach",
+                            "--name",
+                            worker_name,
+                            *worker_argv[3:],
+                        ]
+                    )
+                    deadline = time.monotonic() + self.config.timeout_seconds
+                    while time.monotonic() < deadline:
+                        if self._container_forwarded(proxy_name):
+                            break
+                        time.sleep(0.05)
+                    else:
+                        worker_logs = self._run(["docker", "logs", worker_name])
+                        (run_root / "worker-stdout.txt").write_text(
+                            worker_logs.stdout, encoding="utf-8"
+                        )
+                        (run_root / "worker-stderr.txt").write_text(
+                            worker_logs.stderr, encoding="utf-8"
+                        )
+                        proxy_logs = self._run(["docker", "logs", proxy_name])
+                        (run_root / "proxy-stdout.txt").write_text(
+                            proxy_logs.stdout, encoding="utf-8"
+                        )
+                        (run_root / "proxy-stderr.txt").write_text(
+                            proxy_logs.stderr, encoding="utf-8"
+                        )
+                        raise DetectorAdapterError(
+                            "worker_crash_fault_did_not_reach_proxy",
+                            accounting=self._accounting(ledger_path),
+                            retryable=True,
+                            blocked_before_io=True,
+                        )
+                    self._run(["docker", "rm", "--force", worker_name])
+                    # On Docker Desktop, reading a bind-mounted WAL database from
+                    # Windows while Linux is writing can corrupt the active I/O.
+                    # Stop the sole writer before reopening its durable ledger on
+                    # the host. The worker has already been killed at this point.
+                    self._run(["docker", "rm", "--force", proxy_name])
+                    accounting = self._accounting(ledger_path)
+                    (run_root / "worker-lifecycle.json").write_text(
+                        json.dumps(
+                            {
+                                "state": "killed",
+                                "image": runtime.image,
+                                "image_digest": runtime.image_digest,
+                                "network": worker_network,
+                                "proxy": "http://astp-counting-proxy:8081",
+                                "direct_target_network_attached": False,
+                            },
+                            sort_keys=True,
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
+                    raise DetectorAdapterError(
+                        "worker_crash",
+                        accounting=accounting,
+                        network_started=accounting.forwarded > 0,
+                        retryable=False,
+                    )
                 completed = self._run(worker_argv, timeout=self.config.timeout_seconds + 20)
             except subprocess.TimeoutExpired as exc:
                 accounting = self._accounting(ledger_path)
@@ -384,6 +462,8 @@ class DockerDetectorAdapter:
                 network_started=True,
             )
         finally:
+            if worker_name is not None:
+                self._run(["docker", "rm", "--force", worker_name])
             self._run(["docker", "rm", "--force", proxy_name])
             self._run(["docker", "network", "rm", worker_network])
 
@@ -391,6 +471,24 @@ class DockerDetectorAdapter:
         completed = self._run(argv)
         if completed.returncode:
             raise DetectorAdapterError("docker_control_failure", retryable=True)
+
+    def _container_forwarded(self, proxy_name: str) -> bool:
+        completed = self._run(
+            [
+                "docker",
+                "exec",
+                proxy_name,
+                "python",
+                "-c",
+                (
+                    "import sqlite3;"
+                    "db=sqlite3.connect('/var/lib/astp/proxy-ledger.db');"
+                    'print(db.execute("SELECT count(*) FROM requests WHERE state IN '
+                    "('forwarding','response_received','failed_after_io')\").fetchone()[0])"
+                ),
+            ]
+        )
+        return completed.returncode == 0 and int(completed.stdout.strip() or "0") > 0
 
     @staticmethod
     def _receipt(stdout: str) -> dict:

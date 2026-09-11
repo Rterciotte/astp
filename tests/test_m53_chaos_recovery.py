@@ -4,11 +4,13 @@ import pytest
 from typer.testing import CliRunner
 
 from astp.cli import app
+from astp.counting_proxy import ProxyAccounting
 from astp.m53_chaos import (
     ChaosPoint,
     RecoveryClass,
     consolidate_chaos,
     inject_chaos,
+    reconstruct_physical_completion,
     recover_chaos,
     verify_chaos_manifest,
 )
@@ -41,6 +43,35 @@ def test_chaos_cli_requires_acceptance_environment(tmp_path):
     )
     assert result.exit_code != 0
     assert "ASTP_ACCEPTANCE_MODE=local-only" in result.output
+
+
+def test_completed_physical_run_is_reconstructed_from_durable_result_and_ledger(tmp_path):
+    run_root = tmp_path / "orchestrator" / "runs" / "detector-run-1"
+    run_root.mkdir(parents=True)
+    ledger = ProxyAccounting(run_root / "proxy-ledger.db")
+    ledger.start("request-1", "permit-1", "detector-run-1", "GET", "http://lab/", "forwarding")
+    ledger.finish("request-1", "response_received", 200, 10, 20)
+    (run_root / "result.json").write_text(
+        json.dumps(
+            {
+                "detector_run_id": "detector-run-1",
+                "status": "completed",
+                "authorization": {"payload": {"permit_id": "permit-1"}},
+                "accounting": {},
+                "artifacts": {"evidence_ids": ["evidence-1"]},
+                "proof_after": "reproduced",
+                "finding_id": None,
+                "requirement_satisfied": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    reconstructed = reconstruct_physical_completion(tmp_path)
+
+    assert reconstructed["network_replayed"] is False
+    assert reconstructed["proof_state"] == "reproduced"
+    assert reconstructed["accounting"]["responses"] == 1
 
 
 @pytest.mark.parametrize(
