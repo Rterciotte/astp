@@ -25,6 +25,7 @@ from astp.field_http_observation import (
     FieldHttpObservationAdapter,
     FieldHttpObservationConfig,
 )
+from astp.models import Engagement, ScopePolicy
 from astp.observation import ResponseProvenanceSource
 from astp.orchestrator_scheduler import rank_opportunity
 
@@ -136,7 +137,7 @@ def _request(target: str, **changes) -> DetectorExecutionRequest:
         "runtime_id": "counting-proxy",
         "runtime_digest": "sha256:proxy",
         "runtime_qualification_digest": "sha256:proxy",
-        "lease_current": True,
+        "engagement": Engagement(id="engagement-field", name="Local", scope=ScopePolicy()),
         "target_in_scope": True,
         "semantic_review_complete": True,
         "policy_context": context,

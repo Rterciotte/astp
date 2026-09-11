@@ -15,6 +15,7 @@ from astp.detector_policy import DetectorPolicyContext, MentionDisposition, deci
 from astp.detector_registry import builtin_detector_registry
 from astp.docker_detector_adapter import DockerDetectorAdapter, DockerDetectorConfig
 from astp.internal_detector_adapter import InternalDetectorAdapter
+from astp.models import Engagement, ScopePolicy
 from astp.orchestrator_scheduler import rank_opportunity
 
 
@@ -136,7 +137,7 @@ def _request(
         runtime_id=detector.required_runtime or detector.engine,
         runtime_digest=DIGESTS[detector_id],
         runtime_qualification_digest=DIGESTS[detector_id],
-        lease_current=True,
+        engagement=Engagement(id=f"engagement-{program_id}", name="Local", scope=ScopePolicy()),
         target_in_scope=True,
         semantic_review_complete=True,
         policy_context=context,

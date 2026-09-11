@@ -19,7 +19,10 @@ from astp.detector_run_permit import (
     SignedDetectorRunPermit,
     issue_detector_run_permit,
 )
+from astp.models import Engagement, ProgramOperationalAttestation, TestDefinition
+from astp.operational_lease import OperationalLeaseStore, ProgramOperationalLease
 from astp.orchestrator_scheduler import DetectorOpportunity
+from astp.permits import PermitVerificationRequest, SignedExecutionPermit, verify_execution_permit
 from astp.proof_model import ProofStateV2
 
 
@@ -122,7 +125,12 @@ class DetectorExecutionRequest(BaseModel):
     runtime_id: str
     runtime_digest: str
     runtime_qualification_digest: str
-    lease_current: bool
+    engagement: Engagement
+    test_definition: TestDefinition | None = None
+    execution_permit: SignedExecutionPermit | None = None
+    operational_attestation: ProgramOperationalAttestation | None = None
+    operational_lease: ProgramOperationalLease | None = None
+    operational_lease_store_path: str | None = None
     target_in_scope: bool
     semantic_review_complete: bool
     policy_context: DetectorPolicyContext
@@ -236,7 +244,51 @@ class DetectorExecutionService:
         }
         self.budgets = DetectorBudgetStore(root / "detector-budgets.db")
         self.journal = journal
-        self.lease_validator = lease_validator or (lambda request: request.lease_current)
+        self.lease_validator = lease_validator
+
+    @staticmethod
+    def _require_current_lease(request: DetectorExecutionRequest, now: datetime) -> None:
+        binding = request.engagement.program
+        if binding is None or not binding.requires_online:
+            return
+        if binding.program_id != request.program_id:
+            raise ValueError("operational engagement belongs to a different program")
+        if (
+            request.operational_attestation is None
+            or request.operational_lease is None
+            or not request.operational_lease_store_path
+        ):
+            raise ValueError("real operational lease authority is required")
+        store_path = Path(request.operational_lease_store_path)
+        if not store_path.is_file():
+            raise ValueError("operational lease durable state is missing")
+        OperationalLeaseStore(store_path).require_valid(
+            request.operational_lease,
+            request.engagement,
+            request.operational_attestation,
+            now=now,
+        )
+
+    def _require_upstream_permit(self, request: DetectorExecutionRequest, now: datetime) -> None:
+        if request.engagement.program is None:
+            return
+        if request.test_definition is None or request.execution_permit is None:
+            raise ValueError("signed upstream execution permit is required")
+        verification = verify_execution_permit(
+            request.execution_permit,
+            request.engagement,
+            request.test_definition,
+            PermitVerificationRequest(
+                target=request.target,
+                http_method=request.http_method,
+                identity=request.identity_refs[0] if len(request.identity_refs) == 1 else None,
+                requested_requests_per_second=request.max_rps,
+                now=now,
+            ),
+            self.signing_key,
+        )
+        if not verification.valid:
+            raise ValueError("signed upstream execution permit is invalid")
 
     def execute(
         self, request: DetectorExecutionRequest, *, now: datetime | None = None
@@ -260,8 +312,11 @@ class DetectorExecutionService:
             blockers.append("campaign is not active")
         if request.program_revision != request.current_program_revision:
             blockers.append("program revision changed")
-        if not request.lease_current:
-            blockers.append("operational lease is stale")
+        try:
+            self._require_current_lease(request, started)
+            self._require_upstream_permit(request, started)
+        except (OSError, ValueError) as exc:
+            blockers.append(str(exc))
         if request.opportunity.detector_id != request.detector.detector_id:
             blockers.append("opportunity detector binding mismatch")
         if request.opportunity.program_id != request.program_id:
@@ -340,7 +395,14 @@ class DetectorExecutionService:
                 max_concurrency=request.detector.maximum_default_concurrency,
                 max_rps=request.max_rps,
                 issued_at=started,
-                expires_at=started + timedelta(minutes=2),
+                expires_at=min(
+                    started + timedelta(minutes=2),
+                    (
+                        request.operational_lease.valid_until
+                        if request.operational_lease is not None
+                        else started + timedelta(minutes=2)
+                    ),
+                ),
                 policy_digest=hashlib.sha256(
                     request.policy_context.model_dump_json().encode()
                 ).hexdigest(),
@@ -360,7 +422,13 @@ class DetectorExecutionService:
         if self.journal:
             self.journal.authorization_persisted(request, action_id, permit.payload.permit_id)
         try:
-            if not self.lease_validator(request):
+            try:
+                self._require_current_lease(request, started)
+                self._require_upstream_permit(request, started)
+                lease_current = self.lease_validator(request) if self.lease_validator else True
+            except (OSError, ValueError):
+                lease_current = False
+            if not lease_current:
                 self.budgets.close_failed(run_id, 0, uncertain=False)
                 result = DetectorRunResult(
                     detector_run_id=run_id,

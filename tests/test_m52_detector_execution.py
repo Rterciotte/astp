@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from astp.authorization import AuthorizationRequest
 from astp.detector_execution import (
     DetectorAccounting,
     DetectorAdapterError,
@@ -16,7 +17,21 @@ from astp.detector_execution import (
 )
 from astp.detector_policy import DetectorPolicyContext, MentionDisposition, decide_detector
 from astp.detector_registry import builtin_detector_registry
+from astp.models import (
+    Engagement,
+    OperationalStatus,
+    ProgramBinding,
+    ProgramOperationalAttestation,
+    RiskClass,
+    ScopeKind,
+    ScopePolicy,
+    ScopeRule,
+)
+from astp.models import (
+    TestDefinition as RuntimeTestDefinition,
+)
 from astp.nightly_campaign import ServiceNightlyDetectorExecutor
+from astp.operational_lease import OperationalLeaseStore
 from astp.orchestrator import (
     OrchestratorDetectorJournal,
     run_orchestrator_execution,
@@ -26,6 +41,7 @@ from astp.orchestrator_manifest import CampaignManifest, verify_campaign_manifes
 from astp.orchestrator_models import AutonomousCampaignConfig
 from astp.orchestrator_scheduler import rank_opportunity
 from astp.orchestrator_store import OrchestratorStore
+from astp.permits import issue_execution_permit
 from astp.proof_model import ProofStateV2
 
 
@@ -35,10 +51,12 @@ class FakeAdapter:
     calls: int = 0
     fail: DetectorAdapterError | None = None
     permit_max_requests: int | None = None
+    permit_expires_at: datetime | None = None
 
     def execute(self, request, permit, run_root: Path) -> DetectorAdapterResult:
         self.calls += 1
         self.permit_max_requests = permit.payload.max_requests
+        self.permit_expires_at = permit.payload.expires_at
         assert (run_root / "authorization.json").exists()
         assert permit.payload.detector_run_id
         if self.fail:
@@ -81,7 +99,7 @@ def _request(**changes) -> DetectorExecutionRequest:
         "runtime_id": "nuclei",
         "runtime_digest": "sha256:qualified",
         "runtime_qualification_digest": "sha256:qualified",
-        "lease_current": True,
+        "engagement": Engagement(id="engagement-1", name="Local", scope=ScopePolicy()),
         "target_in_scope": True,
         "semantic_review_complete": True,
         "policy_context": context,
@@ -269,3 +287,90 @@ def test_lease_is_revalidated_immediately_before_adapter_launch(tmp_path) -> Non
     assert result.authorization is not None
     assert result.accounting.forwarded == 0
     assert adapter.calls == 0
+
+
+def test_real_durable_lease_is_required_revalidated_and_caps_detector_permit(tmp_path) -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    engagement = Engagement(
+        id="engagement-operational",
+        name="Local operational program",
+        scope=ScopePolicy(allowed=[ScopeRule(kind=ScopeKind.DOMAIN, value="target.test")]),
+        program=ProgramBinding(
+            program_id="program-1",
+            platform="local-bughunt",
+            source_content_sha256="a" * 64,
+            requires_online=True,
+        ),
+    )
+    attestation = ProgramOperationalAttestation(
+        id="attestation-1",
+        program_id="program-1",
+        source_content_sha256="a" * 64,
+        status=OperationalStatus.ONLINE,
+        observed_at=now,
+        source_type="local_fixture",
+    )
+    store_path = tmp_path / "leases.json"
+    store = OperationalLeaseStore(store_path)
+    lease = store.issue(
+        engagement,
+        attestation,
+        assessment_id="assessment-1",
+        preflight_report_hash="preflight-1",
+        valid_from=now,
+        ttl_seconds=30,
+    )
+    test = RuntimeTestDefinition(
+        id="test-operational",
+        title="Local observation",
+        category="observation",
+        risk_class=RiskClass.SAFE_ACTIVE,
+    )
+    signing_key = "test-signing-key-with-at-least-32-bytes"
+    execution_permit = issue_execution_permit(
+        engagement,
+        test,
+        AuthorizationRequest(
+            target="http://target.test/cve",
+            http_method="GET",
+            requested_requests_per_second=1,
+            program_operational_attestation=attestation,
+            program_operational_lease=lease,
+            operational_lease_store_path=str(store_path),
+            now=now,
+        ),
+        signing_key,
+        now=now,
+    )
+    request = _request(
+        engagement=engagement,
+        test_definition=test,
+        execution_permit=execution_permit,
+        operational_attestation=attestation,
+        operational_lease=lease,
+        operational_lease_store_path=str(store_path),
+    )
+    missing_adapter = FakeAdapter(frozenset({"nuclei.astp-lab-cve.v1"}))
+    missing = DetectorExecutionService(
+        tmp_path / "missing-permit", signing_key, (missing_adapter,)
+    ).execute(request.model_copy(update={"execution_permit": None}), now=now)
+    assert missing.status is DetectorRunStatus.BLOCKED_BEFORE_IO
+    assert missing.authorization is None
+    assert missing_adapter.calls == 0
+
+    adapter = FakeAdapter(frozenset({"nuclei.astp-lab-cve.v1"}))
+    service = DetectorExecutionService(tmp_path / "valid", signing_key, (adapter,))
+
+    result = service.execute(request, now=now)
+
+    assert result.status is DetectorRunStatus.COMPLETED
+    assert adapter.permit_expires_at == lease.valid_until
+
+    store.revoke(lease.id)
+    blocked_adapter = FakeAdapter(frozenset({"nuclei.astp-lab-cve.v1"}))
+    blocked = DetectorExecutionService(
+        tmp_path / "revoked", signing_key, (blocked_adapter,)
+    ).execute(request, now=now)
+    assert blocked.status is DetectorRunStatus.BLOCKED_BEFORE_IO
+    assert blocked.authorization is None
+    assert blocked_adapter.calls == 0

@@ -9,6 +9,7 @@ from astp.detector_execution import DetectorExecutionRequest, DetectorExecutionS
 from astp.detector_policy import DetectorPolicyContext, MentionDisposition, decide_detector
 from astp.detector_registry import builtin_detector_registry
 from astp.internal_detector_adapter import InternalDetectorAdapter
+from astp.models import Engagement, ScopePolicy
 from astp.orchestrator_scheduler import rank_opportunity
 from astp.proof_model import ProofStateV2
 
@@ -45,7 +46,7 @@ def _request(detector_id, artifact, *, execution_attempt=1, **context_changes):
         runtime_id="astp-native",
         runtime_digest="sha256:astp-native-v1",
         runtime_qualification_digest="sha256:astp-native-v1",
-        lease_current=True,
+        engagement=Engagement(id="engagement-local", name="Local", scope=ScopePolicy()),
         target_in_scope=True,
         semantic_review_complete=True,
         policy_context=context,
