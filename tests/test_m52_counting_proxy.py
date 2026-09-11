@@ -81,6 +81,18 @@ def test_authoritative_forwarding_timestamps_include_rate_limit_wait(tmp_path):
     assert (timestamps[1] - timestamps[0]).total_seconds() >= 0.20
 
 
+def test_target_retry_after_is_persisted_as_scheduler_input(tmp_path):
+    ledger = tmp_path / "retry-ledger.db"
+    with LocalAcceptanceLab() as lab:
+        counting = CountingProxy(_permit(lab.base_url), KEY, ledger)
+        with RunningCountingProxy(counting) as proxy:
+            assert _proxy_get(proxy.url, lab.base_url + "/api")[0] == 429
+    with sqlite3.connect(ledger) as db:
+        status, detail = db.execute("SELECT status,detail FROM requests").fetchone()
+    assert status == 429
+    assert detail == "retry_after_seconds=2"
+
+
 @pytest.mark.parametrize(
     "target",
     [

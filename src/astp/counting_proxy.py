@@ -307,8 +307,19 @@ class CountingProxy:
                     response_headers["X-ASTP-Redirect-Target"] = redirect
                     response_headers[BOUNDARY_REASON_HEADER] = "out_of_scope_redirect"
                     return response.status, response_headers, response_body, request_id
+            retry_after = response_headers.get("Retry-After", "")
+            retry_detail = (
+                f"retry_after_seconds={retry_after}"
+                if response.status == 429 and retry_after.isdigit()
+                else ""
+            )
             self.accounting.finish(
-                request_id, "response_received", response.status, len(body), len(response_body)
+                request_id,
+                "response_received",
+                response.status,
+                len(body),
+                len(response_body),
+                retry_detail,
             )
             return response.status, response_headers, response_body, request_id
         except OSError as exc:

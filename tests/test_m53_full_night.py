@@ -1,5 +1,8 @@
 import subprocess
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
+import pytest
 from typer.testing import CliRunner
 
 from astp.cli import _local_bughunt_detector_requests, app
@@ -9,18 +12,41 @@ from astp.docker_detector_adapter import (
     DockerDetectorConfig,
     DockerDetectorRuntime,
 )
-from astp.m53_full_night import FullNightReport, _hash_manifest, verify_full_night_manifest
+from astp.m53_full_night import (
+    FullNightReport,
+    _hash_manifest,
+    _real_lease_lifecycle,
+    _verify_scheduler_execution_trace,
+    verify_full_night_manifest,
+)
 from astp.platform_adapters import LocalBughuntAdapter
 
 
 def _report() -> FullNightReport:
     return FullNightReport(
         campaign_id="night",
+        logical_duration_hours=8,
+        scheduler_rounds=4,
+        program_refreshes=2,
+        programs_discovered=8,
+        programs_processed=8,
         detector_runs_started=8,
         detector_runs_completed=8,
         detector_runs_failed=1,
+        lease_renewals=1,
+        leases_issued=9,
+        leases_expired=5,
+        leases_invalidated=1,
+        revision_replans=1,
+        runtime_retries=2,
+        backoffs_429=1,
+        process_restarts=1,
+        recovery_events=3,
+        branches_exhausted=1,
         permits_issued=9,
         permits_consumed=8,
+        permits_expired=0,
+        permits_revoked=1,
         requests_attempted=10,
         requests_forwarded=9,
         responses_received=9,
@@ -29,6 +55,8 @@ def _report() -> FullNightReport:
         finding_candidates=5,
         findings_reproduced=5,
         findings_confirmed=3,
+        deadline_drain="COMPLETED",
+        policy_events=("program.ready", "revision.replanned"),
     )
 
 
@@ -58,6 +86,48 @@ def test_full_night_manifest_rejects_path_escape(tmp_path) -> None:
         '{"artifacts":{"../outside.txt":"not-used"}}', encoding="utf-8"
     )
     assert not verify_full_night_manifest(tmp_path)
+
+
+def test_full_night_lease_counts_are_derived_from_real_durable_lifecycle(tmp_path) -> None:
+    trace = _real_lease_lifecycle(tmp_path, datetime(2026, 1, 1, tzinfo=UTC))
+    assert trace["issued"] == 11
+    assert trace["renewed"] == trace["expired"] == trace["invalidated"] == 1
+    assert len(trace["lease_ids"]["F"]) == 2
+
+
+def test_trace_oracle_rejects_hidden_retry_or_reused_permit() -> None:
+    trace = {
+        "events": [
+            {
+                "event": "attempt.finished",
+                "program_id": "H",
+                "work_id": "H-1",
+                "run_id": "run-1",
+                "permit_id": "permit-1",
+                "round": 1,
+                "retry_after_seconds": 2,
+            },
+            {"event": "work.completed", "work_id": "H-1"},
+            {
+                "event": "attempt.finished",
+                "program_id": "H",
+                "work_id": "H-2",
+                "run_id": "run-2",
+                "permit_id": "permit-2",
+                "round": 2,
+                "retry_after_seconds": None,
+            },
+            {"event": "work.completed", "work_id": "H-2"},
+        ]
+    }
+    results = (
+        SimpleNamespace(detector_run_id="run-1", target="http://astp-m52-lab:8080/"),
+        SimpleNamespace(detector_run_id="run-2", target="http://astp-m52-lab:8080/"),
+    )
+    _verify_scheduler_execution_trace(trace, results)
+    trace["events"][2]["permit_id"] = "permit-1"
+    with pytest.raises(RuntimeError, match="reused"):
+        _verify_scheduler_execution_trace(trace, results)
 
 
 def test_local_physical_modes_require_explicit_acceptance_environment(tmp_path) -> None:

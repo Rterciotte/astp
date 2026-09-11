@@ -3040,7 +3040,14 @@ def orchestrator_start_command(
                 )
             from astp.m53_full_night import run_full_night
 
-            report = run_full_night(campaign_id, campaign_root, docker_config, signing_key)
+            local_platform = LocalBughuntAdapter.authenticated_fixture()
+            report = run_full_night(
+                campaign_id,
+                campaign_root,
+                docker_config,
+                signing_key,
+                _local_bughunt_detector_requests(campaign_id, local_platform),
+            )
             console.print(f"Campaign: {campaign_id}")
             console.print(f"State: {report.status}")
             console.print(f"Coverage: {report.coverage}")

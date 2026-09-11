@@ -51,5 +51,28 @@ container lifecycle artifacts confirm workers never attach directly to the
 target network. Aggregate counts, evidence, proof states, and findings are
 derived from SQLite ledgers and durable detector results rather than constants.
 
-Remaining roadmap: M4–M8. The legacy full-night driver is intentionally handled
-in M4, where lease and scheduler state must be produced by the nightly engine.
+## M4 — scheduler/state-derived accelerated night
+
+Status: `M53_HIGH_4_SCHEDULER_NIGHT_PASS`
+
+The durable scheduler now owns physical dispatch. One eligible work decision
+launches at most one `DetectorExecutionService` attempt; outcomes are persisted
+before any retry becomes eligible. The local target's actual 429 and
+`Retry-After` are read from the counting-proxy SQLite ledger. H remains pending
+through durable restart and receives a fresh run, permit and renewed real lease
+only in the later logical round, while other programs progress. G follows the
+same scheduler-controlled fresh-authority retry after a physical worker failure.
+F is not launched until its revision is replanned and a replacement lease is
+installed. All physical dispatches carry a real program-bound engagement,
+operational attestation, durable lease and upstream signed execution permit.
+
+The injected clock produces T+0/T+2/T+5/T+8 and four scheduler rounds without
+multi-hour sleeps. D exhaustion, E offline-to-online transition, process reopen,
+deadline drain, run/permit counts, proof/finding counts and program terminal
+states are derived from durable scheduler, detector result and proxy ledger
+state. The final isolated Docker acceptance used nine scheduler dispatches with
+nine unique run IDs and permits, zero reuse, one physical 429, two retries,
+zero blind replay and zero orphan containers. Full validation passed with 798
+tests. No real target traffic occurred.
+
+Remaining roadmap: M5–M8.
