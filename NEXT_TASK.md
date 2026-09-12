@@ -55,8 +55,19 @@ Post-remediation severity is CRITICAL=0, HIGH=0, MEDIUM=0, LOW=1 (unreachable
 legacy body cleanup only). Pending full validation and local M6/M7 commit.
 Marker: `M53_PRE_PUSH_AUDIT_PASS`.
 
-Next exact action after the M6/M7 commit: M8 final release-candidate validation,
-local-only and without push/deploy/tag.
+M6/M7 commit: `ef35a94`.
+
+M8 reexecuted the current M1-M5 entrypoints in new local roots. M1 focused
+authority tests passed 32/32; M2 passed 1/1/1; M3 passed 8/8; M4/M5 campaign
+`.astp/physical/m8/m8-m45-rc` is autonomy-ready with A-H PASS, four scheduler
+rounds, logical eight hours, manifest PASS and DEGRADED runtime coverage stated
+separately. All artifacts are ignored and unstaged. Final check-only validation
+passed Ruff, Black, compilation, 802 tests and CLI smoke; cleanup, Git hygiene,
+manifest verification and CRITICAL=0/HIGH=0 recheck passed. Marker:
+`M53_RELEASE_CANDIDATE_PASS`.
+
+After M8, stop at the M9 HUMAN ready-for-push gate. Do not push, deploy or tag
+without that separate human decision.
 
 Local Docker state available for M3: daemon running, network `astp-m2-local`,
 container `astp-m52-lab`, qualified worker/proxy images present. These are local

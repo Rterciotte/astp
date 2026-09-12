@@ -49,4 +49,3 @@ M7 remediation fails closed in both layers:
   shared types and deleting the dead body is cleanup, not a release blocker.
 
 Audit result: `M53_PRE_PUSH_AUDIT_PASS`.
-

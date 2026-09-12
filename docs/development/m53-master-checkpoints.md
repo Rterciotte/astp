@@ -107,4 +107,22 @@ only). See `docs/development/m53-pre-push-audit.md`.
 
 Marker: `M53_PRE_PUSH_AUDIT_PASS`.
 
-Remaining roadmap: M8.
+## M8 — final release-candidate checkpoint
+
+The local release-candidate record freezes the M1-M7 commit chain, SHA-256
+digests of the authoritative M5 physical qualification, post-remediation audit
+severity and final safety gates. See
+`docs/development/m53-release-candidate-checkpoint.md`.
+
+M8 reexecuted M1-M5 through the current entrypoints in new local-only roots:
+M1 32/32 focused authority tests, M2 1/1/1, M3 8/8, and M4/M5 A-H PASS with
+manifest verification. Aggregate physical accounting and qualification hashes
+are recorded in the release-candidate checkpoint.
+
+Status: `M53_RELEASE_CANDIDATE_PASS`. Final check-only validation passed Ruff,
+Black, compilation, 802 tests and CLI smoke. Cleanup, Git hygiene, manifest
+verification and the final CRITICAL=0/HIGH=0 audit recheck passed.
+
+Marker: `M53_RELEASE_CANDIDATE_PASS`.
+
+Remaining roadmap: M9 human ready-for-push decision.
