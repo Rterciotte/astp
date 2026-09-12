@@ -38,14 +38,14 @@ class ObservationInterpretation(BaseModel):
 
 def interpret_observation(evidence: HttpObservationEvidence) -> ObservationInterpretation:
     signals: list[InterpretationSignal] = []
-    if evidence.redirect is not None:
+    target_response = has_target_response_provenance(evidence)
+    if target_response and evidence.redirect is not None:
         signals.append(
             InterpretationSignal(
                 kind=InterpretationSignalKind.REDIRECT,
                 value=evidence.redirect.target,
             )
         )
-    target_response = has_target_response_provenance(evidence)
     if target_response and evidence.status_code in {401, 403}:
         signals.append(
             InterpretationSignal(
@@ -85,7 +85,8 @@ def interpret_observation(evidence: HttpObservationEvidence) -> ObservationInter
         evidence_id=evidence.evidence_id,
         target=evidence.target,
         signals=signals,
-        should_expand_surface=evidence.redirect is not None
+        should_expand_surface=target_response
+        and evidence.redirect is not None
         or (target_response and bool(evidence.body_preview)),
         requires_human_review=target_response and evidence.status_code >= 500,
     )

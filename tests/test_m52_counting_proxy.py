@@ -1,6 +1,9 @@
 import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from http.client import HTTPConnection
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
@@ -9,6 +12,22 @@ from astp.detector_run_permit import DetectorRunPermitPayload, issue_detector_ru
 from astp.m52_acceptance_lab import LocalAcceptanceLab
 
 KEY = "detector-run-test-key-that-is-long-enough"
+
+
+class CountingTargetHandler(BaseHTTPRequestHandler):
+    hits = 0
+    lock = threading.Lock()
+
+    def log_message(self, *_args: object) -> None:
+        return
+
+    def do_GET(self) -> None:
+        with type(self).lock:
+            type(self).hits += 1
+        self.send_response(200)
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+        self.wfile.write(b"ok")
 
 
 def _permit(origin: str, **changes):
@@ -64,6 +83,89 @@ def test_proxy_forwards_exact_origin_and_enforces_budget_before_io(tmp_path):
         "response_bytes": 24,
     }
     assert "never-log-this" not in (tmp_path / "ledger.db").read_bytes().decode(errors="ignore")
+
+
+@pytest.mark.parametrize(("ceiling", "contenders"), [(1, 2), (3, 8)])
+def test_atomic_budget_reservation_matches_independent_target_oracle(tmp_path, ceiling, contenders):
+    CountingTargetHandler.hits = 0
+    target = ThreadingHTTPServer(("127.0.0.1", 0), CountingTargetHandler)
+    target_thread = threading.Thread(target=target.serve_forever, daemon=True)
+    target_thread.start()
+    origin = f"http://127.0.0.1:{target.server_port}"
+    counting = CountingProxy(
+        _permit(origin, max_requests=ceiling, max_concurrency=contenders),
+        KEY,
+        tmp_path / f"atomic-{ceiling}.db",
+    )
+    barrier = threading.Barrier(contenders)
+
+    def contender() -> tuple[int, str]:
+        barrier.wait(timeout=3)
+        status, _, request_id = _proxy_get(proxy.url, origin + "/count")
+        return status, request_id
+
+    try:
+        with (
+            RunningCountingProxy(counting) as proxy,
+            ThreadPoolExecutor(max_workers=contenders) as pool,
+        ):
+            results = list(pool.map(lambda _index: contender(), range(contenders)))
+    finally:
+        target.shutdown()
+        target.server_close()
+        target_thread.join(timeout=2)
+
+    summary = counting.accounting.summary()
+    assert [status for status, _ in results].count(200) == ceiling
+    assert [status for status, _ in results].count(429) == contenders - ceiling
+    assert len({request_id for _, request_id in results}) == contenders
+    assert CountingTargetHandler.hits == ceiling
+    assert summary["requests_attempted"] == contenders
+    assert summary["requests_forwarded"] == ceiling
+    assert summary["requests_blocked_before_io"] == contenders - ceiling
+    assert summary["requests_attempted"] == (
+        summary["requests_forwarded"] + summary["requests_blocked_before_io"]
+    )
+    assert (
+        summary["responses_received"]
+        + summary["requests_failed_after_io"]
+        + summary["unknown_outcomes"]
+        == summary["requests_forwarded"]
+    )
+
+
+def test_durable_reservation_is_visible_and_crash_before_io_is_not_forwarded(tmp_path):
+    accounting = CountingProxy(
+        _permit("http://example.test", max_requests=1, max_concurrency=2),
+        KEY,
+        tmp_path / "reservation.db",
+    ).accounting
+    assert (
+        accounting.admit(
+            "request-1",
+            "permit-1",
+            "run-1",
+            "GET",
+            "http://example.test/",
+            max_requests=1,
+            max_concurrency=2,
+        )
+        is None
+    )
+    assert (
+        accounting.admit(
+            "request-2",
+            "permit-1",
+            "run-1",
+            "GET",
+            "http://example.test/",
+            max_requests=1,
+            max_concurrency=2,
+        )
+        == "request budget exhausted"
+    )
+    assert accounting.summary()["requests_forwarded"] == 0
+    assert accounting.summary()["requests_blocked_before_io"] == 2
 
 
 def test_authoritative_forwarding_timestamps_include_rate_limit_wait(tmp_path):

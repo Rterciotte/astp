@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
@@ -20,6 +19,7 @@ from astp.findings import FindingSet
 from astp.observation import (
     BodyArtifactReference,
     HttpObservationEvidence,
+    RedirectObservation,
     ResponseProvenance,
     ResponseProvenanceSource,
     _canonical_json,
@@ -126,10 +126,25 @@ def test_m473_json_consumer_extracts_url_like_values(tmp_path: Path) -> None:
 
 
 def test_m473_redirect_consumer_uses_redirect_target_field() -> None:
-    evidence = SimpleNamespace(
+    evidence = HttpObservationEvidence(
         evidence_id="redirect-evidence",
+        action_id="redirect-action",
+        permit_id="redirect-permit",
+        engagement_id="eng",
+        test_id="test",
+        observed_at=datetime.now(UTC),
+        method="GET",
         target="https://example.com/start",
-        redirect=SimpleNamespace(target="/next"),
+        status_code=302,
+        body_sha256=hashlib.sha256(b"").hexdigest(),
+        redirect=RedirectObservation(target="/next", in_scope=True, same_origin=True),
+        response_provenance=ResponseProvenance(
+            source=ResponseProvenanceSource.TARGET,
+            target_response_observed=True,
+            synthetic=False,
+            producer="target",
+        ),
+        evidence_hash="test-only",
     )
 
     candidates = _collect_redirect_candidates(evidence)

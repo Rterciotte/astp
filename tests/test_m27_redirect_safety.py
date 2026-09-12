@@ -1,7 +1,12 @@
 from datetime import UTC, datetime
 
 from astp.models import Engagement, ScopeKind, ScopePolicy, ScopeRule
-from astp.observation import HttpObservationEvidence, RedirectObservation
+from astp.observation import (
+    HttpObservationEvidence,
+    RedirectObservation,
+    ResponseProvenance,
+    ResponseProvenanceSource,
+)
 from astp.target_discovery import CandidateKind, CandidateSafety, discover_targets_from_evidence
 
 
@@ -33,6 +38,12 @@ def _evidence(redirect: str) -> HttpObservationEvidence:
             target=redirect,
             in_scope=True,
             same_origin=False,
+        ),
+        response_provenance=ResponseProvenance(
+            source=ResponseProvenanceSource.TARGET,
+            target_response_observed=True,
+            synthetic=False,
+            producer="target",
         ),
         evidence_hash="1" * 64,
     )

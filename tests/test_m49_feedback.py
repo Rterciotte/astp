@@ -2,7 +2,12 @@ from datetime import UTC, datetime
 
 from astp.feedback import apply_evidence_feedback
 from astp.models import Constraints, Engagement, MethodPolicy, ScopeKind, ScopePolicy, ScopeRule
-from astp.observation import HttpObservationEvidence, RedirectObservation
+from astp.observation import (
+    HttpObservationEvidence,
+    RedirectObservation,
+    ResponseProvenance,
+    ResponseProvenanceSource,
+)
 from astp.target_registry import empty_registry
 
 
@@ -28,6 +33,12 @@ def test_feedback_adds_redirect_candidate():
         evidence_hash="1" * 64,
         redirect=RedirectObservation(
             target="https://www.example.com/", in_scope=True, same_origin=False
+        ),
+        response_provenance=ResponseProvenance(
+            source=ResponseProvenanceSource.TARGET,
+            target_response_observed=True,
+            synthetic=False,
+            producer="target",
         ),
     )
     result = apply_evidence_feedback(evidence, engagement, empty_registry("e"), include_links=False)

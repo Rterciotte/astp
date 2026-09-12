@@ -8,7 +8,11 @@ from pathlib import Path
 import yaml
 
 from astp.field_assessment_provenance import apply_network_provenance
-from astp.observation import HttpObservationEvidence
+from astp.observation import (
+    HttpObservationEvidence,
+    ResponseProvenance,
+    ResponseProvenanceSource,
+)
 
 
 def _canonical(payload: object) -> bytes:
@@ -47,6 +51,12 @@ def _write_success_fixture(tmp_path: Path):
         },
         "resolved_endpoint": None,
         "transport_failure": None,
+        "response_provenance": ResponseProvenance(
+            source=ResponseProvenanceSource.TARGET,
+            target_response_observed=True,
+            synthetic=False,
+            producer="target",
+        ).model_dump(mode="json"),
     }
     evidence_payload["evidence_hash"] = "pending"
     preliminary = HttpObservationEvidence.model_validate(evidence_payload)

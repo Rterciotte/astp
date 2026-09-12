@@ -243,7 +243,7 @@ def discover_targets_from_evidence(
     current = now or datetime.now(UTC)
     candidates: list[TargetCandidate] = []
 
-    if evidence.redirect is not None:
+    if has_target_response_provenance(evidence) and evidence.redirect is not None:
         candidates.append(
             _make_candidate(
                 evidence=evidence,

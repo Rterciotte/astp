@@ -7,6 +7,7 @@ import posixpath
 import sqlite3
 import threading
 import time
+import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -85,6 +86,72 @@ class ProxyAccounting:
                 ),
             )
 
+    def admit(
+        self,
+        request_id: str,
+        permit_id: str,
+        run_id: str,
+        method: str,
+        target: str,
+        *,
+        max_requests: int,
+        max_concurrency: int,
+    ) -> str | None:
+        """Atomically reserve one durable pre-I/O request slot."""
+        with self.lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            budget_used = int(
+                db.execute(
+                    """SELECT count(*) FROM requests
+                    WHERE permit_id=? AND detector_run_id=?
+                    AND state IN ('reserved','forwarding','response_received','failed_after_io')""",
+                    (permit_id, run_id),
+                ).fetchone()[0]
+            )
+            active = int(
+                db.execute(
+                    """SELECT count(*) FROM requests
+                    WHERE permit_id=? AND detector_run_id=?
+                    AND state IN ('reserved','forwarding')""",
+                    (permit_id, run_id),
+                ).fetchone()[0]
+            )
+            denial = None
+            if budget_used >= max_requests:
+                denial = "request budget exhausted"
+            elif active >= max_concurrency:
+                denial = "concurrency ceiling exceeded"
+            db.execute(
+                "INSERT INTO requests VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    request_id,
+                    run_id,
+                    permit_id,
+                    method,
+                    target,
+                    "blocked_before_io" if denial else "reserved",
+                    0,
+                    0,
+                    None,
+                    datetime.now(UTC).isoformat(),
+                    datetime.now(UTC).isoformat() if denial else None,
+                    denial or "durable pre-I/O reservation",
+                ),
+            )
+            db.commit()
+            return denial
+
+    def mark_forwarding(self, request_id: str) -> None:
+        """Commit the I/O boundary immediately before opening the target connection."""
+        with self.lock, self.connect() as db:
+            cursor = db.execute(
+                """UPDATE requests SET state='forwarding',started_at=?,detail=''
+                WHERE request_id=? AND state='reserved'""",
+                (datetime.now(UTC).isoformat(), request_id),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("request slot is not durably reserved")
+
     def finish(
         self,
         request_id: str,
@@ -122,7 +189,10 @@ class ProxyAccounting:
                 + rows.get("failed_after_io", 0)
             ),
             "responses_received": rows.get("response_received", 0),
-            "requests_blocked_before_io": rows.get("blocked_before_io", 0),
+            # A durable reservation left behind before the I/O boundary is
+            # conservatively reconciled as blocked-before-I/O, never forwarded.
+            "requests_blocked_before_io": rows.get("blocked_before_io", 0)
+            + rows.get("reserved", 0),
             "requests_failed_after_io": rows.get("failed_after_io", 0),
             "unknown_outcomes": rows.get("forwarding", 0),
             "request_bytes": int(byte_row[0]),
@@ -153,7 +223,6 @@ class CountingProxy:
                 raise ValueError(f"detector-run permit {field} binding mismatch")
         self.accounting = ProxyAccounting(ledger_path)
         self.lock = threading.Lock()
-        self.active = 0
         self.sequence = self.accounting.count(
             ("forwarding", "response_received", "failed_after_io", "blocked_before_io")
         )
@@ -164,21 +233,35 @@ class CountingProxy:
     def _request_id(self) -> str:
         with self.lock:
             self.sequence += 1
-            value = f"{self.permit.payload.detector_run_id}:{self.sequence}"
+            value = f"{self.permit.payload.detector_run_id}:{self.sequence}:{uuid.uuid4().hex}"
         return hashlib.sha256(value.encode()).hexdigest()[:24]
 
     def authorize(self, method: str, target: str) -> tuple[str, str | None]:
         request_id = self._request_id()
+        payload = self.permit.payload
+
+        def deny(reason: str) -> tuple[str, str]:
+            self.accounting.start(
+                request_id,
+                payload.permit_id,
+                payload.detector_run_id,
+                method,
+                target,
+                "blocked_before_io",
+                reason,
+            )
+            return request_id, reason
+
         try:
             self.permit.verify(self._signing_key)
         except (ValueError, AttributeError) as exc:
-            return request_id, str(exc)
+            return deny(str(exc))
         parsed = urlsplit(target)
         origin = f"{parsed.scheme}://{parsed.hostname}:{parsed.port or (443 if parsed.scheme == 'https' else 80)}"
         allowed = urlsplit(self.permit.payload.allowed_origin)
         allowed_origin = f"{allowed.scheme}://{allowed.hostname}:{allowed.port or (443 if allowed.scheme == 'https' else 80)}"
         if parsed.scheme not in {"http", "https"} or origin != allowed_origin:
-            return request_id, "origin/scheme/port rejected"
+            return deny("origin/scheme/port rejected")
         decoded_path = unquote(parsed.path)
         normalized_path = posixpath.normpath(decoded_path)
         if decoded_path.endswith("/") and normalized_path != "/":
@@ -192,21 +275,22 @@ class CountingProxy:
             or normalized_path.startswith(allowed_path + "/")
         )
         if not path_allowed:
-            return request_id, "path outside authorized prefix"
+            return deny("path outside authorized prefix")
         if method.upper() not in self.permit.payload.allowed_methods:
-            return request_id, "method rejected"
-        if (
-            self.accounting.count(("forwarding", "response_received", "failed_after_io"))
-            >= self.permit.payload.max_requests
-        ):
-            return request_id, "request budget exhausted"
+            return deny("method rejected")
         with self.lock:
-            if self.active >= self.permit.payload.max_concurrency:
-                return request_id, "concurrency ceiling exceeded"
             if self.circuit_failures >= 3:
-                return request_id, "circuit breaker open"
-            self.active += 1
-        return request_id, None
+                return deny("circuit breaker open")
+        denial = self.accounting.admit(
+            request_id,
+            payload.permit_id,
+            payload.detector_run_id,
+            method,
+            target,
+            max_requests=payload.max_requests,
+            max_concurrency=payload.max_concurrency,
+        )
+        return request_id, denial
 
     def forward(
         self, method: str, target: str, headers: dict[str, str], body: bytes
@@ -216,15 +300,6 @@ class CountingProxy:
         request_id, denial = self.authorize(method, target)
         payload = self.permit.payload
         if denial:
-            self.accounting.start(
-                request_id,
-                payload.permit_id,
-                payload.detector_run_id,
-                method,
-                target,
-                "blocked_before_io",
-                denial,
-            )
             return (
                 429 if "budget" in denial or "concurrency" in denial else 403,
                 {
@@ -241,14 +316,7 @@ class CountingProxy:
                 delay = max(0.0, self.last_forwarded + interval - time.monotonic())
             if delay:
                 time.sleep(delay)
-            self.accounting.start(
-                request_id,
-                payload.permit_id,
-                payload.detector_run_id,
-                method,
-                target,
-                "forwarding",
-            )
+            self.accounting.mark_forwarding(request_id)
             if self.acceptance_fault is AcceptanceProxyFault.AFTER_FIRST_PROXY_FORWARD:
                 os._exit(86)
             with self.lock:
@@ -338,9 +406,6 @@ class CountingProxy:
                 b"upstream failure",
                 request_id,
             )
-        finally:
-            with self.lock:
-                self.active -= 1
 
 
 class ProxyHandler(BaseHTTPRequestHandler):

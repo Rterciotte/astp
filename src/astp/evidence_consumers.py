@@ -119,6 +119,8 @@ def _collect_redirect_candidates(
     evidence: HttpObservationEvidence,
 ) -> list[DiscoveredCandidate]:
     """Convert an already-observed redirect into a non-authorizing candidate."""
+    if not has_target_response_provenance(evidence):
+        return []
     redirect = evidence.redirect
     if redirect is None or not redirect.target:
         return []
@@ -209,7 +211,8 @@ def consume_http_evidence(evidence_path: Path) -> EvidenceConsumerRecord:
     js_signals: list[JavascriptStaticSignal] = []
     secret_signals: list[SecretExposureSignal] = []
 
-    discovered.extend(_collect_redirect_candidates(evidence))
+    if target_response:
+        discovered.extend(_collect_redirect_candidates(evidence))
 
     if not target_response:
         limitations.append(

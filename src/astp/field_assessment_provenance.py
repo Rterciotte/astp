@@ -8,7 +8,11 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from astp.observation import HttpObservationEvidence, verify_observation_evidence
+from astp.observation import (
+    HttpObservationEvidence,
+    has_target_response_provenance,
+    verify_observation_evidence,
+)
 
 
 class ResponseEvidenceSummary(BaseModel):
@@ -89,7 +93,7 @@ def _find_response_evidence(
             raise ValueError(
                 f"response evidence contains transport failure: {evidence.evidence_id}"
             )
-        redirect = evidence.redirect
+        redirect = evidence.redirect if has_target_response_provenance(evidence) else None
         found[evidence.evidence_id] = ResponseEvidenceSummary(
             evidence_id=evidence.evidence_id,
             permit_id=evidence.permit_id,

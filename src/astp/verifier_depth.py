@@ -37,17 +37,6 @@ def verify_stored_http_evidence(evidence: HttpObservationEvidence) -> tuple[Veri
     """Derive conservative posture signals from already-captured HTTP evidence."""
     signals: list[VerifierSignal] = []
     if not has_target_response_provenance(evidence):
-        if evidence.redirect is not None and evidence.redirect.requires_new_permit:
-            signals.append(
-                VerifierSignal(
-                    kind=VerifierSignalKind.REDIRECT_POLICY,
-                    verifier_id="redirect.reauthorization.v1",
-                    target=evidence.target,
-                    summary="Redirect target requires a separately authorized action.",
-                    confidence=1.0,
-                    proof_ceiling="informational",
-                )
-            )
         return tuple(signals)
     headers = _headers(evidence)
 

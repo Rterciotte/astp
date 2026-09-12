@@ -1,6 +1,11 @@
 from datetime import UTC, datetime
 
-from astp.observation import HttpObservationEvidence, RedirectObservation
+from astp.observation import (
+    HttpObservationEvidence,
+    RedirectObservation,
+    ResponseProvenance,
+    ResponseProvenanceSource,
+)
 from astp.result_interpreter import InterpretationSignalKind, interpret_observation
 
 
@@ -19,6 +24,12 @@ def evidence(status=301):
         body_sha256="0",
         redirect=RedirectObservation(
             target="https://www.example.com", in_scope=True, same_origin=False
+        ),
+        response_provenance=ResponseProvenance(
+            source=ResponseProvenanceSource.TARGET,
+            target_response_observed=True,
+            synthetic=False,
+            producer="target",
         ),
         evidence_hash="x",
     )

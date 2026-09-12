@@ -8,6 +8,7 @@ from astp.http_fingerprint import fingerprint_http
 from astp.observation import (
     BoundaryDecision,
     HttpObservationEvidence,
+    HttpResponseHop,
     RedirectObservation,
     ResponseProvenance,
     ResponseProvenanceSource,
@@ -70,6 +71,23 @@ def test_synthetic_boundary_never_produces_target_attribution(tmp_path):
     assert any("NO_TARGET_ATTRIBUTION" in value for value in consumed.limitations)
 
 
+def test_synthetic_boundary_redirect_cannot_create_target_discovery(tmp_path):
+    evidence = _evidence(
+        source=ResponseProvenanceSource.ASTP_BOUNDARY,
+        status=302,
+        headers={"Location": "https://outside.invalid/"},
+        redirect=RedirectObservation(
+            target="https://outside.invalid/", in_scope=False, same_origin=False
+        ),
+    )
+    interpretation = interpret_observation(evidence)
+    assert interpretation.signals == []
+    assert interpretation.should_expand_surface is False
+    path = tmp_path / "synthetic-redirect.json"
+    path.write_text(evidence.model_dump_json(indent=2), encoding="utf-8")
+    assert consume_http_evidence(path).discovered_candidates == []
+
+
 def test_target_redirect_and_boundary_decision_are_separate():
     evidence = _evidence(
         status=302,
@@ -96,7 +114,13 @@ def test_target_redirect_and_boundary_decision_are_separate():
 
 
 def test_legacy_evidence_without_any_boundary_marker_fails_closed(tmp_path):
-    evidence = _evidence(status=200, headers={"Server": "looks-like-a-target"})
+    evidence = _evidence(
+        status=302,
+        headers={"Server": "looks-like-a-target", "Location": "https://outside.invalid/"},
+        redirect=RedirectObservation(
+            target="https://outside.invalid/", in_scope=False, same_origin=False
+        ),
+    )
     payload = evidence.model_dump(
         mode="json",
         exclude={"evidence_hash", "response_provenance", "boundary", "response_chain"},
@@ -120,6 +144,52 @@ def test_legacy_evidence_without_any_boundary_marker_fails_closed(tmp_path):
     assert verify_observation_evidence(parsed)
     assert analyze_http_posture(parsed).signals == []
     assert fingerprint_http(parsed).observations == []
+    assert interpret_observation(parsed).signals == []
+    assert interpret_observation(parsed).should_expand_surface is False
+    assert consume_http_evidence(path).discovered_candidates == []
+
+
+def test_mixed_target_chain_keeps_boundary_metadata_out_of_redirect_attribution(tmp_path):
+    evidence = _evidence(source=ResponseProvenanceSource.ASTP_BOUNDARY, status=429).model_copy(
+        update={
+            "response_chain": (
+                HttpResponseHop(
+                    target="https://example.test/",
+                    status_code=200,
+                    body_sha256=hashlib.sha256(b"").hexdigest(),
+                    provenance=ResponseProvenance(
+                        source=ResponseProvenanceSource.TARGET,
+                        target_response_observed=True,
+                        synthetic=False,
+                        producer="target",
+                    ),
+                ),
+                HttpResponseHop(
+                    target="https://example.test/next",
+                    status_code=429,
+                    response_headers={"Location": "https://outside.invalid/"},
+                    body_sha256=hashlib.sha256(b"").hexdigest(),
+                    provenance=ResponseProvenance(
+                        source=ResponseProvenanceSource.ASTP_BOUNDARY,
+                        target_response_observed=False,
+                        synthetic=True,
+                        producer="counting_proxy",
+                    ),
+                ),
+            ),
+            "redirect": RedirectObservation(
+                target="https://outside.invalid/", in_scope=False, same_origin=False
+            ),
+        }
+    )
+    payload = evidence.model_dump(mode="json", exclude={"evidence_hash"})
+    evidence = evidence.model_copy(
+        update={"evidence_hash": hashlib.sha256(_canonical_json(payload)).hexdigest()}
+    )
+    path = tmp_path / "mixed-chain.json"
+    path.write_text(evidence.model_dump_json(indent=2), encoding="utf-8")
+    assert interpret_observation(evidence).signals == []
+    assert consume_http_evidence(path).discovered_candidates == []
 
 
 def test_provenance_round_trip_preserves_integrity(tmp_path):
